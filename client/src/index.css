@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  color-scheme: light;
+  --app-bg: #f5f5f5;
+  --app-surface: #ffffff;
+  --app-surface-muted: #f9f9f9;
+  --app-text: #333333;
+  --app-text-secondary: #666666;
+  --app-text-muted: #999999;
+  --app-border: #e7e7e7;
+  --app-border-soft: #eeeeee;
+  --app-primary: #0052d9;
+  --app-primary-soft: #e6f0ff;
+  --app-success: #00a870;
+  --app-danger: #e34d59;
+  --app-warning: #e37318;
+  --app-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --app-bg: #101418;
+  --app-surface: #181d23;
+  --app-surface-muted: #20262e;
+  --app-text: #eef2f6;
+  --app-text-secondary: #c4ccd6;
+  --app-text-muted: #8993a1;
+  --app-border: #303844;
+  --app-border-soft: #26303a;
+  --app-primary: #4c8dff;
+  --app-primary-soft: #14233d;
+  --app-success: #35c98b;
+  --app-danger: #ff6b76;
+  --app-warning: #f49b45;
+  --app-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+}
+
+body {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+}
+
+.app-page {
+  background-color: var(--app-bg);
+  color: var(--app-text);
+}
+
+.app-surface {
+  background-color: var(--app-surface);
+  color: var(--app-text);
+  border-color: var(--app-border);
+}
+
+html[data-theme='dark'] .t-card,
+html[data-theme='dark'] .t-dialog,
+html[data-theme='dark'] .t-layout,
+html[data-theme='dark'] .t-layout__header,
+html[data-theme='dark'] .t-layout__sider,
+html[data-theme='dark'] .t-table,
+html[data-theme='dark'] .t-table__header,
+html[data-theme='dark'] .t-table__body,
+html[data-theme='dark'] .t-table__content {
+  background-color: var(--app-surface);
+  color: var(--app-text);
+}
+
+html[data-theme='dark'] .t-card,
+html[data-theme='dark'] .t-dialog,
+html[data-theme='dark'] .t-table {
+  border-color: var(--app-border);
+}
+
+html[data-theme='dark'] .t-input,
+html[data-theme='dark'] .t-textarea,
+html[data-theme='dark'] .t-select__wrap,
+html[data-theme='dark'] .t-date-range-picker {
+  background-color: var(--app-surface-muted);
+  border-color: var(--app-border);
+  color: var(--app-text);
+}
+
+html[data-theme='dark'] .t-input__inner,
+html[data-theme='dark'] .t-textarea__inner {
+  color: var(--app-text);
+}
+
+html[data-theme='dark'] .t-input__inner::placeholder,
+html[data-theme='dark'] .t-textarea__inner::placeholder {
+  color: var(--app-text-muted);
+}
+
+html[data-theme='dark'] .t-menu {
+  background-color: var(--app-surface);
+  color: var(--app-text-secondary);
+}
+
+html[data-theme='dark'] .t-menu__item.t-is-active {
+  color: var(--app-primary);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #d0d0d0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #b0b0b0;
+}

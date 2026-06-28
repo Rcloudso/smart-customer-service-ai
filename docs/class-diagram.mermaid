@@ -1,0 +1,95 @@
+classDiagram
+    %% ── Config Interfaces ──
+    class LLMConfig {
+        +string provider
+        +string apiKey
+        +string apiBase
+        +string model
+    }
+
+    class EmbedConfig {
+        +string provider
+        +string apiKey
+        +string apiBase
+        +string model
+    }
+
+    class AppConfig {
+        +LLMConfig llm
+        +EmbedConfig embed
+        +JwtConfig jwt
+        +AdminConfig admin
+        +DbConfig db
+        +CorsConfig cors
+        +RateLimitConfig rateLimit
+    }
+
+    %% ── DTO ──
+    class ModelConfigDTO {
+        +string llmApiBase
+        +string llmModel
+        +string llmApiKey
+        +string embedProvider
+        +string embedApiBase
+        +string embedModel
+        +string embedApiKey
+    }
+
+    class ModelConfigResponseDTO {
+        +string llmApiBase
+        +string llmModel
+        +string llmApiKey
+        +boolean llmApiKeyOverridden
+        +string embedProvider
+        +string embedApiBase
+        +string embedModel
+        +string embedApiKey
+        +boolean embedApiKeyOverridden
+    }
+
+    %% ── Service ──
+    class ConfigService {
+        -Database db
+        +getAll() ModelConfigResponseDTO
+        +update(updates ModelConfigDTO) void
+        +getEffective(key string) string
+        -maskApiKey(key string) string
+        -getEnvDefault(key string) string
+    }
+
+    %% ── LLM Client ──
+    class OpenAIClientImpl {
+        -OpenAI chatClient
+        -OpenAI embedClient
+        -string chatModel
+        -string embedModel
+        -string configHash
+        +chat(messages, options) Promise~string~
+        +chatStream(messages, onToken, options) Promise~string~
+        +embed(texts) Promise~EmbeddingResult[]~
+        -ensureFresh() void
+        -withRetry(fn, maxRetries) Promise~T~
+    }
+
+    class LLMClient {
+        <<interface>>
+        +chat(messages, options) Promise~string~
+        +chatStream(messages, onToken, options) Promise~string~
+        +embed(texts) Promise~EmbeddingResult[]~
+    }
+
+    %% ── Router ──
+    class AdminConfigRouter {
+        +GET /api/admin/config/model
+        +PUT /api/admin/config/model
+    }
+
+    %% ── Relationships ──
+    AppConfig *-- LLMConfig
+    AppConfig *-- EmbedConfig
+    ConfigService ..> ModelConfigDTO : reads/writes
+    ConfigService ..> ModelConfigResponseDTO : returns
+    ConfigService ..> AppConfig : reads env defaults
+    OpenAIClientImpl ..|> LLMClient
+    OpenAIClientImpl ..> ConfigService : getEffective()
+    AdminConfigRouter ..> ConfigService : uses

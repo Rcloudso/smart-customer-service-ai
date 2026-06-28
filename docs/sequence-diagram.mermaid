@@ -1,0 +1,39 @@
+sequenceDiagram
+    actor Admin
+    participant AdminConfigRouter
+    participant ConfigService
+    participant DB as SQLite (model_configs)
+
+    %% ── GET ──
+    rect rgb(240, 248, 255)
+        Note over Admin,DB: GET /api/admin/config/model — 获取配置（含脱敏）
+        Admin->>AdminConfigRouter: GET /api/admin/config/model
+        AdminConfigRouter->>ConfigService: getAll()
+        loop 7 keys (llm.apiBase, llm.model, ...)
+            ConfigService->>DB: SELECT value FROM model_configs WHERE key = ?
+            alt DB 有值
+                DB-->>ConfigService: value
+            else DB 无值
+                ConfigService->>ConfigService: getEnvDefault(key)
+            end
+            alt key 以 apiKey 结尾
+                ConfigService->>ConfigService: maskApiKey(value)
+                Note over ConfigService: len≤8→全掩, len>8→前4+***+后4
+            end
+        end
+        ConfigService-->>AdminConfigRouter: ModelConfigResponseDTO
+        AdminConfigRouter-->>Admin: { code: 0, data: { llmApiBase, llmModel, llmApiKey: "sk-a***b123", ... } }
+    end
+
+    %% ── PUT ──
+    rect rgb(255, 248, 240)
+        Note over Admin,DB: PUT /api/admin/config/model — 更新配置
+        Admin->>AdminConfigRouter: PUT /api/admin/config/model { llmApiBase: "https://...", llmModel: "gpt-4" }
+        AdminConfigRouter->>AdminConfigRouter: zod 校验 body + 过滤空值
+        AdminConfigRouter->>ConfigService: update({ llmApiBase: "...", llmModel: "gpt-4" })
+        loop each key in updates
+            ConfigService->>DB: INSERT OR REPLACE INTO model_configs (key, value, updated_at)
+        end
+        ConfigService-->>AdminConfigRouter: void
+        AdminConfigRouter-->>Admin: { code: 0, data: null, message: "ok" }
+    end

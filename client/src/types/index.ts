@@ -1,0 +1,147 @@
+/**
+ * Client-side type definitions — mirrors server types needed by the frontend.
+ * These types are duplicative of server/types/ to avoid cross-boundary imports
+ * (Vite's root is "client" and tsconfig excludes "server").
+ */
+
+// ── Enums ──────────────────────────────────────────
+
+export enum SessionStatus {
+  ACTIVE = 'active',
+  CLOSED = 'closed',
+  ESCALATED = 'escalated',
+}
+
+export enum MessageRole {
+  USER = 'user',
+  ASSISTANT = 'assistant',
+  SYSTEM = 'system',
+}
+
+export enum IntentCategory {
+  REFUND = 'refund',
+  ORDER = 'order',
+  TECHNICAL = 'technical',
+  GENERAL = 'general',
+}
+
+export enum SatisfactionRating {
+  VERY_UNSATISFIED = 1,
+  UNSATISFIED = 2,
+  NEUTRAL = 3,
+  SATISFIED = 4,
+  VERY_SATISFIED = 5,
+}
+
+export enum EscalationStatus {
+  PENDING = 'pending',
+  RESOLVED = 'resolved',
+  DISMISSED = 'dismissed',
+}
+
+// ── Domain Models ──────────────────────────────────
+
+export interface FaqEntry {
+  id: string;
+  question: string;
+  answer: string;
+  category: IntentCategory;
+  keywords: string[];
+  embedding: number[] | null;
+  isActive: number;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+// ── Model Config Types ─────────────────────────────
+
+export interface ModelConfigDTO {
+  llmApiBase: string;
+  llmModel: string;
+  llmApiKey: string;
+  embedProvider: string;
+  embedApiBase: string;
+  embedModel: string;
+  embedApiKey: string;
+}
+
+export interface ModelConfigResponseDTO extends ModelConfigDTO {
+  llmApiKeyOverridden: boolean;
+  embedApiKeyOverridden: boolean;
+}
+
+// ── API Types ──────────────────────────────────────
+
+export interface ApiResponse<T = unknown> {
+  code: number;
+  data: T;
+  message: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  user: {
+    id: string;
+    username: string;
+    role: string;
+  };
+}
+
+export interface PaginationResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminOverview {
+  totalConversations: number;
+  totalMessages: number;
+  avgSatisfaction: number;
+  escalationRate: number;
+  activeSessions: number;
+}
+
+export interface SatisfactionTrend {
+  date: string;
+  avgRating: number;
+  count: number;
+}
+
+export interface IntentDistribution {
+  intent: IntentCategory;
+  count: number;
+  percentage: number;
+}
+
+export interface ConversationDetail {
+  session: {
+    id: string;
+    userIdent: string;
+    status: SessionStatus;
+    createdAt: string;
+    updatedAt: string;
+  };
+  messages: Array<{
+    id: string;
+    role: MessageRole;
+    content: string;
+    intent: IntentCategory | null;
+    intentConf: number | null;
+    satisfaction: SatisfactionRating | null;
+    escalated: number;
+    createdAt: string;
+  }>;
+  escalation: {
+    id: string;
+    reason: string;
+    status: EscalationStatus;
+    createdAt: string;
+  } | null;
+}
