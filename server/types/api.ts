@@ -47,6 +47,9 @@ export interface SSEFaqEvent {
     question: string;
     answer: string;
     similarity: number;
+    source?: 'vector' | 'keyword' | 'hybrid';
+    vectorScore?: number;
+    keywordScore?: number;
   }>;
 }
 
@@ -70,6 +73,17 @@ export interface SSEEscalateEvent {
 }
 
 export type SSEEvent = SSETokenEvent | SSEIntentEvent | SSEFaqEvent | SSEDoneEvent | SSEErrorEvent | SSEEscalateEvent;
+
+export interface ChatHistorySession {
+  id: string;
+  userIdent: string;
+  status: SessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  messageCount: number;
+  preview: string | null;
+}
 
 // ---- Satisfaction ----
 export interface SatisfactionRequest {

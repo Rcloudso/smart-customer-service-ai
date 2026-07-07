@@ -7,3 +7,7 @@ data/
 .DS_Store
 *.log
 npm-debug.log*
+.playwright-cli/
+.npm-cache/
+playwright-report/
+test-results/

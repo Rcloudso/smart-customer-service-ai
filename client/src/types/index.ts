@@ -54,6 +54,16 @@ export interface FaqEntry {
   updatedBy: string | null;
 }
 
+export interface FaqIndexStatus {
+  initialized: boolean;
+  activeCount: number;
+  indexedCount: number;
+  missingEmbeddingCount: number;
+  embeddingDimensions: number | null;
+  lastRebuiltAt: string | null;
+  lastError: string | null;
+}
+
 // ── Model Config Types ─────────────────────────────
 
 export interface ModelConfigDTO {
@@ -144,4 +154,15 @@ export interface ConversationDetail {
     status: EscalationStatus;
     createdAt: string;
   } | null;
+}
+
+export interface ChatHistorySession {
+  id: string;
+  userIdent: string;
+  status: SessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  messageCount: number;
+  preview: string | null;
 }

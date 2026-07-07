@@ -12,6 +12,7 @@ import type {
   IntentDistribution,
   ConversationDetail,
   FaqEntry,
+  FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
 } from '../types';
@@ -26,6 +27,7 @@ export type {
   IntentDistribution,
   ConversationDetail,
   FaqEntry,
+  FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
 };
@@ -124,6 +126,14 @@ export async function importFaq(file: File): Promise<{ imported: number; total: 
 
 export async function exportFaq(): Promise<void> {
   await downloadBlob('/admin/faq/export', `faq-export-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+export async function getFaqIndexStatus(): Promise<FaqIndexStatus> {
+  return get<FaqIndexStatus>('/admin/faq/index/status');
+}
+
+export async function rebuildFaqIndex(): Promise<FaqIndexStatus> {
+  return post<FaqIndexStatus>('/admin/faq/index/rebuild', {});
 }
 
 // ── Model Config ───────────────────────────────────

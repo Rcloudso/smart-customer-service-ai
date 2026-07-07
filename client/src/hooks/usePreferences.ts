@@ -41,6 +41,8 @@ function persistPreferences(language: Language, theme: ThemeMode): void {
 
 function applyDocumentPreferences(language: Language, theme: ThemeMode): void {
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.documentElement.setAttribute('theme-mode', theme);
   document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
 }
 

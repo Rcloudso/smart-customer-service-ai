@@ -1,6 +1,7 @@
 /**
  * HTTP client wrapper with JWT auth injection and unified error handling.
  */
+import { usePreferences } from '../hooks/usePreferences';
 
 export class ApiError extends Error {
   public readonly statusCode: number;
@@ -18,6 +19,10 @@ export class ApiError extends Error {
 }
 
 const BASE_URL = '/api';
+
+function t(key: string, params?: Record<string, string | number>): string {
+  return usePreferences.getState().t(key, params);
+}
 
 function getToken(): string | null {
   try {
@@ -167,7 +172,7 @@ export async function downloadBlob(path: string, filename: string): Promise<void
   const response = await fetch(`${BASE_URL}${path}`, { headers });
 
   if (!response.ok) {
-    throw new ApiError(response.status, response.status, '下载失败');
+    throw new ApiError(response.status, response.status, t('common.exportFailed'));
   }
 
   const blob = await response.blob();

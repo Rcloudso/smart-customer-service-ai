@@ -44,25 +44,12 @@ export function LoginPage(): React.ReactElement {
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: 'var(--app-bg)',
-      }}
-    >
+    <div className="app-login-shell">
       <div style={{ position: 'fixed', top: '16px', right: '16px' }}>
         <PreferenceControls />
       </div>
       <Card
-        style={{
-          width: '400px',
-          maxWidth: '90vw',
-          boxShadow: 'var(--app-shadow)',
-          backgroundColor: 'var(--app-surface)',
-        }}
+        className="app-login-card"
         title={t('login.title')}
         headerBordered
       >
@@ -82,6 +69,7 @@ export function LoginPage(): React.ReactElement {
               prefixIcon={<UserIcon />}
               size="large"
               clearable
+              data-testid="login-username"
             />
           </FormItem>
 
@@ -95,6 +83,7 @@ export function LoginPage(): React.ReactElement {
               placeholder={t('login.passwordPlaceholder')}
               prefixIcon={<LockOnIcon />}
               size="large"
+              data-testid="login-password"
             />
           </FormItem>
 
@@ -105,6 +94,7 @@ export function LoginPage(): React.ReactElement {
               size="large"
               block
               loading={isLoading}
+              data-testid="login-submit"
             >
               {t('login.submit')}
             </Button>

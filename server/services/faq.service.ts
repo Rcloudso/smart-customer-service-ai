@@ -1,7 +1,7 @@
 import { getDatabase } from '../db';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { FaqEntry, IntentCategory } from '../types/domain';
-import { FaqMatch } from '../types/ai';
+import { FaqIndexStatus, FaqMatch } from '../types/ai';
 import { semanticSearch } from '../ai/semantic-search';
 import { PaginationResponse } from '../types/api';
 import { NotFoundError } from '../utils/errors';
@@ -97,7 +97,15 @@ export class FaqService {
       throw new NotFoundError('FAQ条目不存在');
     }
 
-    const updated = this.faqRepo.update(id, params);
+    const shouldRefreshEmbedding =
+      params.question !== undefined ||
+      params.answer !== undefined ||
+      params.keywords !== undefined;
+
+    const updated = this.faqRepo.update(id, {
+      ...params,
+      embedding: shouldRefreshEmbedding ? null : undefined,
+    });
     if (!updated) {
       throw new Error('更新FAQ失败');
     }
@@ -152,6 +160,14 @@ export class FaqService {
 
   exportFaq(): FaqEntry[] {
     return this.faqRepo.listAllActive();
+  }
+
+  getIndexStatus(): FaqIndexStatus {
+    return semanticSearch.getStatus();
+  }
+
+  async rebuildIndex(): Promise<FaqIndexStatus> {
+    return semanticSearch.rebuildIndex();
   }
 }
 

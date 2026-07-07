@@ -2,26 +2,27 @@
 
 [中文版本](README_CN.md)
 
-Smart Customer Service AI is a full-stack demo for an AI-assisted customer support system. It includes a customer chat page, an admin console, FAQ management, conversation analytics, model configuration, bilingual UI, and light/dark theme switching.
+## English
 
-### Features
+Smart Customer Service AI is an open-source full-stack demo for an AI-assisted customer support system. It includes a customer chat page, an admin console, FAQ management, conversation analytics, runtime model configuration, bilingual UI, and light/dark theme switching.
 
-- AI chat with streaming responses.
-- Intent classification for refund, order, technical, and general questions.
-- FAQ retrieval with lightweight embeddings and a keyword fallback.
-- Admin dashboard for conversations, FAQ entries, statistics, and model settings.
-- Language switching between Chinese and English.
-- Light and dark theme switching with persisted preferences.
-- CSV/JSON FAQ import and CSV export.
+### v0.2.0 Highlights
+
+- Hybrid retrieval: in-memory vector similarity plus SQL keyword fallback.
+- FAQ embeddings are generated from question, answer, and keywords.
+- Admin FAQ index status shows active entries, indexed entries, missing embeddings, dimensions, last rebuild time, and errors.
+- Admin users can rebuild the FAQ index from the FAQ management page.
+- Language switching between Chinese and English plus persisted light/dark theme preferences.
+- Docker and GitHub Actions CI are included for open-source contributors.
 
 ### Architecture
 
 - Frontend: React, Vite, TDesign React, Zustand.
 - Backend: Express, TypeScript, SQLite, OpenAI-compatible chat and embedding APIs.
-- Storage: SQLite stores conversations, messages, FAQ entries, configuration overrides, and serialized embeddings.
-- Search: in-process vector similarity for active FAQ embeddings, with SQL LIKE fallback when embeddings are unavailable.
+- Storage: SQLite stores conversations, messages, FAQ entries, runtime config overrides, and serialized embeddings.
+- Search: `VectorStore` is an explicit interface. The default implementation is in-memory, so no external vector database is required.
 
-### Quick Start
+### Local Quick Start
 
 ```bash
 npm install
@@ -43,6 +44,19 @@ Default local admin account:
 
 Change `ADMIN_PASSWORD` before any production-like deployment.
 
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Docker exposes:
+
+- Frontend: http://localhost:5173/
+- Backend API: http://localhost:3001/api/health
+
+The compose file uses `EMBED_PROVIDER=other` so the app can run without a real embedding key. In that mode, FAQ retrieval falls back to keyword search when embeddings cannot be generated.
+
 ### Configuration
 
 Copy `.env.example` to `.env`, then configure:
@@ -57,6 +71,9 @@ Copy `.env.example` to `.env`, then configure:
 - `EMBED_API_BASE`
 - `EMBED_API_KEY`
 - `EMBED_MODEL`
+- `RATE_LIMIT_CHAT`
+- `RATE_LIMIT_ADMIN`
+- `RATE_LIMIT_LOGIN`
 
 The admin model configuration page can override selected runtime model settings in SQLite.
 
@@ -67,8 +84,65 @@ EMBED_PROVIDER=other npm test
 EMBED_PROVIDER=other npm run build
 ```
 
+GitHub Actions runs `npm ci`, `EMBED_PROVIDER=other npm test`, and `EMBED_PROVIDER=other npm run build` on pull requests and pushes to `main`.
+
 ### Current Limits
 
-- The vector index is in memory and scans all FAQ embeddings, so it is suitable for demos and small FAQ collections, not high-scale retrieval.
+- The default vector index is in process memory and scans FAQ embeddings, so it is suitable for demos and small FAQ collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
+- `VectorStore` is ready for future Qdrant or pgvector implementations, but v0.2.0 intentionally keeps the default deployment dependency-free.
 - Intent classification falls back to keyword matching when the LLM call fails.
+
+## 中文
+
+Smart Customer Service AI 是一个开源的 AI 智能客服全栈示例项目，包含用户聊天页、管理后台、FAQ 管理、会话分析、运行时模型配置、中英文切换和暗/亮主题切换。
+
+### v0.2.0 重点
+
+- 混合检索：进程内向量相似度 + SQL 关键词 fallback。
+- FAQ embedding 文本由问题、回答和关键词共同生成。
+- FAQ 管理页展示索引状态：启用条目、已索引条目、缺失 embedding、向量维度、上次重建时间和错误。
+- 管理员可以在 FAQ 管理页重建索引。
+- 提供 Docker 和 GitHub Actions CI，方便开源贡献者验证。
+
+### 本地启动
+
+```bash
+npm install
+cp .env.example .env
+npm run db:init
+npm run db:seed
+EMBED_PROVIDER=other npm run dev
+```
+
+访问：
+
+- 用户聊天页：http://localhost:5173/
+- 管理后台：http://localhost:5173/admin
+
+默认本地管理员账号：
+
+- 用户名：`admin`
+- 密码：`admin123`
+
+任何接近生产的部署前，都必须修改 `ADMIN_PASSWORD`。
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Docker 默认暴露：
+
+- 前端：http://localhost:5173/
+- 后端健康检查：http://localhost:3001/api/health
+
+Compose 示例使用 `EMBED_PROVIDER=other`，因此没有真实 embedding key 时也能运行；embedding 不可用时，FAQ 检索会回退到关键词匹配。
+
+### 验证命令
+
+```bash
+EMBED_PROVIDER=other npm test
+EMBED_PROVIDER=other npm run build
+```

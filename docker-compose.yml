@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    command: sh -c "npm run db:seed && npm run dev"
+    ports:
+      - "5173:5173"
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      JWT_SECRET: change-this-local-secret
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      DB_PATH: /app/data/customer-service.db
+      ALLOWED_ORIGINS: http://localhost:5173
+      EMBED_PROVIDER: other
+    volumes:
+      - smart-customer-service-data:/app/data
+
+volumes:
+  smart-customer-service-data:

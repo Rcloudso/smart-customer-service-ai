@@ -11,10 +11,10 @@ interface StatsCardProps {
 
 const COLOR_MAP: Record<string, { bg: string; accent: string }> = {
   blue: { bg: 'var(--app-primary-soft)', accent: 'var(--app-primary)' },
-  green: { bg: '#e6f9f0', accent: '#00a870' },
-  orange: { bg: '#fef3e6', accent: '#e37318' },
-  red: { bg: '#fde8e8', accent: '#e34d59' },
-  purple: { bg: '#f3e8ff', accent: '#7b2cbf' },
+  green: { bg: 'var(--app-stat-green-bg)', accent: 'var(--app-success)' },
+  orange: { bg: 'var(--app-stat-orange-bg)', accent: 'var(--app-warning)' },
+  red: { bg: 'var(--app-stat-red-bg)', accent: 'var(--app-danger)' },
+  purple: { bg: 'var(--app-stat-purple-bg)', accent: 'var(--app-stat-purple)' },
 };
 
 /**
@@ -32,9 +32,10 @@ export function StatsCard({
   return (
     <Card
       bordered
+      className="app-panel-card"
       style={{
         backgroundColor: theme.bg,
-        borderColor: `${theme.accent}20`,
+        borderColor: `color-mix(in srgb, ${theme.accent} 22%, transparent)`,
       }}
     >
       <div

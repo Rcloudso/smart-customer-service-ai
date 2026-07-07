@@ -6,8 +6,11 @@ export class SessionRepo {
   private db: Database.Database;
   private insertStmt: Database.Statement;
   private updateStatusStmt: Database.Statement;
+  private touchStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
   private findByUserIdentStmt: Database.Statement;
+  private listByUserIdentStmt: Database.Statement;
+  private countByUserIdentStmt: Database.Statement;
   private listStmt: Database.Statement;
   private countStmt: Database.Statement;
   private activeCountStmt: Database.Statement;
@@ -20,9 +23,18 @@ export class SessionRepo {
     this.updateStatusStmt = db.prepare(
       'UPDATE sessions SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?',
     );
+    this.touchStmt = db.prepare(
+      'UPDATE sessions SET updated_at = ? WHERE id = ?',
+    );
     this.findByIdStmt = db.prepare('SELECT * FROM sessions WHERE id = ?');
     this.findByUserIdentStmt = db.prepare(
       'SELECT * FROM sessions WHERE user_ident = ? AND status = ? ORDER BY created_at DESC LIMIT 1',
+    );
+    this.listByUserIdentStmt = db.prepare(
+      'SELECT * FROM sessions WHERE user_ident = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+    );
+    this.countByUserIdentStmt = db.prepare(
+      'SELECT COUNT(*) as total FROM sessions WHERE user_ident = ?',
     );
     this.listStmt = db.prepare(
       'SELECT * FROM sessions WHERE (? IS NULL OR status = ?) ORDER BY created_at DESC LIMIT ? OFFSET ?',
@@ -57,6 +69,10 @@ export class SessionRepo {
     return this.findById(id);
   }
 
+  touch(id: string): void {
+    this.touchStmt.run(new Date().toISOString(), id);
+  }
+
   findById(id: string): Session | null {
     const row = this.findByIdStmt.get(id) as Record<string, unknown> | undefined;
     return row ? this.mapRow(row) : null;
@@ -65,6 +81,16 @@ export class SessionRepo {
   findByUserIdent(userIdent: string, status: SessionStatus = SessionStatus.ACTIVE): Session | null {
     const row = this.findByUserIdentStmt.get(userIdent, status) as Record<string, unknown> | undefined;
     return row ? this.mapRow(row) : null;
+  }
+
+  listByUserIdent(userIdent: string, limit: number, offset: number): Session[] {
+    const rows = this.listByUserIdentStmt.all(userIdent, limit, offset) as Record<string, unknown>[];
+    return rows.map((row) => this.mapRow(row));
+  }
+
+  countByUserIdent(userIdent: string): number {
+    const row = this.countByUserIdentStmt.get(userIdent) as { total: number };
+    return row.total;
   }
 
   list(status: SessionStatus | null, limit: number, offset: number): Session[] {

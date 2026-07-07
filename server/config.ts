@@ -36,6 +36,7 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   RATE_LIMIT_CHAT: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_ADMIN: z.coerce.number().int().positive().default(100),
+  RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -117,6 +118,7 @@ export const config = {
   rateLimit: {
     chat: env.RATE_LIMIT_CHAT,
     admin: env.RATE_LIMIT_ADMIN,
+    login: env.RATE_LIMIT_LOGIN,
   },
 };
 
