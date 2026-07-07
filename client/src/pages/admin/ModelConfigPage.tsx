@@ -6,7 +6,6 @@ import {
   Select,
   Button,
   MessagePlugin,
-  Space,
 } from 'tdesign-react';
 import * as adminApi from '../../api/admin';
 import type { ModelConfigResponseDTO, ModelConfigDTO } from '../../api/admin';
@@ -24,7 +23,7 @@ const API_KEY_PLACEHOLDER = '********';
  * Model configuration page — display and edit LLM / Embedding model settings.
  */
 export function ModelConfigPage(): React.ReactElement {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ModelConfigResponseDTO | null>(null);
@@ -60,12 +59,12 @@ export function ModelConfigPage(): React.ReactElement {
         embedApiKey: '',
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : '加载模型配置失败';
+      const message = err instanceof Error ? err.message : t('config.loadFailed');
       MessagePlugin.error(message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     fetchConfig();
@@ -121,10 +120,10 @@ export function ModelConfigPage(): React.ReactElement {
       }
 
       await adminApi.updateModelConfig(updates, resetKeys);
-      MessagePlugin.success('模型配置保存成功');
+      MessagePlugin.success(t('config.saved'));
       await fetchConfig();
     } catch (err) {
-      const message = err instanceof Error ? err.message : '保存模型配置失败';
+      const message = err instanceof Error ? err.message : t('config.saveFailed');
       MessagePlugin.error(message);
     } finally {
       setSaving(false);
@@ -132,33 +131,29 @@ export function ModelConfigPage(): React.ReactElement {
   };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', color: 'var(--app-text)' }}>
+    <div className="app-page-container app-page-container--narrow">
       {/* Page header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '24px',
-        }}
-      >
-        <h2 style={{ fontSize: '20px', fontWeight: 600, margin: 0, color: 'var(--app-text)' }}>
+      <div className="app-page-header">
+        <h2 className="app-page-title">
           {t('config.title')}
         </h2>
-        <Button theme="primary" onClick={handleSave} loading={saving}>
-          {t('config.save')}
-        </Button>
+        <div className="app-page-actions">
+          <Button theme="primary" onClick={handleSave} loading={saving}>
+            {t('config.save')}
+          </Button>
+        </div>
       </div>
 
       {/* LLM Configuration Card */}
       <Card
         title={t('config.llmTitle')}
         bordered
+        className="app-panel-card"
         style={{ marginBottom: '16px' }}
         bodyStyle={{ padding: '24px' }}
       >
         <Form layout="vertical" labelWidth={120}>
-          <FormItem label="Provider" help={t('config.providerHelp')}>
+          <FormItem label={t('config.provider')} help={t('config.providerHelp')}>
             <Select
               value="openai"
               disabled
@@ -167,7 +162,7 @@ export function ModelConfigPage(): React.ReactElement {
             />
           </FormItem>
 
-          <FormItem label="API Base URL">
+          <FormItem label={t('config.apiBaseUrl')}>
             <Input
               value={form.llmApiBase}
               placeholder={config?.llmApiBase || 'https://api.openai.com/v1'}
@@ -176,7 +171,7 @@ export function ModelConfigPage(): React.ReactElement {
             />
           </FormItem>
 
-          <FormItem label="Model">
+          <FormItem label={t('config.model')}>
             <Input
               value={form.llmModel}
               placeholder={config?.llmModel || 'gpt-4o-mini'}
@@ -185,7 +180,7 @@ export function ModelConfigPage(): React.ReactElement {
             />
           </FormItem>
 
-          <FormItem label="API Key">
+          <FormItem label={t('config.apiKey')}>
             <Input
               type="password"
               value={form.llmApiKey}
@@ -201,24 +196,25 @@ export function ModelConfigPage(): React.ReactElement {
       <Card
         title={t('config.embeddingTitle')}
         bordered
+        className="app-panel-card"
         style={{ marginBottom: '16px' }}
         bodyStyle={{ padding: '24px' }}
       >
         <Form layout="vertical" labelWidth={120}>
-          <FormItem label="Provider">
+          <FormItem label={t('config.provider')}>
             <Select
               value={form.embedProvider}
               onChange={(val) => handleFieldChange('embedProvider', val as string)}
               options={[
                 { label: 'OpenAI', value: 'openai' },
-                { label: 'Other', value: 'other' },
+                { label: t('config.otherProvider'), value: 'other' },
               ]}
               style={{ width: '100%' }}
               disabled={loading}
             />
           </FormItem>
 
-          <FormItem label="API Base URL">
+          <FormItem label={t('config.apiBaseUrl')}>
             <Input
               value={form.embedApiBase}
               placeholder={config?.embedApiBase || ''}
@@ -227,7 +223,7 @@ export function ModelConfigPage(): React.ReactElement {
             />
           </FormItem>
 
-          <FormItem label="Model">
+          <FormItem label={t('config.model')}>
             <Input
               value={form.embedModel}
               placeholder={config?.embedModel || 'text-embedding-3-small'}
@@ -236,7 +232,7 @@ export function ModelConfigPage(): React.ReactElement {
             />
           </FormItem>
 
-          <FormItem label="API Key">
+          <FormItem label={t('config.apiKey')}>
             <Input
               type="password"
               value={form.embedApiKey}

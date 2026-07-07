@@ -3,7 +3,6 @@ import {
   Table,
   Card,
   Button,
-  Space,
   Input,
   Select,
   Tag,
@@ -50,7 +49,8 @@ const STATUS_MAP: Record<string, { labelKey: string; theme: 'success' | 'warning
  * Conversations management page with filtering, detail view, and export.
  */
 export function ConversationsPage(): React.ReactElement {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
+  const dateLocale = language === 'zh' ? 'zh-CN' : 'en-US';
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ConversationRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -82,12 +82,12 @@ export function ConversationsPage(): React.ReactElement {
       setData((result.items ?? []) as ConversationRow[]);
       setTotal(result.total ?? 0);
     } catch (err) {
-      const message = err instanceof Error ? err.message : '加载对话列表失败';
+      const message = err instanceof Error ? err.message : t('conversations.listLoadFailed');
       MessagePlugin.error(message);
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, intentFilter, keyword]);
+  }, [page, pageSize, intentFilter, keyword, language]);
 
   useEffect(() => {
     fetchConversations();
@@ -105,7 +105,7 @@ export function ConversationsPage(): React.ReactElement {
       const result = await adminApi.getConversationDetail(sessionId);
       setDetail(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : '加载对话详情失败';
+      const message = err instanceof Error ? err.message : t('conversations.detailLoadFailed');
       MessagePlugin.error(message);
     } finally {
       setDetailLoading(false);
@@ -115,9 +115,9 @@ export function ConversationsPage(): React.ReactElement {
   const handleExport = async () => {
     try {
       await adminApi.exportConversations();
-      MessagePlugin.success('导出成功');
+      MessagePlugin.success(t('common.exportSuccess'));
     } catch (err) {
-      const message = err instanceof Error ? err.message : '导出失败';
+      const message = err instanceof Error ? err.message : t('common.exportFailed');
       MessagePlugin.error(message);
     }
   };
@@ -166,7 +166,7 @@ export function ConversationsPage(): React.ReactElement {
       width: 160,
       cell: ({ row }: { row: ConversationRow }) => (
         <span style={{ fontSize: '12px', color: 'var(--app-text-muted)' }}>
-          {new Date(row.createdAt).toLocaleString('zh-CN')}
+          {new Date(row.createdAt).toLocaleString(dateLocale)}
         </span>
       ),
     },
@@ -188,44 +188,48 @@ export function ConversationsPage(): React.ReactElement {
   ];
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', color: 'var(--app-text)' }}>
-      <h2 style={{ fontSize: '20px', fontWeight: 600, margin: '0 0 16px 0', color: 'var(--app-text)' }}>
-        {t('conversations.title')}
-      </h2>
+    <div className="app-page-container">
+      <div className="app-page-header">
+        <h2 className="app-page-title">
+          {t('conversations.title')}
+        </h2>
+      </div>
 
       {/* Filters */}
-      <Card bordered style={{ marginBottom: '16px' }}>
-        <Space direction="horizontal" size="medium" style={{ width: '100%' }}>
+      <Card bordered className="app-toolbar-card">
+        <div className="app-toolbar-row">
           <Input
             placeholder={t('conversations.searchPlaceholder')}
             value={keyword}
             onChange={(val: string) => setKeyword(val)}
             onEnter={handleSearch}
             prefixIcon={<SearchIcon />}
-            style={{ width: '240px' }}
+            className="app-filter-input"
             clearable
           />
           <Select
             value={intentFilter}
             onChange={(val: SelectValue) => setIntentFilter(String(val ?? ''))}
             options={intentOptions}
-            style={{ width: '140px' }}
+            className="app-filter-select"
           />
           <Button theme="primary" onClick={handleSearch} icon={<SearchIcon />}>
             {t('common.search')}
           </Button>
-          <div style={{ flex: 1 }} />
-          <Button variant="outline" onClick={handleExport} icon={<DownloadIcon />}>
-            {t('common.exportCsv')}
-          </Button>
-          <Button variant="outline" onClick={fetchConversations} icon={<RefreshIcon />}>
-            {t('common.refresh')}
-          </Button>
-        </Space>
+          <div className="app-toolbar-spacer" />
+          <div className="app-toolbar-actions">
+            <Button variant="outline" onClick={handleExport} icon={<DownloadIcon />}>
+              {t('common.exportCsv')}
+            </Button>
+            <Button variant="outline" onClick={fetchConversations} icon={<RefreshIcon />}>
+              {t('common.refresh')}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}
-      <Card bordered>
+      <Card bordered className="app-table-card">
         <Table
           data={data}
           columns={columns}
@@ -274,7 +278,7 @@ export function ConversationsPage(): React.ReactElement {
               <div>{t('conversations.session')}: {detail.session.id}</div>
               <div>{t('conversations.user')}: {detail.session.userIdent}</div>
               <div>{t('common.status')}: {detail.session.status}</div>
-              <div>{t('conversations.time')}: {new Date(detail.session.createdAt).toLocaleString('zh-CN')}</div>
+              <div>{t('conversations.time')}: {new Date(detail.session.createdAt).toLocaleString(dateLocale)}</div>
               {detail.escalation && (
                 <div style={{ marginTop: '4px', color: 'var(--app-warning)' }}>
                   {t('conversations.escalation')}: {detail.escalation.reason} ({detail.escalation.status})
@@ -306,7 +310,7 @@ export function ConversationsPage(): React.ReactElement {
                   }}
                 >
                   <span>{msg.role === 'user' ? t('conversations.user') : t('conversations.aiAgent')}</span>
-                  <span>{new Date(msg.createdAt).toLocaleString('zh-CN')}</span>
+                  <span>{new Date(msg.createdAt).toLocaleString(dateLocale)}</span>
                   {msg.intent && (
                     <Tag size="small" variant="light" theme="default">
                       {msg.intent}

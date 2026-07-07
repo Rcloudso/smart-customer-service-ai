@@ -1,7 +1,9 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { Loading } from 'tdesign-react';
-import { useTranslation } from './hooks/usePreferences';
+import { ConfigProvider, Loading } from 'tdesign-react';
+import zhCN from 'tdesign-react/es/locale/zh_CN';
+import enUS from 'tdesign-react/es/locale/en_US';
+import { usePreferences, useTranslation } from './hooks/usePreferences';
 
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -22,27 +24,32 @@ function PageFallback(): React.ReactElement {
 }
 
 export function App(): React.ReactElement {
+  const language = usePreferences((state) => state.language);
+  const globalConfig = language === 'zh' ? zhCN : enUS;
+
   return (
-    <BrowserRouter>
-      <Suspense fallback={<PageFallback />}>
-        <Routes>
-          <Route path="/" element={<ChatPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/admin"
-            element={
-              <AuthGuard>
-                <AdminLayout />
-              </AuthGuard>
-            }
-          >
-            <Route index element={<DashboardPage />} />
-            <Route path="conversations" element={<ConversationsPage />} />
-            <Route path="faq" element={<FaqManagementPage />} />
-            <Route path="config" element={<ModelConfigPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
-    </BrowserRouter>
+    <ConfigProvider globalConfig={globalConfig}>
+      <BrowserRouter>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={<ChatPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/admin"
+              element={
+                <AuthGuard>
+                  <AdminLayout />
+                </AuthGuard>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+              <Route path="conversations" element={<ConversationsPage />} />
+              <Route path="faq" element={<FaqManagementPage />} />
+              <Route path="config" element={<ModelConfigPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </ConfigProvider>
   );
 }

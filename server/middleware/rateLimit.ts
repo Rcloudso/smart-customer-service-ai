@@ -34,7 +34,7 @@ export const adminRateLimiter = rateLimit({
 /** Strict rate limiter for login endpoint — 5 req/min per IP. */
 export const loginRateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: config.rateLimit.login,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

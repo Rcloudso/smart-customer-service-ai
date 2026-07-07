@@ -1,154 +1,223 @@
 import { getLLMClient } from './llm-client';
+import { InMemoryVectorStore, VectorStore } from './vector-store';
 import { getDatabase } from '../db';
 import { FaqRepo } from '../db/repos/faq.repo';
-import { FaqMatch } from '../types/ai';
+import { FaqIndexStatus, FaqMatch } from '../types/ai';
 import { FaqEntry } from '../types/domain';
 import { logger } from '../utils/logger';
 
+const KEYWORD_MATCH_SCORE = 0.55;
+const KEYWORD_EXACT_MATCH_SCORE = 0.95;
+const EMBEDDING_BATCH_SIZE = 100;
+const HYBRID_SOURCE_PRIORITY: Record<NonNullable<FaqMatch['source']>, number> = {
+  hybrid: 3,
+  vector: 2,
+  keyword: 1,
+};
+
+export function buildFaqEmbeddingText(entry: FaqEntry): string {
+  return [
+    `Question: ${entry.question}`,
+    `Answer: ${entry.answer}`,
+    `Keywords: ${entry.keywords.join(' ')}`,
+  ].join('\n');
+}
+
 class SemanticSearch {
   private faqRepo: FaqRepo;
-  private index: Map<string, { entry: FaqEntry; embedding: number[] }>;
+  private vectorStore: VectorStore;
   private initialized: boolean;
+  private lastRebuiltAt: string | null;
+  private lastError: string | null;
 
-  constructor() {
+  constructor(vectorStore: VectorStore = new InMemoryVectorStore()) {
     const db = getDatabase();
     this.faqRepo = new FaqRepo(db);
-    this.index = new Map();
+    this.vectorStore = vectorStore;
     this.initialized = false;
+    this.lastRebuiltAt = null;
+    this.lastError = null;
   }
 
-  async initialize(): Promise<void> {
-    if (this.initialized) {
+  async initialize(force: boolean = false): Promise<void> {
+    if (this.initialized && !force) {
       return;
     }
+
+    this.vectorStore.clear();
 
     try {
       const entries = this.faqRepo.listAllActive();
       const entriesWithEmbeddings = entries.filter((e) => e.embedding && e.embedding.length > 0);
       const entriesWithoutEmbeddings = entries.filter((e) => !e.embedding || e.embedding.length === 0);
 
-      // Load entries that already have embeddings
       for (const entry of entriesWithEmbeddings) {
         if (entry.embedding) {
-          this.index.set(entry.id, { entry, embedding: entry.embedding });
+          this.vectorStore.upsert(entry, entry.embedding);
         }
       }
 
-      // Generate embeddings for entries without them
       if (entriesWithoutEmbeddings.length > 0) {
         logger.info({ count: entriesWithoutEmbeddings.length }, 'Generating embeddings for FAQ entries');
-        try {
-          const llmClient = getLLMClient();
-          const texts = entriesWithoutEmbeddings.map((e) => e.question);
-          const results = await llmClient.embed(texts);
-
-          for (let i = 0; i < entriesWithoutEmbeddings.length; i++) {
-            const entry = entriesWithoutEmbeddings[i];
-            const embedding = results[i]?.embedding;
-            if (embedding) {
-              this.faqRepo.update(entry.id, { embedding });
-              this.index.set(entry.id, { entry, embedding });
-            }
-          }
-        } catch (err) {
-          logger.warn({ err }, 'Failed to generate embeddings, will use fallback search');
-        }
+        await this.embedAndStore(entriesWithoutEmbeddings);
       }
 
       this.initialized = true;
-      logger.info({ indexSize: this.index.size }, 'Semantic search index initialized');
+      this.lastRebuiltAt = new Date().toISOString();
+      this.lastError = null;
+      logger.info({ indexSize: this.vectorStore.stats().indexedCount }, 'Semantic search index initialized');
     } catch (err) {
+      this.lastError = err instanceof Error ? err.message : String(err);
+      this.initialized = true;
       logger.error({ err }, 'Failed to initialize semantic search index');
-      this.initialized = true; // Mark as initialized to avoid repeated failures
     }
+  }
+
+  async rebuildIndex(): Promise<FaqIndexStatus> {
+    this.initialized = false;
+    await this.initialize(true);
+    return this.getStatus();
+  }
+
+  getStatus(): FaqIndexStatus {
+    const activeEntries = this.faqRepo.listAllActive();
+    const stats = this.vectorStore.stats();
+
+    return {
+      initialized: this.initialized,
+      activeCount: activeEntries.length,
+      indexedCount: stats.indexedCount,
+      missingEmbeddingCount: activeEntries.filter((entry) => !entry.embedding || entry.embedding.length === 0).length,
+      embeddingDimensions: stats.embeddingDimensions,
+      lastRebuiltAt: this.lastRebuiltAt ?? stats.updatedAt,
+      lastError: this.lastError,
+    };
   }
 
   async search(query: string, topK: number = 5): Promise<FaqMatch[]> {
     try {
-      if (this.index.size > 0) {
-        return await this.semanticSearch(query, topK);
+      await this.initialize();
+      const merged = new Map<string, FaqMatch>();
+
+      const vectorMatches = await this.semanticSearch(query, topK);
+      for (const match of vectorMatches) {
+        merged.set(match.id, match);
       }
-      return this.fallbackSearch(query, topK);
+
+      const keywordMatches = this.fallbackSearch(query, topK);
+      for (const match of keywordMatches) {
+        const existing = merged.get(match.id);
+        if (existing) {
+          const vectorScore = existing.vectorScore ?? existing.similarity;
+          const keywordScore = match.keywordScore ?? KEYWORD_MATCH_SCORE;
+          merged.set(match.id, {
+            ...existing,
+            source: 'hybrid',
+            vectorScore,
+            keywordScore,
+            similarity: Math.max(vectorScore, keywordScore),
+          });
+        } else {
+          merged.set(match.id, match);
+        }
+      }
+
+      return [...merged.values()]
+        .sort((a, b) => this.compareMatches(a, b))
+        .slice(0, topK);
     } catch (err) {
-      logger.warn({ err }, 'Semantic search failed, using fallback');
+      this.lastError = err instanceof Error ? err.message : String(err);
+      logger.warn({ err }, 'Hybrid FAQ search failed, using keyword fallback');
       return this.fallbackSearch(query, topK);
     }
   }
 
   private async semanticSearch(query: string, topK: number): Promise<FaqMatch[]> {
+    if (this.vectorStore.stats().indexedCount === 0) {
+      return [];
+    }
+
     const llmClient = getLLMClient();
     const queryEmbedResult = await llmClient.embed([query]);
     const queryEmbedding = queryEmbedResult[0]?.embedding;
 
     if (!queryEmbedding) {
-      return this.fallbackSearch(query, topK);
+      return [];
     }
 
-    const scored: FaqMatch[] = [];
-
-    for (const [, item] of this.index) {
-      const similarity = this.cosineSimilarity(queryEmbedding, item.embedding);
-      scored.push({
-        id: item.entry.id,
-        question: item.entry.question,
-        answer: item.entry.answer,
-        similarity,
-      });
-    }
-
-    scored.sort((a, b) => b.similarity - a.similarity);
-    return scored.slice(0, topK);
+    return this.vectorStore.search(queryEmbedding, topK).map((result) => ({
+      id: result.entry.id,
+      question: result.entry.question,
+      answer: result.entry.answer,
+      similarity: result.score,
+      source: 'vector',
+      vectorScore: result.score,
+    }));
   }
 
   private fallbackSearch(query: string, topK: number): FaqMatch[] {
     logger.debug({ query, topK }, 'Using LIKE fallback search');
     const results = this.faqRepo.searchLike(query, topK);
-    return results.map((entry) => ({
-      id: entry.id,
-      question: entry.question,
-      answer: entry.answer,
-      similarity: 0.5, // Default similarity for LIKE results
-    }));
+    return results.map((entry) => {
+      const keywordScore = this.keywordScore(query, entry);
+      return {
+        id: entry.id,
+        question: entry.question,
+        answer: entry.answer,
+        similarity: keywordScore,
+        source: 'keyword',
+        keywordScore,
+      };
+    });
   }
 
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) {
-      return 0;
+  private keywordScore(query: string, entry: FaqEntry): number {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return KEYWORD_MATCH_SCORE;
     }
 
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+    const haystack = [
+      entry.question,
+      entry.answer,
+      entry.keywords.join(' '),
+    ].join(' ').toLowerCase();
 
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+    if (haystack.includes(normalizedQuery)) {
+      return KEYWORD_EXACT_MATCH_SCORE;
     }
 
-    if (normA === 0 || normB === 0) {
-      return 0;
+    const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+    if (terms.length === 0) {
+      return KEYWORD_MATCH_SCORE;
     }
 
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    const matchedTerms = terms.filter((term) => haystack.includes(term)).length;
+    return KEYWORD_MATCH_SCORE + Math.min(0.1, matchedTerms / terms.length * 0.1);
+  }
+
+  private compareMatches(a: FaqMatch, b: FaqMatch): number {
+    const aScore = Math.max(a.vectorScore ?? 0, a.keywordScore ?? 0, a.similarity);
+    const bScore = Math.max(b.vectorScore ?? 0, b.keywordScore ?? 0, b.similarity);
+    const scoreDelta = bScore - aScore;
+    if (scoreDelta !== 0) {
+      return scoreDelta;
+    }
+
+    return HYBRID_SOURCE_PRIORITY[b.source ?? 'keyword'] - HYBRID_SOURCE_PRIORITY[a.source ?? 'keyword'];
   }
 
   async updateIndex(entry: FaqEntry): Promise<void> {
+    this.vectorStore.delete(entry.id);
+
     if (!entry.isActive) {
-      this.index.delete(entry.id);
       return;
     }
 
     try {
-      const llmClient = getLLMClient();
-      const results = await llmClient.embed([entry.question]);
-      const embedding = results[0]?.embedding;
-
-      if (embedding) {
-        this.faqRepo.update(entry.id, { embedding });
-        this.index.set(entry.id, { entry, embedding });
-      }
+      await this.embedAndStore([entry]);
     } catch (err) {
+      this.lastError = err instanceof Error ? err.message : String(err);
       logger.warn({ err, entryId: entry.id }, 'Failed to update index for entry');
     }
   }
@@ -157,9 +226,8 @@ class SemanticSearch {
     const activeEntries: FaqEntry[] = [];
 
     for (const entry of entries) {
-      if (!entry.isActive) {
-        this.index.delete(entry.id);
-      } else {
+      this.vectorStore.delete(entry.id);
+      if (entry.isActive) {
         activeEntries.push(entry);
       }
     }
@@ -169,19 +237,28 @@ class SemanticSearch {
     }
 
     try {
-      const llmClient = getLLMClient();
-      const results = await llmClient.embed(activeEntries.map((entry) => entry.question));
+      await this.embedAndStore(activeEntries);
+    } catch (err) {
+      this.lastError = err instanceof Error ? err.message : String(err);
+      logger.warn({ err, count: activeEntries.length }, 'Failed to update index for FAQ batch');
+    }
+  }
 
-      for (let i = 0; i < activeEntries.length; i++) {
-        const entry = activeEntries[i];
-        const embedding = results[i]?.embedding;
+  private async embedAndStore(entries: FaqEntry[]): Promise<void> {
+    const llmClient = getLLMClient();
+
+    for (let i = 0; i < entries.length; i += EMBEDDING_BATCH_SIZE) {
+      const batch = entries.slice(i, i + EMBEDDING_BATCH_SIZE);
+      const results = await llmClient.embed(batch.map((entry) => buildFaqEmbeddingText(entry)));
+
+      for (let j = 0; j < batch.length; j++) {
+        const entry = batch[j];
+        const embedding = results[j]?.embedding;
         if (embedding) {
-          this.faqRepo.update(entry.id, { embedding });
-          this.index.set(entry.id, { entry, embedding });
+          const updated = this.faqRepo.updateEmbedding(entry.id, embedding) ?? { ...entry, embedding };
+          this.vectorStore.upsert(updated, embedding);
         }
       }
-    } catch (err) {
-      logger.warn({ err, count: activeEntries.length }, 'Failed to update index for FAQ batch');
     }
   }
 }

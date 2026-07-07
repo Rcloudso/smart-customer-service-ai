@@ -7,6 +7,7 @@ export class FaqRepo {
   private db: Database.Database;
   private insertStmt: Database.Statement;
   private updateStmt: Database.Statement;
+  private updateEmbeddingStmt: Database.Statement;
   private deleteStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
   private listStmt: Database.Statement;
@@ -27,6 +28,9 @@ export class FaqRepo {
       `UPDATE faq_entries SET question = ?, answer = ?, category = ?, keywords = ?, embedding = ?, is_active = ?, updated_at = ?, updated_by = ?
        WHERE id = ?`,
     );
+    this.updateEmbeddingStmt = db.prepare(
+      'UPDATE faq_entries SET embedding = ? WHERE id = ?',
+    );
     this.deleteStmt = db.prepare('DELETE FROM faq_entries WHERE id = ?');
     this.findByIdStmt = db.prepare('SELECT * FROM faq_entries WHERE id = ?');
     this.listStmt = db.prepare(
@@ -40,7 +44,7 @@ export class FaqRepo {
     );
     this.searchLikeStmt = db.prepare(
       `SELECT * FROM faq_entries
-       WHERE is_active = 1 AND (question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\')
+       WHERE is_active = 1 AND (question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\' OR keywords LIKE ? ESCAPE '\\')
        ORDER BY updated_at DESC LIMIT ?`,
     );
     this.countByCategoryStmt = db.prepare(
@@ -125,6 +129,17 @@ export class FaqRepo {
     return this.findById(id);
   }
 
+  updateEmbedding(id: string, embedding: number[] | null): FaqEntry | null {
+    const result = this.updateEmbeddingStmt.run(
+      embedding ? JSON.stringify(embedding) : null,
+      id,
+    );
+    if (result.changes === 0) {
+      return null;
+    }
+    return this.findById(id);
+  }
+
   delete(id: string): boolean {
     const result = this.deleteStmt.run(id);
     return result.changes > 0;
@@ -152,7 +167,7 @@ export class FaqRepo {
 
   searchLike(query: string, limit: number): FaqEntry[] {
     const likeQuery = `%${escapeLikePattern(query)}%`;
-    const rows = this.searchLikeStmt.all(likeQuery, likeQuery, limit) as Record<string, unknown>[];
+    const rows = this.searchLikeStmt.all(likeQuery, likeQuery, likeQuery, limit) as Record<string, unknown>[];
     return rows.map((row) => this.mapRow(row));
   }
 

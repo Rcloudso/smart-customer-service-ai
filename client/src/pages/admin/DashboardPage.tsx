@@ -18,7 +18,7 @@ import type { AdminOverview, IntentDistribution, SatisfactionTrend } from '../..
  * Admin dashboard page — overview stats, intent distribution, and satisfaction trend.
  */
 export function DashboardPage(): React.ReactElement {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [intentDistribution, setIntentDistribution] = useState<IntentDistribution[]>([]);
@@ -46,12 +46,12 @@ export function DashboardPage(): React.ReactElement {
       setIntentDistribution(overviewData.intentDistribution ?? []);
       setTrend(trendData);
     } catch (err) {
-      const message = err instanceof Error ? err.message : '加载数据失败';
+      const message = err instanceof Error ? err.message : t('common.loadFailed');
       MessagePlugin.error(message);
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [dateRange, language]);
 
   useEffect(() => {
     fetchData();
@@ -67,20 +67,13 @@ export function DashboardPage(): React.ReactElement {
   };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', color: 'var(--app-text)' }}>
+    <div className="app-page-container">
       {/* Page header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '24px',
-        }}
-      >
-        <h2 style={{ fontSize: '20px', fontWeight: 600, margin: 0, color: 'var(--app-text)' }}>
+      <div className="app-page-header">
+        <h2 className="app-page-title">
           {t('dashboard.title')}
         </h2>
-        <Space>
+        <Space className="app-page-actions">
           <DateRangePicker
             placeholder={[t('dashboard.startDate'), t('dashboard.endDate')]}
             onChange={handleDateChange}
@@ -92,22 +85,15 @@ export function DashboardPage(): React.ReactElement {
 
       {/* Stats cards */}
       {loading && !overview ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        <div className="app-stat-grid">
           {Array.from({ length: 4 }, (_, i) => (
-            <Card key={i} bordered>
+            <Card key={i} bordered className="app-panel-card">
               <LoadingSkeleton height="80px" />
             </Card>
           ))}
         </div>
       ) : (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '16px',
-            marginBottom: '24px',
-          }}
-        >
+        <div className="app-stat-grid">
           <StatsCard
             title={t('dashboard.totalConversations')}
             value={overview?.totalConversations ?? 0}
@@ -140,15 +126,9 @@ export function DashboardPage(): React.ReactElement {
       )}
 
       {/* Charts row */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-          gap: '16px',
-        }}
-      >
+      <div className="app-chart-grid">
         {/* Intent distribution */}
-        <Card title={t('dashboard.intentDistribution')} bordered>
+        <Card title={t('dashboard.intentDistribution')} bordered className="app-panel-card">
           {loading ? (
             <LoadingSkeleton height="200px" count={4} />
           ) : (
@@ -157,7 +137,7 @@ export function DashboardPage(): React.ReactElement {
         </Card>
 
         {/* Escalation rate card */}
-        <Card title={t('dashboard.escalationRate')} bordered>
+        <Card title={t('dashboard.escalationRate')} bordered className="app-panel-card">
           {loading ? (
             <LoadingSkeleton height="200px" />
           ) : (
@@ -188,7 +168,7 @@ export function DashboardPage(): React.ReactElement {
       </div>
 
       {/* Satisfaction trend */}
-      <Card title={t('dashboard.satisfactionTrend')} bordered style={{ marginTop: '16px' }}>
+      <Card title={t('dashboard.satisfactionTrend')} bordered className="app-panel-card" style={{ marginTop: '16px' }}>
         {loading ? (
           <LoadingSkeleton height="300px" count={5} />
         ) : (

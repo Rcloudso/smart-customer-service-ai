@@ -1,0 +1,702 @@
+{
+  "app.loading": {
+    "zh": "加载中...",
+    "en": "Loading..."
+  },
+  "preferences.language": {
+    "zh": "语言",
+    "en": "Language"
+  },
+  "preferences.currentLanguageShort": {
+    "zh": "中",
+    "en": "EN"
+  },
+  "preferences.currentLanguageLabel": {
+    "zh": "中文",
+    "en": "English"
+  },
+  "preferences.theme": {
+    "zh": "主题",
+    "en": "Theme"
+  },
+  "preferences.light": {
+    "zh": "亮色",
+    "en": "Light"
+  },
+  "preferences.dark": {
+    "zh": "暗色",
+    "en": "Dark"
+  },
+  "preferences.switchToEnglish": {
+    "zh": "Switch to English",
+    "en": "Switch to English"
+  },
+  "preferences.switchToChinese": {
+    "zh": "切换到中文",
+    "en": "Switch to Chinese"
+  },
+  "preferences.switchToDark": {
+    "zh": "切换到暗色",
+    "en": "Switch to dark mode"
+  },
+  "preferences.switchToLight": {
+    "zh": "切换到亮色",
+    "en": "Switch to light mode"
+  },
+  "chat.title": {
+    "zh": "AI 智能客服",
+    "en": "AI Customer Service"
+  },
+  "chat.subtitle": {
+    "zh": "随时为您解答问题",
+    "en": "Ready to answer your questions"
+  },
+  "chat.clear": {
+    "zh": "清空对话",
+    "en": "Clear chat"
+  },
+  "chat.cleared": {
+    "zh": "对话已清空",
+    "en": "Chat cleared"
+  },
+  "chat.history": {
+    "zh": "历史记录",
+    "en": "History"
+  },
+  "chat.historyTitle": {
+    "zh": "历史对话",
+    "en": "Chat history"
+  },
+  "chat.historyEmpty": {
+    "zh": "暂无历史对话",
+    "en": "No chat history yet"
+  },
+  "chat.historyLoadFailed": {
+    "zh": "历史记录加载失败",
+    "en": "Failed to load chat history"
+  },
+  "chat.historyLoaded": {
+    "zh": "历史对话已加载",
+    "en": "Chat history loaded"
+  },
+  "chat.historyMessageCount": {
+    "zh": "{count} 条消息",
+    "en": "{count} messages"
+  },
+  "chat.newChat": {
+    "zh": "新对话",
+    "en": "New chat"
+  },
+  "chat.greeting": {
+    "zh": "您好，有什么可以帮您？",
+    "en": "Hi, how can I help?"
+  },
+  "chat.intro": {
+    "zh": "我可以帮您处理退款申请、查询订单状态、解决技术问题，或回答其他一般咨询。请在下方输入您的问题。",
+    "en": "I can help with refunds, order status, technical issues, and general questions. Type your question below."
+  },
+  "chat.thinking": {
+    "zh": "思考中...",
+    "en": "Thinking..."
+  },
+  "chat.user": {
+    "zh": "我",
+    "en": "Me"
+  },
+  "chat.assistant": {
+    "zh": "AI 客服",
+    "en": "AI Agent"
+  },
+  "chat.faqReferences": {
+    "zh": "相关FAQ参考：",
+    "en": "Related FAQ references:"
+  },
+  "chat.faqQuestionPrefix": {
+    "zh": "问：",
+    "en": "Q: "
+  },
+  "chat.faqAnswerPrefix": {
+    "zh": "答：",
+    "en": "A: "
+  },
+  "chat.inputPlaceholder": {
+    "zh": "输入您的问题，Enter 发送，Shift+Enter 换行",
+    "en": "Type your question. Enter to send, Shift+Enter for a new line"
+  },
+  "chat.rating": {
+    "zh": "满意度：",
+    "en": "Satisfaction:"
+  },
+  "chat.rated": {
+    "zh": "已评价",
+    "en": "Rated"
+  },
+  "chat.rating.1": {
+    "zh": "非常不满意",
+    "en": "Very dissatisfied"
+  },
+  "chat.rating.2": {
+    "zh": "不满意",
+    "en": "Dissatisfied"
+  },
+  "chat.rating.3": {
+    "zh": "一般",
+    "en": "Neutral"
+  },
+  "chat.rating.4": {
+    "zh": "满意",
+    "en": "Satisfied"
+  },
+  "chat.rating.5": {
+    "zh": "非常满意",
+    "en": "Very satisfied"
+  },
+  "chat.ratingThanks": {
+    "zh": "感谢您的评价！",
+    "en": "Thanks for your feedback!"
+  },
+  "chat.errorPrefix": {
+    "zh": "错误",
+    "en": "Error"
+  },
+  "chat.sendFailed": {
+    "zh": "发送消息失败",
+    "en": "Failed to send message"
+  },
+  "chat.requestFailed": {
+    "zh": "请求失败",
+    "en": "Request failed"
+  },
+  "chat.streamUnsupported": {
+    "zh": "浏览器不支持流式响应",
+    "en": "This browser does not support streaming responses"
+  },
+  "chat.satisfactionSubmitFailed": {
+    "zh": "提交评分失败",
+    "en": "Failed to submit rating"
+  },
+  "login.title": {
+    "zh": "管理员登录",
+    "en": "Admin Login"
+  },
+  "login.username": {
+    "zh": "用户名",
+    "en": "Username"
+  },
+  "login.password": {
+    "zh": "密码",
+    "en": "Password"
+  },
+  "login.usernamePlaceholder": {
+    "zh": "请输入用户名",
+    "en": "Enter username"
+  },
+  "login.passwordPlaceholder": {
+    "zh": "请输入密码",
+    "en": "Enter password"
+  },
+  "login.submit": {
+    "zh": "登录",
+    "en": "Log in"
+  },
+  "login.success": {
+    "zh": "登录成功",
+    "en": "Logged in"
+  },
+  "login.failure": {
+    "zh": "登录失败",
+    "en": "Login failed"
+  },
+  "admin.title": {
+    "zh": "管理后台",
+    "en": "Admin Console"
+  },
+  "admin.logout": {
+    "zh": "退出登录",
+    "en": "Log out"
+  },
+  "admin.userFallback": {
+    "zh": "管理员",
+    "en": "Admin"
+  },
+  "nav.dashboard": {
+    "zh": "数据概览",
+    "en": "Overview"
+  },
+  "nav.conversations": {
+    "zh": "对话管理",
+    "en": "Conversations"
+  },
+  "nav.faq": {
+    "zh": "FAQ管理",
+    "en": "FAQ"
+  },
+  "nav.config": {
+    "zh": "模型配置",
+    "en": "Model Config"
+  },
+  "dashboard.title": {
+    "zh": "数据概览",
+    "en": "Overview"
+  },
+  "dashboard.startDate": {
+    "zh": "开始日期",
+    "en": "Start date"
+  },
+  "dashboard.endDate": {
+    "zh": "结束日期",
+    "en": "End date"
+  },
+  "dashboard.totalConversations": {
+    "zh": "总会话数",
+    "en": "Conversations"
+  },
+  "dashboard.totalMessages": {
+    "zh": "总消息数",
+    "en": "Messages"
+  },
+  "dashboard.avgSatisfaction": {
+    "zh": "平均满意度",
+    "en": "Avg. satisfaction"
+  },
+  "dashboard.activeSessions": {
+    "zh": "正在活跃",
+    "en": "Active sessions"
+  },
+  "dashboard.intentDistribution": {
+    "zh": "意图分布",
+    "en": "Intent distribution"
+  },
+  "dashboard.escalationRate": {
+    "zh": "转人工率",
+    "en": "Escalation rate"
+  },
+  "dashboard.escalationCaption": {
+    "zh": "转人工会话占比（总会话数: {count}）",
+    "en": "Escalated conversations (total: {count})"
+  },
+  "dashboard.satisfactionTrend": {
+    "zh": "满意度趋势",
+    "en": "Satisfaction trend"
+  },
+  "dashboard.noData": {
+    "zh": "暂无数据",
+    "en": "No data"
+  },
+  "dashboard.noTrendData": {
+    "zh": "暂无趋势数据",
+    "en": "No trend data"
+  },
+  "dashboard.date": {
+    "zh": "日期",
+    "en": "Date"
+  },
+  "dashboard.avgRating": {
+    "zh": "平均评分",
+    "en": "Average rating"
+  },
+  "dashboard.ratingCount": {
+    "zh": "评价数量",
+    "en": "Ratings"
+  },
+  "dashboard.ratingTrend": {
+    "zh": "评分趋势",
+    "en": "Rating trend"
+  },
+  "unit.count": {
+    "zh": "个",
+    "en": ""
+  },
+  "unit.messages": {
+    "zh": "条",
+    "en": "msgs"
+  },
+  "unit.score": {
+    "zh": "/5分",
+    "en": "/5"
+  },
+  "unit.sessions": {
+    "zh": "个会话",
+    "en": "sessions"
+  },
+  "common.search": {
+    "zh": "查询",
+    "en": "Search"
+  },
+  "common.exportCsv": {
+    "zh": "导出CSV",
+    "en": "Export CSV"
+  },
+  "common.refresh": {
+    "zh": "刷新",
+    "en": "Refresh"
+  },
+  "common.actions": {
+    "zh": "操作",
+    "en": "Actions"
+  },
+  "common.status": {
+    "zh": "状态",
+    "en": "Status"
+  },
+  "common.loading": {
+    "zh": "加载中...",
+    "en": "Loading..."
+  },
+  "common.save": {
+    "zh": "保存",
+    "en": "Save"
+  },
+  "common.create": {
+    "zh": "创建",
+    "en": "Create"
+  },
+  "common.cancel": {
+    "zh": "取消",
+    "en": "Cancel"
+  },
+  "common.delete": {
+    "zh": "删除",
+    "en": "Delete"
+  },
+  "common.edit": {
+    "zh": "编辑",
+    "en": "Edit"
+  },
+  "common.all": {
+    "zh": "全部",
+    "en": "All"
+  },
+  "common.loadFailed": {
+    "zh": "加载失败",
+    "en": "Failed to load"
+  },
+  "common.exportSuccess": {
+    "zh": "导出成功",
+    "en": "Exported"
+  },
+  "common.exportFailed": {
+    "zh": "导出失败",
+    "en": "Export failed"
+  },
+  "common.deleteFailed": {
+    "zh": "删除失败",
+    "en": "Delete failed"
+  },
+  "common.operationFailed": {
+    "zh": "操作失败",
+    "en": "Operation failed"
+  },
+  "intent.all": {
+    "zh": "全部意图",
+    "en": "All intents"
+  },
+  "intent.refund": {
+    "zh": "退款",
+    "en": "Refund"
+  },
+  "intent.order": {
+    "zh": "订单",
+    "en": "Order"
+  },
+  "intent.technical": {
+    "zh": "技术",
+    "en": "Technical"
+  },
+  "intent.general": {
+    "zh": "通用",
+    "en": "General"
+  },
+  "status.active": {
+    "zh": "进行中",
+    "en": "Active"
+  },
+  "status.closed": {
+    "zh": "已关闭",
+    "en": "Closed"
+  },
+  "status.escalated": {
+    "zh": "已转人工",
+    "en": "Escalated"
+  },
+  "conversations.title": {
+    "zh": "对话管理",
+    "en": "Conversations"
+  },
+  "conversations.searchPlaceholder": {
+    "zh": "搜索关键词...",
+    "en": "Search keyword..."
+  },
+  "conversations.sessionId": {
+    "zh": "会话ID",
+    "en": "Session ID"
+  },
+  "conversations.userIdent": {
+    "zh": "用户标识",
+    "en": "User"
+  },
+  "conversations.messageCount": {
+    "zh": "消息数",
+    "en": "Messages"
+  },
+  "conversations.createdAt": {
+    "zh": "创建时间",
+    "en": "Created at"
+  },
+  "conversations.viewDetail": {
+    "zh": "查看详情",
+    "en": "View details"
+  },
+  "conversations.detailTitle": {
+    "zh": "对话详情",
+    "en": "Conversation details"
+  },
+  "conversations.session": {
+    "zh": "会话ID",
+    "en": "Session ID"
+  },
+  "conversations.user": {
+    "zh": "用户",
+    "en": "User"
+  },
+  "conversations.time": {
+    "zh": "时间",
+    "en": "Time"
+  },
+  "conversations.escalation": {
+    "zh": "转人工",
+    "en": "Escalation"
+  },
+  "conversations.aiAgent": {
+    "zh": "AI客服",
+    "en": "AI Agent"
+  },
+  "conversations.rating": {
+    "zh": "评分",
+    "en": "Rating"
+  },
+  "conversations.listLoadFailed": {
+    "zh": "加载对话列表失败",
+    "en": "Failed to load conversations"
+  },
+  "conversations.detailLoadFailed": {
+    "zh": "加载对话详情失败",
+    "en": "Failed to load conversation details"
+  },
+  "faq.title": {
+    "zh": "FAQ 管理",
+    "en": "FAQ Management"
+  },
+  "faq.searchPlaceholder": {
+    "zh": "搜索问题关键词...",
+    "en": "Search FAQ keyword..."
+  },
+  "faq.add": {
+    "zh": "新增FAQ",
+    "en": "Add FAQ"
+  },
+  "faq.import": {
+    "zh": "导入",
+    "en": "Import"
+  },
+  "faq.question": {
+    "zh": "问题",
+    "en": "Question"
+  },
+  "faq.answer": {
+    "zh": "回答",
+    "en": "Answer"
+  },
+  "faq.category": {
+    "zh": "类别",
+    "en": "Category"
+  },
+  "faq.keywords": {
+    "zh": "关键词",
+    "en": "Keywords"
+  },
+  "faq.updatedAt": {
+    "zh": "更新时间",
+    "en": "Updated at"
+  },
+  "faq.active": {
+    "zh": "启用",
+    "en": "Active"
+  },
+  "faq.inactive": {
+    "zh": "禁用",
+    "en": "Inactive"
+  },
+  "faq.createTitle": {
+    "zh": "新增FAQ",
+    "en": "Add FAQ"
+  },
+  "faq.editTitle": {
+    "zh": "编辑FAQ",
+    "en": "Edit FAQ"
+  },
+  "faq.questionPlaceholder": {
+    "zh": "请输入FAQ问题",
+    "en": "Enter FAQ question"
+  },
+  "faq.answerPlaceholder": {
+    "zh": "请输入FAQ回答",
+    "en": "Enter FAQ answer"
+  },
+  "faq.categoryPlaceholder": {
+    "zh": "请选择",
+    "en": "Select"
+  },
+  "faq.keywordsPlaceholder": {
+    "zh": "退款,退货,退钱",
+    "en": "refund, return, money back"
+  },
+  "faq.keywordsHelp": {
+    "zh": "多个关键词用逗号分隔，如：退款,退货,退钱",
+    "en": "Separate keywords with commas, e.g. refund, return, money back"
+  },
+  "faq.deleteConfirm": {
+    "zh": "确定要删除此FAQ条目吗？",
+    "en": "Delete this FAQ entry?"
+  },
+  "faq.requiredQuestion": {
+    "zh": "请输入问题",
+    "en": "Enter a question"
+  },
+  "faq.requiredAnswer": {
+    "zh": "请输入回答",
+    "en": "Enter an answer"
+  },
+  "faq.requiredCategory": {
+    "zh": "请选择类别",
+    "en": "Select a category"
+  },
+  "faq.emptyWarning": {
+    "zh": "问题和回答不能为空",
+    "en": "Question and answer cannot be empty"
+  },
+  "faq.indexStatus": {
+    "zh": "索引状态",
+    "en": "Index status"
+  },
+  "faq.indexSummary": {
+    "zh": "已索引 {indexed}/{active}，缺失 embedding {missing}",
+    "en": "Indexed {indexed}/{active}, missing embeddings {missing}"
+  },
+  "faq.indexInitialized": {
+    "zh": "已初始化",
+    "en": "Initialized"
+  },
+  "faq.indexNotInitialized": {
+    "zh": "未初始化",
+    "en": "Not initialized"
+  },
+  "faq.embeddingDimensions": {
+    "zh": "维度 {count}",
+    "en": "{count} dimensions"
+  },
+  "faq.lastRebuiltAt": {
+    "zh": "上次重建：{time}",
+    "en": "Last rebuilt: {time}"
+  },
+  "faq.lastRebuiltNever": {
+    "zh": "尚未重建",
+    "en": "Not rebuilt yet"
+  },
+  "faq.indexError": {
+    "zh": "索引错误",
+    "en": "Index error"
+  },
+  "faq.rebuildIndex": {
+    "zh": "重建索引",
+    "en": "Rebuild index"
+  },
+  "faq.indexRebuilt": {
+    "zh": "FAQ索引已重建",
+    "en": "FAQ index rebuilt"
+  },
+  "faq.indexStatusLoadFailed": {
+    "zh": "索引状态加载失败",
+    "en": "Failed to load index status"
+  },
+  "faq.indexRebuildFailed": {
+    "zh": "索引重建失败",
+    "en": "Failed to rebuild index"
+  },
+  "faq.listLoadFailed": {
+    "zh": "加载FAQ列表失败",
+    "en": "Failed to load FAQ list"
+  },
+  "faq.deleted": {
+    "zh": "FAQ已删除",
+    "en": "FAQ deleted"
+  },
+  "faq.created": {
+    "zh": "FAQ创建成功",
+    "en": "FAQ created"
+  },
+  "faq.updated": {
+    "zh": "FAQ更新成功",
+    "en": "FAQ updated"
+  },
+  "faq.imported": {
+    "zh": "成功导入 {imported}/{total} 条FAQ",
+    "en": "Imported {imported}/{total} FAQ entries"
+  },
+  "faq.importFailed": {
+    "zh": "导入失败",
+    "en": "Import failed"
+  },
+  "config.title": {
+    "zh": "模型配置",
+    "en": "Model Configuration"
+  },
+  "config.save": {
+    "zh": "保存配置",
+    "en": "Save configuration"
+  },
+  "config.llmTitle": {
+    "zh": "LLM 对话模型",
+    "en": "LLM Chat Model"
+  },
+  "config.embeddingTitle": {
+    "zh": "Embedding 模型",
+    "en": "Embedding Model"
+  },
+  "config.providerHelp": {
+    "zh": "当前仅支持 OpenAI 兼容接口",
+    "en": "OpenAI-compatible APIs are currently supported"
+  },
+  "config.provider": {
+    "zh": "服务商",
+    "en": "Provider"
+  },
+  "config.apiBaseUrl": {
+    "zh": "API Base URL",
+    "en": "API Base URL"
+  },
+  "config.model": {
+    "zh": "模型",
+    "en": "Model"
+  },
+  "config.apiKey": {
+    "zh": "API Key",
+    "en": "API Key"
+  },
+  "config.otherProvider": {
+    "zh": "其他",
+    "en": "Other"
+  },
+  "config.loadFailed": {
+    "zh": "加载模型配置失败",
+    "en": "Failed to load model configuration"
+  },
+  "config.saved": {
+    "zh": "模型配置保存成功",
+    "en": "Model configuration saved"
+  },
+  "config.saveFailed": {
+    "zh": "保存模型配置失败",
+    "en": "Failed to save model configuration"
+  }
+}

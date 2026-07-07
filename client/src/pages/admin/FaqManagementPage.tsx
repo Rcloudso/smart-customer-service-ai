@@ -24,7 +24,7 @@ import {
   UploadIcon,
 } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
-import type { FaqEntry, IntentCategory } from '../../api/admin';
+import type { FaqEntry, FaqIndexStatus, IntentCategory } from '../../api/admin';
 import { useTranslation } from '../../hooks/usePreferences';
 
 /** Simplified column definition to avoid depending on TDesign's internal TableColumn type. */
@@ -71,7 +71,8 @@ const EMPTY_FAQ_FORM: FaqFormValues = {
  * FAQ management page with CRUD operations, import/export, and search.
  */
 export function FaqManagementPage(): React.ReactElement {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
+  const dateLocale = language === 'zh' ? 'zh-CN' : 'en-US';
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<FaqEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -79,6 +80,9 @@ export function FaqManagementPage(): React.ReactElement {
   const [pageSize, setPageSize] = useState(20);
   const [category, setCategory] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [indexStatus, setIndexStatus] = useState<FaqIndexStatus | null>(null);
+  const [indexLoading, setIndexLoading] = useState(false);
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
 
   // Dialog state
   const [dialogVisible, setDialogVisible] = useState(false);
@@ -104,16 +108,33 @@ export function FaqManagementPage(): React.ReactElement {
       setData(result.items ?? []);
       setTotal(result.total ?? 0);
     } catch (err) {
-      const message = err instanceof Error ? err.message : '加载FAQ列表失败';
+      const message = err instanceof Error ? err.message : t('faq.listLoadFailed');
       MessagePlugin.error(message);
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, category, keyword]);
+  }, [page, pageSize, category, keyword, language]);
 
   useEffect(() => {
     fetchFaqs();
   }, [fetchFaqs]);
+
+  const fetchIndexStatus = useCallback(async () => {
+    setIndexLoading(true);
+    try {
+      const status = await adminApi.getFaqIndexStatus();
+      setIndexStatus(status);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('faq.indexStatusLoadFailed');
+      MessagePlugin.error(message);
+    } finally {
+      setIndexLoading(false);
+    }
+  }, [language]);
+
+  useEffect(() => {
+    fetchIndexStatus();
+  }, [fetchIndexStatus]);
 
   const handleSearch = () => {
     setPage(1);
@@ -142,10 +163,11 @@ export function FaqManagementPage(): React.ReactElement {
   const handleDelete = async (id: string) => {
     try {
       await adminApi.deleteFaq(id);
-      MessagePlugin.success('FAQ已删除');
+      MessagePlugin.success(t('faq.deleted'));
       fetchFaqs();
+      fetchIndexStatus();
     } catch (err) {
-      const message = err instanceof Error ? err.message : '删除失败';
+      const message = err instanceof Error ? err.message : t('common.deleteFailed');
       MessagePlugin.error(message);
     }
   };
@@ -173,7 +195,7 @@ export function FaqManagementPage(): React.ReactElement {
     try {
       if (dialogMode === 'create') {
         await adminApi.createFaq({ question, answer, category: categoryVal, keywords });
-        MessagePlugin.success('FAQ创建成功');
+        MessagePlugin.success(t('faq.created'));
       } else if (editingId) {
         await adminApi.updateFaq(editingId, {
           question,
@@ -181,12 +203,13 @@ export function FaqManagementPage(): React.ReactElement {
           category: categoryVal,
           keywords,
         });
-        MessagePlugin.success('FAQ更新成功');
+        MessagePlugin.success(t('faq.updated'));
       }
       setDialogVisible(false);
       fetchFaqs();
+      fetchIndexStatus();
     } catch (err) {
-      const message = err instanceof Error ? err.message : '操作失败';
+      const message = err instanceof Error ? err.message : t('common.operationFailed');
       MessagePlugin.error(message);
     } finally {
       setSubmitting(false);
@@ -196,9 +219,9 @@ export function FaqManagementPage(): React.ReactElement {
   const handleExport = async () => {
     try {
       await adminApi.exportFaq();
-      MessagePlugin.success('导出成功');
+      MessagePlugin.success(t('common.exportSuccess'));
     } catch (err) {
-      const message = err instanceof Error ? err.message : '导出失败';
+      const message = err instanceof Error ? err.message : t('common.exportFailed');
       MessagePlugin.error(message);
     }
   };
@@ -206,11 +229,27 @@ export function FaqManagementPage(): React.ReactElement {
   const handleImport = async (file: File) => {
     try {
       const result = await adminApi.importFaq(file);
-      MessagePlugin.success(`成功导入 ${result.imported}/${result.total} 条FAQ`);
+      MessagePlugin.success(t('faq.imported', { imported: result.imported, total: result.total }));
+      fetchFaqs();
+      fetchIndexStatus();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('faq.importFailed');
+      MessagePlugin.error(message);
+    }
+  };
+
+  const handleRebuildIndex = async () => {
+    setRebuildingIndex(true);
+    try {
+      const status = await adminApi.rebuildFaqIndex();
+      setIndexStatus(status);
+      MessagePlugin.success(t('faq.indexRebuilt'));
       fetchFaqs();
     } catch (err) {
-      const message = err instanceof Error ? err.message : '导入失败';
+      const message = err instanceof Error ? err.message : t('faq.indexRebuildFailed');
       MessagePlugin.error(message);
+    } finally {
+      setRebuildingIndex(false);
     }
   };
 
@@ -279,7 +318,7 @@ export function FaqManagementPage(): React.ReactElement {
       width: 150,
       cell: ({ row }: { row: FaqEntry }) => (
         <span style={{ fontSize: '12px', color: 'var(--app-text-muted)' }}>
-          {new Date(row.updatedAt).toLocaleString('zh-CN')}
+          {new Date(row.updatedAt).toLocaleString(dateLocale)}
         </span>
       ),
     },
@@ -313,63 +352,113 @@ export function FaqManagementPage(): React.ReactElement {
   ];
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', color: 'var(--app-text)' }}>
-      <h2 style={{ fontSize: '20px', fontWeight: 600, margin: '0 0 16px 0', color: 'var(--app-text)' }}>
-        {t('faq.title')}
-      </h2>
+    <div className="app-page-container">
+      <div className="app-page-header">
+        <h2 className="app-page-title">
+          {t('faq.title')}
+        </h2>
+      </div>
 
       {/* Filters & actions */}
-      <Card bordered style={{ marginBottom: '16px' }}>
-        <Space direction="horizontal" size="medium" style={{ width: '100%', flexWrap: 'wrap' }}>
+      <Card bordered className="app-toolbar-card">
+        <div className="app-toolbar-row">
           <Input
             placeholder={t('faq.searchPlaceholder')}
             value={keyword}
             onChange={(val: string) => setKeyword(val)}
             onEnter={handleSearch}
             prefixIcon={<SearchIcon />}
-            style={{ width: '220px' }}
+            className="app-filter-input"
             clearable
           />
           <Select
             value={category}
             onChange={(val: SelectValue) => setCategory(String(val ?? ''))}
             options={categoryOptions}
-            style={{ width: '120px' }}
+            className="app-filter-select"
           />
           <Button theme="primary" onClick={handleSearch} icon={<SearchIcon />}>
             {t('common.search')}
           </Button>
-          <div style={{ flex: 1 }} />
-          <Button theme="primary" onClick={handleCreate} icon={<AddIcon />}>
-            {t('faq.add')}
-          </Button>
-          <Upload
-            action="#"
-            theme="file"
-            accept=".csv,.json"
-            autoUpload={false}
-            onChange={(files: UploadFile | UploadFile[]) => {
-              const file = (Array.isArray(files) ? files[0] : files) as UploadFile;
-              if (file?.raw) {
-                handleImport(file.raw as File);
-              }
-            }}
-          >
-            <Button variant="outline" icon={<UploadIcon />}>
-              {t('faq.import')}
+          <div className="app-toolbar-spacer" />
+          <div className="app-toolbar-actions">
+            <Button theme="primary" onClick={handleCreate} icon={<AddIcon />}>
+              {t('faq.add')}
             </Button>
-          </Upload>
-          <Button variant="outline" onClick={handleExport} icon={<DownloadIcon />}>
-            {t('common.exportCsv')}
-          </Button>
-          <Button variant="outline" onClick={fetchFaqs} icon={<RefreshIcon />}>
-            {t('common.refresh')}
-          </Button>
-        </Space>
+            <Upload
+              action="#"
+              theme="file"
+              accept=".csv,.json"
+              autoUpload={false}
+              onChange={(files: UploadFile | UploadFile[]) => {
+                const file = (Array.isArray(files) ? files[0] : files) as UploadFile;
+                if (file?.raw) {
+                  handleImport(file.raw as File);
+                }
+              }}
+            >
+              <Button variant="outline" icon={<UploadIcon />}>
+                {t('faq.import')}
+              </Button>
+            </Upload>
+            <Button variant="outline" onClick={handleExport} icon={<DownloadIcon />}>
+              {t('common.exportCsv')}
+            </Button>
+            <Button variant="outline" onClick={fetchFaqs} icon={<RefreshIcon />}>
+              {t('common.refresh')}
+            </Button>
+          </div>
+          <div className="app-index-status" data-testid="faq-index-status">
+            <span className="app-index-status__label">{t('faq.indexStatus')}</span>
+            <Tag
+              theme={indexStatus?.initialized ? 'success' : 'warning'}
+              variant="light"
+              size="small"
+            >
+              {indexStatus?.initialized ? t('faq.indexInitialized') : t('faq.indexNotInitialized')}
+            </Tag>
+            <span className="app-index-status__summary">
+              {indexLoading || !indexStatus
+                ? t('common.loading')
+                : t('faq.indexSummary', {
+                  indexed: indexStatus.indexedCount,
+                  active: indexStatus.activeCount,
+                  missing: indexStatus.missingEmbeddingCount,
+                })}
+            </span>
+            {indexStatus?.embeddingDimensions ? (
+              <Tag variant="outline" size="small">
+                {t('faq.embeddingDimensions', { count: indexStatus.embeddingDimensions })}
+              </Tag>
+            ) : null}
+            <span className="app-index-status__meta">
+              {indexStatus?.lastRebuiltAt
+                ? t('faq.lastRebuiltAt', {
+                  time: new Date(indexStatus.lastRebuiltAt).toLocaleString(dateLocale),
+                })
+                : t('faq.lastRebuiltNever')}
+            </span>
+            {indexStatus?.lastError ? (
+              <span className="app-index-status__error">
+                {t('faq.indexError')}: {indexStatus.lastError}
+              </span>
+            ) : null}
+            <div className="app-toolbar-spacer" />
+            <Button
+              variant="outline"
+              loading={rebuildingIndex}
+              onClick={handleRebuildIndex}
+              icon={<RefreshIcon />}
+              data-testid="faq-rebuild-index-button"
+            >
+              {t('faq.rebuildIndex')}
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* Table */}
-      <Card bordered>
+      <Card bordered className="app-table-card">
         <Table
           data={data}
           columns={columns}

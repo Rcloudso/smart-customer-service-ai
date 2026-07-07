@@ -40,15 +40,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps): React.R
 
   return (
     <div
-      style={{
-        padding: '12px 16px',
-        backgroundColor: 'var(--app-surface)',
-        borderTop: '1px solid var(--app-border)',
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: '12px',
-        flexShrink: 0,
-      }}
+      className="app-chat-input-dock"
     >
       <Textarea
         ref={textareaRef as React.Ref<HTMLTextAreaElement> as any}
@@ -59,6 +51,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps): React.R
         disabled={disabled}
         autosize={{ minRows: 1, maxRows: 4 }}
         style={{ flex: 1 }}
+        data-testid="chat-input"
       />
       <Button
         theme="primary"
@@ -67,6 +60,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps): React.R
         onClick={handleSend}
         disabled={disabled || !value.trim()}
         style={{ flexShrink: 0 }}
+        data-testid="chat-send-button"
       />
     </div>
   );

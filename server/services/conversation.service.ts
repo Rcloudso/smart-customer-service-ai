@@ -2,7 +2,7 @@ import { getDatabase } from '../db';
 import { SessionRepo } from '../db/repos/session.repo';
 import { MessageRepo } from '../db/repos/message.repo';
 import { Session, SessionStatus, Message, MessageRole } from '../types/domain';
-import { ConversationDetail, PaginationResponse } from '../types/api';
+import { ChatHistorySession, ConversationDetail, PaginationResponse } from '../types/api';
 import { NotFoundError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -16,11 +16,16 @@ export class ConversationService {
     this.messageRepo = new MessageRepo(db);
   }
 
+  createSession(userIdent: string): Session {
+    const session = this.sessionRepo.create(userIdent);
+    logger.info({ sessionId: session.id, userIdent }, 'New session created');
+    return session;
+  }
+
   getOrCreateSession(userIdent: string): Session {
     let session = this.sessionRepo.findByUserIdent(userIdent, SessionStatus.ACTIVE);
     if (!session) {
-      session = this.sessionRepo.create(userIdent);
-      logger.info({ sessionId: session.id, userIdent }, 'New session created');
+      session = this.createSession(userIdent);
     }
     return session;
   }
@@ -32,13 +37,15 @@ export class ConversationService {
     intent?: string | null;
     intentConf?: number | null;
   }): Message {
-    return this.messageRepo.create({
+    const message = this.messageRepo.create({
       sessionId: params.sessionId,
       role: params.role,
       content: params.content,
       intent: params.intent as Message['intent'],
       intentConf: params.intentConf,
     });
+    this.sessionRepo.touch(params.sessionId);
+    return message;
   }
 
   getMessages(sessionId: string): Message[] {
@@ -61,6 +68,31 @@ export class ConversationService {
       ...session,
       messageCount: this.messageRepo.countBySession(session.id),
     }));
+
+    return { items, total, page, pageSize };
+  }
+
+  getUserConversations(params: {
+    userIdent: string;
+    page?: number;
+    pageSize?: number;
+  }): PaginationResponse<ChatHistorySession> {
+    const page = params.page ?? 1;
+    const pageSize = Math.min(params.pageSize ?? 20, 50);
+    const offset = (page - 1) * pageSize;
+
+    const sessions = this.sessionRepo.listByUserIdent(params.userIdent, pageSize, offset);
+    const total = this.sessionRepo.countByUserIdent(params.userIdent);
+
+    const items = sessions.map((session) => {
+      const messages = this.messageRepo.findBySession(session.id);
+      const firstUserMessage = messages.find((message) => message.role === MessageRole.USER);
+      return {
+        ...session,
+        messageCount: messages.length,
+        preview: firstUserMessage?.content ?? null,
+      };
+    });
 
     return { items, total, page, pageSize };
   }
@@ -93,6 +125,15 @@ export class ConversationService {
       })),
       escalation: null, // Will be populated by escalation service if needed
     };
+  }
+
+  getUserConversationDetail(userIdent: string, sessionId: string): ConversationDetail {
+    const session = this.sessionRepo.findById(sessionId);
+    if (!session || session.userIdent !== userIdent) {
+      throw new NotFoundError('对话记录不存在');
+    }
+
+    return this.getConversationDetail(sessionId);
   }
 
   exportConversations(params: {

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run regression tests
+        run: EMBED_PROVIDER=other npm test
+        env:
+          JWT_SECRET: test-secret-123
+
+      - name: Build
+        run: EMBED_PROVIDER=other npm run build
+        env:
+          JWT_SECRET: test-secret-123

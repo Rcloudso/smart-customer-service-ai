@@ -1,26 +1,33 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { Button, MessagePlugin } from 'tdesign-react';
-import { ClearIcon } from 'tdesign-icons-react';
+import { AddIcon, ChatIcon, ClearIcon } from 'tdesign-icons-react';
 import { useChat } from '../hooks/useChat';
 import { useTranslation } from '../hooks/usePreferences';
 import { ChatBubble } from '../components/chat/ChatBubble';
 import { ChatInput } from '../components/chat/ChatInput';
 import { PreferenceControls } from '../components/common/PreferenceControls';
+import * as chatApi from '../api/chat';
+import type { ChatHistorySession } from '../types';
 
 /**
  * Main chat page — title bar + message list + input area.
  */
 export function ChatPage(): React.ReactElement {
   const {
+    sessionId,
     messages,
     isStreaming,
     error,
     sendMessage,
     submitRating,
+    loadHistory,
     clearChat,
     clearError,
   } = useChat();
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
+  const dateLocale = language === 'zh' ? 'zh-CN' : 'en-US';
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySessions, setHistorySessions] = useState<ChatHistorySession[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -38,11 +45,30 @@ export function ChatPage(): React.ReactElement {
     }
   }, [error, clearError]);
 
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const result = await chatApi.getChatHistory();
+      setHistorySessions(result.items ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('chat.historyLoadFailed');
+      MessagePlugin.error(message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [language]);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
   const handleSend = useCallback(
     (text: string) => {
-      sendMessage(text);
+      sendMessage(text).finally(() => {
+        fetchHistory();
+      });
     },
-    [sendMessage],
+    [fetchHistory, sendMessage],
   );
 
   const handleClear = useCallback(() => {
@@ -50,105 +76,133 @@ export function ChatPage(): React.ReactElement {
     MessagePlugin.success(t('chat.cleared'));
   }, [clearChat, t]);
 
+  const handleLoadHistory = useCallback(async (sessionId: string) => {
+    setHistoryLoading(true);
+    try {
+      const detail = await chatApi.getChatHistoryDetail(sessionId);
+      loadHistory(detail);
+      MessagePlugin.success(t('chat.historyLoaded'));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('chat.historyLoadFailed');
+      MessagePlugin.error(message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [language, loadHistory]);
+
+  const handleNewChat = useCallback(() => {
+    clearChat();
+  }, [clearChat]);
+
   const handleSubmitRating = useCallback(
     (messageId: string, rating: number) => {
       submitRating(messageId, rating);
-      MessagePlugin.success('感谢您的评价！');
+      MessagePlugin.success(t('chat.ratingThanks'));
     },
-    [submitRating],
+    [submitRating, t],
   );
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        backgroundColor: 'var(--app-bg)',
-        maxWidth: '800px',
-        margin: '0 auto',
-        width: '100%',
-      }}
-    >
-      {/* Title bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 16px',
-          backgroundColor: 'var(--app-surface)',
-          borderBottom: '1px solid var(--app-border)',
-          flexShrink: 0,
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--app-text)' }}>
-            {t('chat.title')}
-          </h1>
-          <p style={{ fontSize: '12px', color: 'var(--app-text-muted)', margin: '2px 0 0 0' }}>
-            {t('chat.subtitle')}
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {messages.length > 0 && (
-            <Button
-              variant="text"
-              icon={<ClearIcon />}
-              onClick={handleClear}
-              size="small"
-            >
-              {t('chat.clear')}
-            </Button>
-          )}
-          <PreferenceControls compact />
-        </div>
-      </div>
-
-      {/* Messages area */}
-      <div
-        ref={messagesContainerRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '16px 0',
-        }}
-      >
-        {messages.length === 0 ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: 'var(--app-text-muted)',
-              padding: '0 32px',
-              textAlign: 'center',
-            }}
+    <div className="app-chat-layout" data-testid="chat-layout">
+      <aside className="app-chat-sidebar" data-testid="chat-sidebar">
+        <div className="app-chat-sidebar-header">
+          <Button
+            theme="primary"
+            variant="outline"
+            icon={<AddIcon />}
+            onClick={handleNewChat}
+            block
+            data-testid="new-chat-button"
           >
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div>
-            <h2 style={{ fontSize: '20px', fontWeight: 500, color: 'var(--app-text-secondary)', margin: '0 0 8px 0' }}>
-              {t('chat.greeting')}
-            </h2>
-            <p style={{ fontSize: '14px', lineHeight: 1.6, margin: 0 }}>
-              {t('chat.intro')}
+            {t('chat.newChat')}
+          </Button>
+        </div>
+        <div className="app-chat-sidebar-title">{t('chat.historyTitle')}</div>
+        {historyLoading ? (
+          <div className="app-chat-history-empty">{t('common.loading')}</div>
+        ) : historySessions.length === 0 ? (
+          <div className="app-chat-history-empty">{t('chat.historyEmpty')}</div>
+        ) : (
+          <div className="app-chat-history-list">
+            {historySessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                className={`app-chat-history-item ${session.id === sessionId ? 'app-chat-history-item--active' : ''}`}
+                onClick={() => handleLoadHistory(session.id)}
+                data-testid="chat-history-item"
+              >
+                <span className="app-chat-history-preview">
+                  {session.preview || t('chat.newChat')}
+                </span>
+                <span className="app-chat-history-meta">
+                  {t('chat.historyMessageCount', { count: session.messageCount })} · {new Date(session.updatedAt).toLocaleString(dateLocale)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </aside>
+
+      <main className="app-chat-shell" data-testid="chat-main">
+        {/* Title bar */}
+        <div className="app-chat-header">
+          <div>
+            <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--app-text)' }}>
+              {t('chat.title')}
+            </h1>
+            <p style={{ fontSize: '12px', color: 'var(--app-text-muted)', margin: '2px 0 0 0' }}>
+              {t('chat.subtitle')}
             </p>
           </div>
-        ) : (
-          messages.map((msg) => (
-            <ChatBubble
-              key={msg.id}
-              message={msg}
-              onSubmitRating={handleSubmitRating}
-            />
-          ))
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {messages.length > 0 && (
+              <Button
+                variant="text"
+                icon={<ClearIcon />}
+                onClick={handleClear}
+                size="small"
+              >
+                {t('chat.clear')}
+              </Button>
+            )}
+            <PreferenceControls compact />
+          </div>
+        </div>
 
-      {/* Input area */}
-      <ChatInput onSend={handleSend} disabled={isStreaming} />
+        {/* Messages area */}
+        <div
+          ref={messagesContainerRef}
+          className="app-chat-messages"
+          data-testid="chat-messages"
+        >
+          {messages.length === 0 ? (
+            <div className="app-chat-empty">
+              <div className="app-chat-empty-icon">
+                <ChatIcon size="28px" />
+              </div>
+              <h2 style={{ fontSize: '20px', fontWeight: 500, color: 'var(--app-text-secondary)', margin: '0 0 8px 0' }}>
+                {t('chat.greeting')}
+              </h2>
+              <p style={{ fontSize: '14px', lineHeight: 1.6, margin: 0 }}>
+                {t('chat.intro')}
+              </p>
+            </div>
+          ) : (
+            messages.map((msg) => (
+              <ChatBubble
+                key={msg.id}
+                message={msg}
+                onSubmitRating={handleSubmitRating}
+              />
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input area */}
+        <ChatInput onSend={handleSend} disabled={isStreaming} />
+      </main>
     </div>
   );
 }

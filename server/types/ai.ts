@@ -11,6 +11,19 @@ export interface FaqMatch {
   question: string;
   answer: string;
   similarity: number;
+  source?: 'vector' | 'keyword' | 'hybrid';
+  vectorScore?: number;
+  keywordScore?: number;
+}
+
+export interface FaqIndexStatus {
+  initialized: boolean;
+  activeCount: number;
+  indexedCount: number;
+  missingEmbeddingCount: number;
+  embeddingDimensions: number | null;
+  lastRebuiltAt: string | null;
+  lastError: string | null;
 }
 
 export interface LLMMessage {

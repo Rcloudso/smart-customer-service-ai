@@ -64,19 +64,11 @@ export function AdminLayout(): React.ReactElement {
   ];
 
   return (
-    <Layout style={{ height: '100vh', backgroundColor: 'var(--app-bg)' }}>
+    <Layout className="app-admin-layout">
       {/* Sidebar */}
-      <Aside style={{ width: '220px', backgroundColor: 'var(--app-surface)', borderRight: '1px solid var(--app-border)' }}>
+      <Aside className="app-admin-sidebar">
         {/* Logo area */}
-        <div
-          style={{
-            height: '56px',
-            display: 'flex',
-            alignItems: 'center',
-            padding: '0 20px',
-            borderBottom: '1px solid var(--app-border)',
-          }}
-        >
+        <div className="app-admin-brand">
           <h1
             style={{
               fontSize: '16px',
@@ -104,18 +96,7 @@ export function AdminLayout(): React.ReactElement {
 
       <Layout>
         {/* Header */}
-        <Header
-          style={{
-            height: '56px',
-            backgroundColor: 'var(--app-surface)',
-            borderBottom: '1px solid var(--app-border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            padding: '0 24px',
-            gap: '12px',
-          }}
-        >
+        <Header className="app-admin-header">
           <PreferenceControls />
           <Dropdown
             options={dropdownOptions}
@@ -132,13 +113,7 @@ export function AdminLayout(): React.ReactElement {
         </Header>
 
         {/* Main content */}
-        <Content
-          style={{
-            padding: '24px',
-            overflowY: 'auto',
-            backgroundColor: 'var(--app-bg)',
-          }}
-        >
+        <Content className="app-content">
           <Outlet />
         </Content>
       </Layout>

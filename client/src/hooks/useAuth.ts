@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as adminApi from '../api/admin';
+import { usePreferences } from './usePreferences';
 
 export interface AuthUser {
   id: string;
@@ -37,6 +38,10 @@ function readInitialState(): { token: string | null; user: AuthUser | null; isAu
 
 const initialState = readInitialState();
 
+function t(key: string, params?: Record<string, string | number>): string {
+  return usePreferences.getState().t(key, params);
+}
+
 export const useAuth = create<AuthState>((set) => ({
   token: initialState.token,
   user: initialState.user,
@@ -73,7 +78,7 @@ export const useAuth = create<AuthState>((set) => ({
         error: null,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : '登录失败';
+      const message = err instanceof Error ? err.message : t('login.failure');
       set({
         isLoading: false,
         error: message,

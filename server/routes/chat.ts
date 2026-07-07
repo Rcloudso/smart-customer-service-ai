@@ -3,13 +3,12 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { conversationService } from '../services/conversation.service';
 import { intentService } from '../services/intent.service';
-import { faqService } from '../services/faq.service';
 import { escalationService } from '../services/escalation.service';
 import { buildSystemPrompt, buildMessages } from '../ai/prompt-manager';
 import { getWindow } from '../ai/context-manager';
 import { getLLMClient } from '../ai/llm-client';
 import { MessageRole } from '../types/domain';
-import { LLMMessage } from '../types/ai';
+import { FaqMatch, LLMMessage } from '../types/ai';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -21,10 +20,23 @@ const chatSchema = z.object({
   userIdent: z.string().optional(),
 });
 
+const historyQuerySchema = z.object({
+  userIdent: z.string().min(1, 'userIdent不能为空'),
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(50).optional(),
+});
+
 const satisfactionSchema = z.object({
   sessionId: z.string().min(1, 'sessionId不能为空'),
   rating: z.number().int().min(1).max(5),
 });
+
+function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
+  return faqMatches.find((match) =>
+    (match.source === 'keyword' || match.source === 'hybrid') &&
+    (match.keywordScore ?? match.similarity) >= 0.65,
+  ) ?? null;
+}
 
 /**
  * POST /api/chat
@@ -43,12 +55,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Step 1: Get or create session
     let sessionId = inputSessionId;
     if (!sessionId) {
-      const session = conversationService.getOrCreateSession(userIdent);
+      const session = conversationService.createSession(userIdent);
       sessionId = session.id;
     }
 
     // Step 2: Save user message
-    const userMessage = conversationService.saveMessage({
+    conversationService.saveMessage({
       sessionId,
       role: MessageRole.USER,
       content: message,
@@ -115,8 +127,41 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           question: m.question,
           answer: m.answer,
           similarity: m.similarity,
+          source: m.source,
+          vectorScore: m.vectorScore,
+          keywordScore: m.keywordScore,
         })),
       });
+    }
+
+    const directFaq = intentResult.needsEscalation ? null : findDirectFaqAnswer(intentResult.faqMatches);
+    if (directFaq) {
+      const fullContent = directFaq.answer;
+      sseSend({ type: 'token', content: fullContent });
+
+      const assistantMessage = conversationService.saveMessage({
+        sessionId,
+        role: MessageRole.ASSISTANT,
+        content: fullContent,
+        intent: intentResult.intent.intent,
+        intentConf: intentResult.intent.confidence,
+      });
+
+      sseSend({
+        type: 'done',
+        content: {
+          sessionId,
+          messageId: assistantMessage.id,
+          intent: intentResult.intent.intent,
+        },
+      });
+
+      logger.info(
+        { sessionId, messageId: assistantMessage.id, faqId: directFaq.id },
+        'Chat interaction completed with direct FAQ answer',
+      );
+      res.end();
+      return;
     }
 
     // Step 8: Stream LLM response
@@ -238,6 +283,42 @@ router.post('/satisfaction', async (req: Request, res: Response, next: NextFunct
     logger.info({ sessionId, rating }, 'Satisfaction rating submitted');
 
     res.json({ code: 0, data: { sessionId, rating }, message: 'ok' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/chat/sessions
+ * List chat history for the current anonymous browser user.
+ */
+router.get('/sessions', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = historyQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
+    }
+
+    const result = conversationService.getUserConversations(parsed.data);
+    res.json({ code: 0, data: result, message: 'ok' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/chat/sessions/:sessionId
+ * Load one historical conversation owned by the current anonymous browser user.
+ */
+router.get('/sessions/:sessionId', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = historyQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
+    }
+
+    const detail = conversationService.getUserConversationDetail(parsed.data.userIdent, req.params.sessionId);
+    res.json({ code: 0, data: detail, message: 'ok' });
   } catch (err) {
     next(err);
   }

@@ -69,6 +69,32 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 /**
+ * GET /api/admin/faq/index/status
+ * Get FAQ vector index health and coverage.
+ */
+router.get('/index/status', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const status = faqService.getIndexStatus();
+    res.json({ code: 0, data: status, message: 'ok' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/faq/index/rebuild
+ * Rebuild the FAQ vector index from active FAQ entries.
+ */
+router.post('/index/rebuild', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const status = await faqService.rebuildIndex();
+    res.json({ code: 0, data: status, message: 'FAQ索引已重建' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/admin/faq
  * Create a new FAQ entry.
  */

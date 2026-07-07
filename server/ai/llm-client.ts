@@ -166,12 +166,87 @@ class OpenAIClientImpl implements LLMClient {
   }
 }
 
+class LocalFallbackClientImpl implements LLMClient {
+  async chat(messages: LLMMessage[]): Promise<string> {
+    return this.buildResponse(messages);
+  }
+
+  async chatStream(
+    messages: LLMMessage[],
+    onToken: (token: string) => void,
+  ): Promise<string> {
+    const content = this.buildResponse(messages);
+    for (let i = 0; i < content.length; i += 24) {
+      onToken(content.slice(i, i + 24));
+    }
+    return content;
+  }
+
+  async embed(texts: string[]): Promise<EmbeddingResult[]> {
+    return texts.map((text) => ({
+      embedding: this.hashEmbedding(text),
+      tokens: Math.ceil(text.length / 4),
+    }));
+  }
+
+  private buildResponse(messages: LLMMessage[]): string {
+    const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
+    const faqAnswer = this.extractFirstFaqAnswer(systemPrompt);
+    if (faqAnswer) {
+      return faqAnswer;
+    }
+
+    return '当前未配置 LLM API Key，已启用本地演示模式。请先在 FAQ 知识库中添加匹配条目，或在模型配置中填写可用的 OpenAI 兼容 API。';
+  }
+
+  private extractFirstFaqAnswer(systemPrompt: string): string | null {
+    const match = systemPrompt.match(/【FAQ 1】[\s\S]*?回答：([\s\S]*?)\n相关度：/);
+    const answer = match?.[1]?.trim();
+    return answer || null;
+  }
+
+  private hashEmbedding(text: string): number[] {
+    const dimensions = 64;
+    const vector = new Array<number>(dimensions).fill(0);
+    const normalized = text.trim().toLowerCase();
+
+    if (!normalized) {
+      return vector;
+    }
+
+    for (let i = 0; i < normalized.length; i++) {
+      const code = normalized.charCodeAt(i);
+      vector[code % dimensions] += 1;
+      vector[(code * 31 + i) % dimensions] += 0.5;
+    }
+
+    const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+    if (norm === 0) {
+      return vector;
+    }
+
+    return vector.map((value) => value / norm);
+  }
+}
+
 let llmClientInstance: LLMClient | null = null;
+let llmClientMode: 'openai' | 'local' | null = null;
+
+function resolveClientMode(): 'openai' | 'local' {
+  return config.llm.apiKey ? 'openai' : 'local';
+}
 
 export function getLLMClient(): LLMClient {
-  if (!llmClientInstance) {
-    llmClientInstance = new OpenAIClientImpl();
-    logger.info({ provider: config.llm.provider, model: config.llm.model }, 'LLM client initialized');
+  const mode = resolveClientMode();
+  if (!llmClientInstance || llmClientMode !== mode) {
+    llmClientInstance = mode === 'openai'
+      ? new OpenAIClientImpl()
+      : new LocalFallbackClientImpl();
+    llmClientMode = mode;
+    logger.info(
+      { provider: mode === 'openai' ? config.llm.provider : 'local', model: config.llm.model },
+      'LLM client initialized',
+    );
   }
   return llmClientInstance;
 }

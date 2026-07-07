@@ -1,0 +1,38 @@
+{
+  "goal": "v0.2.3 自动化验收基线：Web + API E2E、边界值和异常场景覆盖",
+  "scope": [
+    "新增 Playwright E2E 测试配置，使用隔离端口和独立 SQLite 测试库",
+    "接口自动化覆盖 health、登录、admin FAQ 鉴权/校验、FAQ CRUD/索引/搜索、聊天 SSE、历史归属和满意度边界",
+    "页面自动化覆盖聊天 FAQ 命中、左侧历史恢复、新建对话、语言/主题切换、后台登录异常/成功、FAQ 索引状态与重建入口",
+    "补充测试专用 data-testid，不改变业务交互和视觉样式",
+    "让登录限流保持默认安全值，同时支持测试环境配置，避免 E2E 互相污染",
+    "回归测试记录 E2E 配置、脚本和关键用例存在性"
+  ],
+  "non_goals": [
+    "不扩大业务功能范围",
+    "不替换 UI 框架",
+    "不新增外部测试服务或云端浏览器依赖",
+    "不主动 push、不发布版本"
+  ],
+  "deliverables": [
+    "playwright.config.ts",
+    "tests/e2e/setup-e2e-db.ts",
+    "tests/e2e/api.spec.ts",
+    "tests/e2e/web.spec.ts",
+    "package.json E2E scripts",
+    "回归测试对 E2E 工程化资产的静态保护",
+    "Agent Loop 进度和日志记录"
+  ],
+  "verification": [
+    "EMBED_PROVIDER=other npm test",
+    "npm run test:e2e",
+    "EMBED_PROVIDER=other npm run build",
+    "git diff --check"
+  ],
+  "constraints": [
+    "保持测试库与本地开发库隔离",
+    "浏览器自动化需要允许 Playwright 启动本机 Chrome",
+    "测试断言优先使用稳定 test id、role 和可见业务结果",
+    "不修改未跟踪的 .agents/ 与 skills-lock.json，除非用户另行要求"
+  ]
+}

@@ -48,17 +48,10 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
 
       {/* Bubble */}
       <div
+        className={`app-chat-bubble ${isUser ? 'app-chat-bubble--user' : 'app-chat-bubble--assistant'}`}
         style={{
-          maxWidth: '75%',
-          padding: '10px 16px',
-          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-          backgroundColor: isUser ? 'var(--app-primary)' : 'var(--app-surface)',
-          color: isUser ? '#ffffff' : 'var(--app-text)',
-          boxShadow: 'var(--app-shadow)',
-          wordBreak: 'break-word',
-          lineHeight: 1.6,
-          fontSize: '14px',
-          whiteSpace: 'pre-wrap',
+          backgroundColor: isUser ? 'var(--app-primary)' : undefined,
+          color: isUser ? '#ffffff' : undefined,
         }}
       >
         {message.content || (message.isStreaming ? (
@@ -131,9 +124,11 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
                 borderBottom: '1px solid var(--app-border-soft)',
               }}
             >
-              <div style={{ fontWeight: 500, color: 'var(--app-text-secondary)' }}>Q: {faq.question}</div>
+              <div style={{ fontWeight: 500, color: 'var(--app-text-secondary)' }}>
+                {t('chat.faqQuestionPrefix')}{faq.question}
+              </div>
               <div style={{ color: 'var(--app-text-muted)', fontSize: '11px', marginTop: '2px' }}>
-                A: {faq.answer.length > 100 ? faq.answer.slice(0, 100) + '...' : faq.answer}
+                {t('chat.faqAnswerPrefix')}{faq.answer.length > 100 ? faq.answer.slice(0, 100) + '...' : faq.answer}
               </div>
             </div>
           ))}
