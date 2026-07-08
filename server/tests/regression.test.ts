@@ -257,6 +257,8 @@ function testOpenSourceReadinessArtifactsExist(): void {
   const ciSource = fs.readFileSync(ciPath, 'utf8');
   assert.match(ciSource, /npm ci/, 'CI should install dependencies reproducibly');
   assert.match(ciSource, /EMBED_PROVIDER=other npm test/, 'CI should run regression tests without real embedding calls');
+  assert.match(ciSource, /npx playwright install --with-deps chromium/, 'CI should install Playwright Chromium for browser tests');
+  assert.match(ciSource, /PLAYWRIGHT_CHANNEL=chromium npm run test:e2e/, 'CI should run Playwright E2E tests');
   assert.match(ciSource, /EMBED_PROVIDER=other npm run build/, 'CI should build the app');
   assert.match(
     fs.readFileSync(composePath, 'utf8'),
@@ -443,6 +445,7 @@ function testFrontendCopyUsesEditableDictionary(): void {
     'chat.faqQuestionPrefix',
     'chat.requestFailed',
     'faq.created',
+    'faq.debugTitle',
     'config.saved',
   ]) {
     assert.ok(dictionary[key], `dictionary should contain ${key}`);
@@ -540,6 +543,35 @@ function testEndToEndAutomationArtifactsExist(): void {
   assert.match(webSpecSource, /language and theme toggles/, 'Web E2E should cover preference switching');
   assert.match(webSpecSource, /login rejects wrong password/, 'Web E2E should cover visible login failure');
   assert.match(webSpecSource, /rebuild action/, 'Web E2E should cover the FAQ index rebuild entry point');
+  assert.match(apiSpecSource, /debug search requires valid input/, 'API E2E should cover FAQ debug search');
+  assert.match(webSpecSource, /faq-debug-panel/, 'Web E2E should cover the FAQ debug panel');
+}
+
+function testRetrievalEvaluationAndDebuggingArtifactsExist(): void {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
+  ) as { scripts?: Record<string, string> };
+  const evalCasesPath = path.resolve(process.cwd(), 'eval/faq-cases.json');
+  const evalScriptPath = path.resolve(process.cwd(), 'server/eval/faq-eval.ts');
+  const semanticSource = fs.readFileSync(path.resolve(process.cwd(), 'server/ai/semantic-search.ts'), 'utf8');
+  const faqRouteSource = fs.readFileSync(path.resolve(process.cwd(), 'server/routes/admin/faq.ts'), 'utf8');
+  const faqPageSource = fs.readFileSync(path.resolve(process.cwd(), 'client/src/pages/admin/FaqManagementPage.tsx'), 'utf8');
+
+  assert.equal(packageJson.scripts?.['eval:faq'], 'tsx server/eval/faq-eval.ts', 'package.json should expose FAQ retrieval evaluation');
+  assert.ok(fs.existsSync(evalCasesPath), 'FAQ retrieval evaluation cases should exist');
+  assert.ok(fs.existsSync(evalScriptPath), 'FAQ retrieval evaluation script should exist');
+
+  const evalCases = JSON.parse(fs.readFileSync(evalCasesPath, 'utf8')) as Array<Record<string, unknown>>;
+  assert.ok(evalCases.length >= 10, 'FAQ retrieval evaluation should include a useful baseline case set');
+  assert.match(fs.readFileSync(evalScriptPath, 'utf8'), /Top1 accuracy/, 'FAQ evaluation should report Top1 accuracy');
+  assert.match(fs.readFileSync(evalScriptPath, 'utf8'), /Source distribution/, 'FAQ evaluation should report source distribution');
+
+  assert.match(semanticSource, /debugSearch\(/, 'semantic search should expose debug search');
+  assert.match(semanticSource, /rankingReason/, 'debug search should explain ranking reasons');
+  assert.match(faqRouteSource, /\/search\/debug/, 'admin FAQ routes should expose debug search');
+  assert.match(faqRouteSource, /debugSearchSchema/, 'debug search should validate admin input');
+  assert.match(faqPageSource, /faq-debug-panel/, 'FAQ management should render a debug panel');
+  assert.match(faqPageSource, /debugFaqSearch/, 'FAQ management should call the debug API');
 }
 
 async function main(): Promise<void> {
@@ -573,6 +605,7 @@ async function main(): Promise<void> {
   testChatPageExposesHistoryUi();
   testBilingualReadmeExists();
   testEndToEndAutomationArtifactsExist();
+  testRetrievalEvaluationAndDebuggingArtifactsExist();
   console.log('Regression checks passed');
 }
 

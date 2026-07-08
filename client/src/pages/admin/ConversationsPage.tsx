@@ -179,6 +179,7 @@ export function ConversationsPage(): React.ReactElement {
           theme="primary"
           variant="text"
           size="small"
+          className="app-table-action-button"
           onClick={() => handleViewDetail(row.id)}
         >
           {t('conversations.viewDetail')}
@@ -263,24 +264,15 @@ export function ConversationsPage(): React.ReactElement {
             {t('common.loading')}
           </div>
         ) : detail ? (
-          <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+          <div className="app-conversation-detail">
             {/* Session info */}
-            <div
-              style={{
-                padding: '12px',
-                backgroundColor: 'var(--app-surface-muted)',
-                borderRadius: '8px',
-                marginBottom: '16px',
-                fontSize: '13px',
-                color: 'var(--app-text-secondary)',
-              }}
-            >
+            <div className="app-conversation-session">
               <div>{t('conversations.session')}: {detail.session.id}</div>
               <div>{t('conversations.user')}: {detail.session.userIdent}</div>
               <div>{t('common.status')}: {detail.session.status}</div>
               <div>{t('conversations.time')}: {new Date(detail.session.createdAt).toLocaleString(dateLocale)}</div>
               {detail.escalation && (
-                <div style={{ marginTop: '4px', color: 'var(--app-warning)' }}>
+                <div className="app-conversation-escalation">
                   {t('conversations.escalation')}: {detail.escalation.reason} ({detail.escalation.status})
                 </div>
               )}
@@ -290,25 +282,9 @@ export function ConversationsPage(): React.ReactElement {
             {detail.messages.map((msg, idx) => (
               <div
                 key={msg.id || idx}
-                style={{
-                  marginBottom: '12px',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  backgroundColor: msg.role === 'user' ? 'var(--app-primary-soft)' : 'var(--app-surface-muted)',
-                  textAlign: msg.role === 'user' ? 'right' : 'left',
-                }}
+                className={`app-conversation-message ${msg.role === 'user' ? 'app-conversation-message--user' : ''}`}
               >
-                <div
-                  style={{
-                    fontSize: '12px',
-                    color: 'var(--app-text-muted)',
-                    marginBottom: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                  }}
-                >
+                <div className="app-conversation-message__meta">
                   <span>{msg.role === 'user' ? t('conversations.user') : t('conversations.aiAgent')}</span>
                   <span>{new Date(msg.createdAt).toLocaleString(dateLocale)}</span>
                   {msg.intent && (
@@ -320,15 +296,7 @@ export function ConversationsPage(): React.ReactElement {
                     <span>{t('conversations.rating')}: {'★'.repeat(msg.satisfaction)}</span>
                   )}
                 </div>
-                <div
-                  style={{
-                    fontSize: '14px',
-                    color: 'var(--app-text)',
-                    lineHeight: 1.6,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  }}
-                >
+                <div className="app-conversation-message__content">
                   {msg.content}
                 </div>
               </div>

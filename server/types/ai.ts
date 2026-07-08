@@ -16,6 +16,21 @@ export interface FaqMatch {
   keywordScore?: number;
 }
 
+export interface FaqDebugMatch extends FaqMatch {
+  rank: number;
+  bestScore: number;
+  matchedBy: Array<'vector' | 'keyword'>;
+  rankingReason: string;
+}
+
+export interface FaqDebugResult {
+  query: string;
+  topK: number;
+  generatedAt: string;
+  indexStatus: FaqIndexStatus;
+  matches: FaqDebugMatch[];
+}
+
 export interface FaqIndexStatus {
   initialized: boolean;
   activeCount: number;

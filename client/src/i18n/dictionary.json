@@ -647,6 +647,58 @@
     "zh": "导入失败",
     "en": "Import failed"
   },
+  "faq.debugTitle": {
+    "zh": "检索调试",
+    "en": "Retrieval debug"
+  },
+  "faq.debugSubtitle": {
+    "zh": "查看 FAQ 混合检索排序信号",
+    "en": "Inspect FAQ hybrid retrieval signals"
+  },
+  "faq.debugPlaceholder": {
+    "zh": "输入一条用户问题",
+    "en": "Enter a user question"
+  },
+  "faq.debugSubmit": {
+    "zh": "调试检索",
+    "en": "Debug search"
+  },
+  "faq.debugQuery": {
+    "zh": "查询",
+    "en": "Query"
+  },
+  "faq.debugGeneratedAt": {
+    "zh": "生成时间",
+    "en": "Generated at"
+  },
+  "faq.debugNoResults": {
+    "zh": "无检索结果",
+    "en": "No retrieval results"
+  },
+  "faq.debugBestScore": {
+    "zh": "最佳分",
+    "en": "Best score"
+  },
+  "faq.debugSimilarity": {
+    "zh": "相似度",
+    "en": "Similarity"
+  },
+  "faq.debugKeywordScore": {
+    "zh": "关键词分",
+    "en": "Keyword score"
+  },
+  "faq.debugVectorScore": {
+    "zh": "向量分",
+    "en": "Vector score"
+  },
+  "faq.debugEmptyWarning": {
+    "zh": "请输入调试查询",
+    "en": "Enter a debug query"
+  },
+  "faq.debugFailed": {
+    "zh": "检索调试失败",
+    "en": "Retrieval debug failed"
+  },
   "config.title": {
     "zh": "模型配置",
     "en": "Model Configuration"

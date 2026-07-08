@@ -2,7 +2,7 @@ import { getLLMClient } from './llm-client';
 import { InMemoryVectorStore, VectorStore } from './vector-store';
 import { getDatabase } from '../db';
 import { FaqRepo } from '../db/repos/faq.repo';
-import { FaqIndexStatus, FaqMatch } from '../types/ai';
+import { FaqDebugMatch, FaqDebugResult, FaqIndexStatus, FaqMatch } from '../types/ai';
 import { FaqEntry } from '../types/domain';
 import { logger } from '../utils/logger';
 
@@ -132,6 +132,17 @@ class SemanticSearch {
     }
   }
 
+  async debugSearch(query: string, topK: number = 5): Promise<FaqDebugResult> {
+    const matches = await this.search(query, topK);
+    return {
+      query,
+      topK,
+      generatedAt: new Date().toISOString(),
+      indexStatus: this.getStatus(),
+      matches: matches.map((match, index) => this.toDebugMatch(match, index)),
+    };
+  }
+
   private async semanticSearch(query: string, topK: number): Promise<FaqMatch[]> {
     if (this.vectorStore.stats().indexedCount === 0) {
       return [];
@@ -205,6 +216,28 @@ class SemanticSearch {
     }
 
     return HYBRID_SOURCE_PRIORITY[b.source ?? 'keyword'] - HYBRID_SOURCE_PRIORITY[a.source ?? 'keyword'];
+  }
+
+  private toDebugMatch(match: FaqMatch, index: number): FaqDebugMatch {
+    const vectorScore = match.vectorScore ?? 0;
+    const keywordScore = match.keywordScore ?? 0;
+    const bestScore = Math.max(vectorScore, keywordScore, match.similarity);
+    const matchedBy: Array<'vector' | 'keyword'> = [];
+    if (match.source === 'vector' || match.source === 'hybrid') {
+      matchedBy.push('vector');
+    }
+    if (match.source === 'keyword' || match.source === 'hybrid') {
+      matchedBy.push('keyword');
+    }
+
+    const source = match.source ?? 'keyword';
+    return {
+      ...match,
+      rank: index + 1,
+      bestScore,
+      matchedBy,
+      rankingReason: `${source} match ranked by best score ${bestScore.toFixed(3)}`,
+    };
   }
 
   async updateIndex(entry: FaqEntry): Promise<void> {

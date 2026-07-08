@@ -59,7 +59,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps): React.R
         icon={<SendIcon />}
         onClick={handleSend}
         disabled={disabled || !value.trim()}
-        style={{ flexShrink: 0 }}
+        className="app-chat-send-button"
         data-testid="chat-send-button"
       />
     </div>

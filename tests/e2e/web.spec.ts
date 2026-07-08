@@ -107,11 +107,22 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByRole('heading', { name: /FAQ\s*管理/ })).toBeVisible();
     await expect(page.getByTestId('faq-index-status')).toContainText('索引状态');
     await expect(page.getByTestId('faq-index-status')).toContainText(/已索引|加载中/);
+    await expect(page.getByTestId('faq-debug-panel')).toBeVisible();
 
     const rebuildButton = page.getByTestId('faq-rebuild-index-button');
     await expect(rebuildButton).toBeVisible();
     await rebuildButton.click();
     await expect(page.getByText('FAQ索引已重建')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('faq-index-status')).toContainText('已索引');
+
+    await page.getByTestId('faq-debug-query').locator('input').fill('如何申请退款？');
+    const [debugResponse] = await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/admin/faq/search/debug')),
+      page.getByTestId('faq-debug-submit').click(),
+    ]);
+    expect(debugResponse.status()).toBe(200);
+    await expect(page.getByTestId('faq-debug-results')).toContainText('如何申请退款？');
+    await expect(page.getByTestId('faq-debug-results')).toContainText('最佳分');
+    await expect(page.getByTestId('faq-debug-results')).toContainText(/keyword|vector|hybrid/);
   });
 });

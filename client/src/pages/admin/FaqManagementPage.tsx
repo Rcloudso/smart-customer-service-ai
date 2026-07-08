@@ -24,7 +24,7 @@ import {
   UploadIcon,
 } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
-import type { FaqEntry, FaqIndexStatus, IntentCategory } from '../../api/admin';
+import type { FaqDebugResult, FaqEntry, FaqIndexStatus, IntentCategory } from '../../api/admin';
 import { useTranslation } from '../../hooks/usePreferences';
 
 /** Simplified column definition to avoid depending on TDesign's internal TableColumn type. */
@@ -51,6 +51,12 @@ const CATEGORY_TAG_THEMES: Record<string, 'danger' | 'primary' | 'warning' | 'de
   order: 'primary',
   technical: 'warning',
   general: 'default',
+};
+
+const DEBUG_SOURCE_THEMES: Record<string, 'success' | 'primary' | 'warning' | 'default'> = {
+  hybrid: 'success',
+  vector: 'primary',
+  keyword: 'warning',
 };
 
 interface FaqFormValues {
@@ -83,6 +89,9 @@ export function FaqManagementPage(): React.ReactElement {
   const [indexStatus, setIndexStatus] = useState<FaqIndexStatus | null>(null);
   const [indexLoading, setIndexLoading] = useState(false);
   const [rebuildingIndex, setRebuildingIndex] = useState(false);
+  const [debugQuery, setDebugQuery] = useState('');
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugResult, setDebugResult] = useState<FaqDebugResult | null>(null);
 
   // Dialog state
   const [dialogVisible, setDialogVisible] = useState(false);
@@ -253,6 +262,25 @@ export function FaqManagementPage(): React.ReactElement {
     }
   };
 
+  const handleDebugSearch = async () => {
+    const query = debugQuery.trim();
+    if (!query) {
+      MessagePlugin.warning(t('faq.debugEmptyWarning'));
+      return;
+    }
+
+    setDebugLoading(true);
+    try {
+      const result = await adminApi.debugFaqSearch({ query, topK: 5 });
+      setDebugResult(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('faq.debugFailed');
+      MessagePlugin.error(message);
+    } finally {
+      setDebugLoading(false);
+    }
+  };
+
   const handlePageChange = (pageInfo: { current: number; pageSize: number }) => {
     setPage(pageInfo.current);
     setPageSize(pageInfo.pageSize);
@@ -333,6 +361,7 @@ export function FaqManagementPage(): React.ReactElement {
               theme="primary"
               variant="text"
               size="small"
+              className="app-table-action-button"
               onClick={() => handleEdit(row)}
             >
               {t('common.edit')}
@@ -341,7 +370,7 @@ export function FaqManagementPage(): React.ReactElement {
               content={t('faq.deleteConfirm')}
               onConfirm={() => handleDelete(row.id)}
             >
-              <Button theme="danger" variant="text" size="small">
+              <Button theme="danger" variant="text" size="small" className="app-table-action-button">
                 {t('common.delete')}
               </Button>
             </Popconfirm>
@@ -456,6 +485,71 @@ export function FaqManagementPage(): React.ReactElement {
           </div>
         </div>
       </Card>
+
+      <div data-testid="faq-debug-panel">
+        <Card bordered className="app-debug-card">
+          <div className="app-debug-header">
+            <h3>{t('faq.debugTitle')}</h3>
+            <span>{t('faq.debugSubtitle')}</span>
+          </div>
+          <div className="app-debug-search">
+            <Input
+              value={debugQuery}
+              onChange={(val: string) => setDebugQuery(val)}
+              onEnter={handleDebugSearch}
+              placeholder={t('faq.debugPlaceholder')}
+              prefixIcon={<SearchIcon />}
+              clearable
+              data-testid="faq-debug-query"
+            />
+            <Button
+              theme="primary"
+              onClick={handleDebugSearch}
+              loading={debugLoading}
+              icon={<SearchIcon />}
+              data-testid="faq-debug-submit"
+            >
+              {t('faq.debugSubmit')}
+            </Button>
+          </div>
+          {debugResult ? (
+            <div className="app-debug-results" data-testid="faq-debug-results">
+              <div className="app-debug-meta">
+                <span>{t('faq.debugQuery')}: {debugResult.query}</span>
+                <span>{t('faq.debugGeneratedAt')}: {new Date(debugResult.generatedAt).toLocaleString(dateLocale)}</span>
+              </div>
+              {debugResult.matches.length === 0 ? (
+                <div className="app-debug-empty">{t('faq.debugNoResults')}</div>
+              ) : (
+                <div className="app-debug-list">
+                  {debugResult.matches.map((match) => (
+                    <div className="app-debug-item" key={match.id}>
+                      <div className="app-debug-item__main">
+                        <span className="app-debug-rank">#{match.rank}</span>
+                        <span className="app-debug-question">{match.question}</span>
+                        <Tag
+                          theme={DEBUG_SOURCE_THEMES[match.source ?? 'keyword'] ?? 'default'}
+                          variant="light"
+                          size="small"
+                        >
+                          {match.source ?? 'keyword'}
+                        </Tag>
+                      </div>
+                      <div className="app-debug-scores">
+                        <span>{t('faq.debugBestScore')}: {match.bestScore.toFixed(3)}</span>
+                        <span>{t('faq.debugSimilarity')}: {match.similarity.toFixed(3)}</span>
+                        <span>{t('faq.debugKeywordScore')}: {(match.keywordScore ?? 0).toFixed(3)}</span>
+                        <span>{t('faq.debugVectorScore')}: {(match.vectorScore ?? 0).toFixed(3)}</span>
+                      </div>
+                      <div className="app-debug-reason">{match.rankingReason}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </Card>
+      </div>
 
       {/* Table */}
       <Card bordered className="app-table-card">

@@ -9,10 +9,10 @@ interface IntentPieChartProps {
 }
 
 const INTENT_COLORS: Record<string, string> = {
-  refund: '#e34d59',
-  order: '#0052d9',
-  technical: '#e37318',
-  general: '#8b8b8b',
+  refund: '#ee0000',
+  order: '#0070f3',
+  technical: '#f5a623',
+  general: '#8f8f8f',
 };
 
 /**

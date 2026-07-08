@@ -1,0 +1,59 @@
+[
+  {
+    "id": "refund-apply-exact",
+    "query": "如何申请退款？",
+    "expectedQuestions": ["如何申请退款？"]
+  },
+  {
+    "id": "refund-money-keyword",
+    "query": "退钱",
+    "expectedQuestions": ["如何申请退款？"]
+  },
+  {
+    "id": "refund-rejected-exact",
+    "query": "退款被拒绝怎么办？",
+    "expectedQuestions": ["退款被拒绝怎么办？"]
+  },
+  {
+    "id": "order-status-exact",
+    "query": "如何查询订单状态？",
+    "expectedQuestions": ["如何查询订单状态？"]
+  },
+  {
+    "id": "order-cancel-exact",
+    "query": "如何修改或取消订单？",
+    "expectedQuestions": ["如何修改或取消订单？"]
+  },
+  {
+    "id": "technical-login-keyword",
+    "query": "登录",
+    "expectedQuestions": ["APP/网站无法登录怎么办？"]
+  },
+  {
+    "id": "technical-white-screen-keyword",
+    "query": "白屏",
+    "expectedQuestions": ["页面显示异常或白屏怎么办？"]
+  },
+  {
+    "id": "general-human-service-exact",
+    "query": "如何联系人工客服？",
+    "expectedQuestions": ["如何联系人工客服？"]
+  },
+  {
+    "id": "general-promotion-exact",
+    "query": "有哪些优惠活动？",
+    "expectedQuestions": ["有哪些优惠活动？"]
+  },
+  {
+    "id": "no-match-weather",
+    "query": "今天天气怎么样？",
+    "shouldMatch": false,
+    "maxAcceptableScore": 0.9
+  },
+  {
+    "id": "no-match-sql-wildcards",
+    "query": "%_\\",
+    "shouldMatch": false,
+    "maxAcceptableScore": 0.9
+  }
+]

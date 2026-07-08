@@ -69,16 +69,10 @@ export function AdminLayout(): React.ReactElement {
       <Aside className="app-admin-sidebar">
         {/* Logo area */}
         <div className="app-admin-brand">
-          <h1
-            style={{
-              fontSize: '16px',
-              fontWeight: 600,
-              color: 'var(--app-text)',
-              margin: 0,
-            }}
-          >
-            {t('admin.title')}
-          </h1>
+          <div>
+            <h1 className="app-admin-brand-title">{t('admin.title')}</h1>
+            <div className="app-admin-brand-subtitle">Customer Ops</div>
+          </div>
         </div>
 
         <Menu

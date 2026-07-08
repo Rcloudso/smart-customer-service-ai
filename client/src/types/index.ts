@@ -64,6 +64,28 @@ export interface FaqIndexStatus {
   lastError: string | null;
 }
 
+export interface FaqDebugMatch {
+  id: string;
+  question: string;
+  answer: string;
+  similarity: number;
+  source?: 'vector' | 'keyword' | 'hybrid';
+  vectorScore?: number;
+  keywordScore?: number;
+  rank: number;
+  bestScore: number;
+  matchedBy: Array<'vector' | 'keyword'>;
+  rankingReason: string;
+}
+
+export interface FaqDebugResult {
+  query: string;
+  topK: number;
+  generatedAt: string;
+  indexStatus: FaqIndexStatus;
+  matches: FaqDebugMatch[];
+}
+
 // ── Model Config Types ─────────────────────────────
 
 export interface ModelConfigDTO {
