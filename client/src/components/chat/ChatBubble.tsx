@@ -11,10 +11,10 @@ interface ChatBubbleProps {
 }
 
 const INTENT_COLORS: Record<string, string> = {
-  refund: '#e34d59',
-  order: '#0052d9',
-  technical: '#e37318',
-  general: '#8b8b8b',
+  refund: '#ee0000',
+  order: '#0070f3',
+  technical: '#f5a623',
+  general: '#8f8f8f',
 };
 
 /**
@@ -26,33 +26,16 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: isUser ? 'flex-end' : 'flex-start',
-        marginBottom: '16px',
-        padding: '0 16px',
-      }}
+      className={`app-chat-message ${isUser ? 'app-chat-message--user' : 'app-chat-message--assistant'}`}
     >
       {/* Role label */}
-      <span
-        style={{
-          fontSize: '12px',
-          color: 'var(--app-text-muted)',
-          marginBottom: '4px',
-          padding: '0 8px',
-        }}
-      >
+      <span className="app-chat-role-label">
         {isUser ? t('chat.user') : t('chat.assistant')}
       </span>
 
       {/* Bubble */}
       <div
         className={`app-chat-bubble ${isUser ? 'app-chat-bubble--user' : 'app-chat-bubble--assistant'}`}
-        style={{
-          backgroundColor: isUser ? 'var(--app-primary)' : undefined,
-          color: isUser ? '#ffffff' : undefined,
-        }}
       >
         {message.content || (message.isStreaming ? (
           <span style={{ opacity: 0.6 }}>{t('chat.thinking')}</span>
@@ -61,27 +44,17 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
         {/* Streaming cursor */}
         {message.isStreaming && message.content && (
           <span
+            className="app-chat-stream-cursor"
             style={{
-              display: 'inline-block',
-              width: '2px',
-              height: '16px',
-              backgroundColor: isUser ? '#ffffff' : 'var(--app-text)',
-              marginLeft: '2px',
-              verticalAlign: 'text-bottom',
-              animation: 'blink 1s step-end infinite',
+              backgroundColor: isUser ? 'var(--app-on-primary)' : 'var(--app-text)',
             }}
           />
         )}
-        <style>{`
-          @keyframes blink {
-            50% { opacity: 0; }
-          }
-        `}</style>
       </div>
 
       {/* Intent tag (AI messages only) */}
       {!isUser && message.intent && (
-        <div style={{ marginTop: '4px', padding: '0 8px' }}>
+        <div className="app-chat-intent-row">
           <Tag
             theme="default"
             variant="light"
@@ -104,30 +77,17 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
 
       {/* FAQ reference matches (AI messages only) */}
       {!isUser && message.faqMatches && message.faqMatches.length > 0 && (
-        <div
-          style={{
-            marginTop: '8px',
-            padding: '8px 12px',
-            backgroundColor: 'var(--app-surface-muted)',
-            borderRadius: '8px',
-            fontSize: '12px',
-            maxWidth: '75%',
-            border: '1px solid var(--app-border-soft)',
-          }}
-        >
-          <div style={{ color: 'var(--app-text-muted)', marginBottom: '4px' }}>{t('chat.faqReferences')}</div>
+        <div className="app-chat-faq-reference">
+          <div className="app-chat-faq-reference__title">{t('chat.faqReferences')}</div>
           {message.faqMatches.slice(0, 3).map((faq) => (
             <div
               key={faq.id}
-              style={{
-                padding: '4px 0',
-                borderBottom: '1px solid var(--app-border-soft)',
-              }}
+              className="app-chat-faq-reference__item"
             >
-              <div style={{ fontWeight: 500, color: 'var(--app-text-secondary)' }}>
+              <div className="app-chat-faq-reference__question">
                 {t('chat.faqQuestionPrefix')}{faq.question}
               </div>
-              <div style={{ color: 'var(--app-text-muted)', fontSize: '11px', marginTop: '2px' }}>
+              <div className="app-chat-faq-reference__answer">
                 {t('chat.faqAnswerPrefix')}{faq.answer.length > 100 ? faq.answer.slice(0, 100) + '...' : faq.answer}
               </div>
             </div>
@@ -137,7 +97,7 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
 
       {/* Satisfaction rating (AI messages only, after streaming completes) */}
       {!isUser && !message.isStreaming && message.content && onSubmitRating && (
-        <div style={{ marginTop: '8px', padding: '0 8px' }}>
+        <div className="app-chat-rating-row">
           <SatisfactionRating
             currentRating={message.satisfaction ?? undefined}
             onSubmitRating={(rating: number) => onSubmitRating(message.id, rating)}

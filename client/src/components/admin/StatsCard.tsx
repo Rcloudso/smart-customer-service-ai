@@ -10,11 +10,11 @@ interface StatsCardProps {
 }
 
 const COLOR_MAP: Record<string, { bg: string; accent: string }> = {
-  blue: { bg: 'var(--app-primary-soft)', accent: 'var(--app-primary)' },
-  green: { bg: 'var(--app-stat-green-bg)', accent: 'var(--app-success)' },
-  orange: { bg: 'var(--app-stat-orange-bg)', accent: 'var(--app-warning)' },
-  red: { bg: 'var(--app-stat-red-bg)', accent: 'var(--app-danger)' },
-  purple: { bg: 'var(--app-stat-purple-bg)', accent: 'var(--app-stat-purple)' },
+  blue: { bg: 'var(--app-surface)', accent: 'var(--app-link)' },
+  green: { bg: 'var(--app-surface)', accent: 'var(--app-success)' },
+  orange: { bg: 'var(--app-surface)', accent: 'var(--app-warning)' },
+  red: { bg: 'var(--app-surface)', accent: 'var(--app-danger)' },
+  purple: { bg: 'var(--app-surface)', accent: 'var(--app-stat-purple)' },
 };
 
 /**
@@ -32,62 +32,30 @@ export function StatsCard({
   return (
     <Card
       bordered
-      className="app-panel-card"
+      className="app-panel-card app-stat-card"
       style={{
         backgroundColor: theme.bg,
-        borderColor: `color-mix(in srgb, ${theme.accent} 22%, transparent)`,
-      }}
+        '--app-stat-accent': theme.accent,
+      } as React.CSSProperties}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-        }}
-      >
+      <div className="app-stat-card__content">
         <div>
-          <div
-            style={{
-              fontSize: '13px',
-              color: 'var(--app-text-secondary)',
-              marginBottom: '8px',
-              fontWeight: 500,
-            }}
-          >
+          <div className="app-stat-card__label">
             {title}
           </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: '4px',
-            }}
-          >
-            <span
-              style={{
-                fontSize: '28px',
-                fontWeight: 700,
-                color: theme.accent,
-                lineHeight: 1,
-              }}
-            >
+          <div className="app-stat-card__value-row">
+            <span className="app-stat-card__value">
               {value}
             </span>
             {unit && (
-              <span style={{ fontSize: '13px', color: 'var(--app-text-muted)' }}>
+              <span className="app-stat-card__unit">
                 {unit}
               </span>
             )}
           </div>
         </div>
         {icon && (
-          <div
-            style={{
-              fontSize: '28px',
-              color: theme.accent,
-              opacity: 0.5,
-            }}
-          >
+          <div className="app-stat-card__icon">
             {icon}
           </div>
         )}

@@ -1,7 +1,7 @@
 import { getDatabase } from '../db';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { FaqEntry, IntentCategory } from '../types/domain';
-import { FaqIndexStatus, FaqMatch } from '../types/ai';
+import { FaqDebugResult, FaqIndexStatus, FaqMatch } from '../types/ai';
 import { semanticSearch } from '../ai/semantic-search';
 import { PaginationResponse } from '../types/api';
 import { NotFoundError } from '../utils/errors';
@@ -17,6 +17,10 @@ export class FaqService {
 
   async searchFaq(query: string, limit: number = 5): Promise<FaqMatch[]> {
     return semanticSearch.search(query, limit);
+  }
+
+  async debugSearch(query: string, limit: number = 5): Promise<FaqDebugResult> {
+    return semanticSearch.debugSearch(query, limit);
   }
 
   listFaq(params: {

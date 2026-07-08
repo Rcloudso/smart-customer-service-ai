@@ -44,6 +44,11 @@ const updateFaqSchema = z.object({
   isActive: z.number().int().min(0).max(1).optional(),
 });
 
+const debugSearchSchema = z.object({
+  query: z.string().min(1, '查询内容不能为空').max(500, '查询内容不能超过500个字符'),
+  topK: z.number().int().min(1).max(10).default(5),
+});
+
 /**
  * GET /api/admin/faq
  * List all FAQ entries with pagination.
@@ -89,6 +94,24 @@ router.post('/index/rebuild', async (_req: Request, res: Response, next: NextFun
   try {
     const status = await faqService.rebuildIndex();
     res.json({ code: 0, data: status, message: 'FAQ索引已重建' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/admin/faq/search/debug
+ * Explain ranked FAQ retrieval results for an admin query.
+ */
+router.post('/search/debug', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = debugSearchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
+    }
+
+    const result = await faqService.debugSearch(parsed.data.query, parsed.data.topK);
+    res.json({ code: 0, data: result, message: 'ok' });
   } catch (err) {
     next(err);
   }

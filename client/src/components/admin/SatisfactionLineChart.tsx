@@ -25,6 +25,11 @@ export function SatisfactionLineChart({
   height = 300,
 }: SatisfactionLineChartProps): React.ReactElement {
   const { t } = useTranslation();
+  const ratingColor = (rating: number) => {
+    if (rating >= 4) return '#0070f3';
+    if (rating >= 3) return '#f5a623';
+    return '#ee0000';
+  };
 
   if (!data || data.length === 0) {
     return (
@@ -58,7 +63,7 @@ export function SatisfactionLineChart({
       width: 120,
       cell: ({ row }: { row: SatisfactionTrend }) => {
         const rating = row.avgRating;
-        const color = rating >= 4 ? '#00a870' : rating >= 3 ? '#e37318' : '#e34d59';
+        const color = ratingColor(rating);
         const stars = '★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating));
         return (
           <span style={{ color, fontWeight: 600, fontSize: '14px' }}>
@@ -81,7 +86,7 @@ export function SatisfactionLineChart({
       cell: ({ row }: { row: SatisfactionTrend }) => {
         const maxRating = 5;
         const percentage = row.count > 0 ? (row.avgRating / maxRating) * 100 : 0;
-        const color = row.avgRating >= 4 ? '#00a870' : row.avgRating >= 3 ? '#e37318' : '#e34d59';
+        const color = ratingColor(row.avgRating);
         return (
           <div
             style={{

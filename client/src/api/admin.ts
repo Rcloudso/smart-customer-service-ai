@@ -12,6 +12,7 @@ import type {
   IntentDistribution,
   ConversationDetail,
   FaqEntry,
+  FaqDebugResult,
   FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
@@ -27,6 +28,7 @@ export type {
   IntentDistribution,
   ConversationDetail,
   FaqEntry,
+  FaqDebugResult,
   FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
@@ -134,6 +136,10 @@ export async function getFaqIndexStatus(): Promise<FaqIndexStatus> {
 
 export async function rebuildFaqIndex(): Promise<FaqIndexStatus> {
   return post<FaqIndexStatus>('/admin/faq/index/rebuild', {});
+}
+
+export async function debugFaqSearch(data: { query: string; topK?: number }): Promise<FaqDebugResult> {
+  return post<FaqDebugResult>('/admin/faq/search/debug', data);
 }
 
 // ── Model Config ───────────────────────────────────

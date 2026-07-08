@@ -148,14 +148,14 @@ export function ChatPage(): React.ReactElement {
         {/* Title bar */}
         <div className="app-chat-header">
           <div>
-            <h1 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: 'var(--app-text)' }}>
+            <h1 className="app-chat-title">
               {t('chat.title')}
             </h1>
-            <p style={{ fontSize: '12px', color: 'var(--app-text-muted)', margin: '2px 0 0 0' }}>
+            <p className="app-chat-subtitle">
               {t('chat.subtitle')}
             </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="app-chat-header-actions">
             {messages.length > 0 && (
               <Button
                 variant="text"
@@ -181,10 +181,10 @@ export function ChatPage(): React.ReactElement {
               <div className="app-chat-empty-icon">
                 <ChatIcon size="28px" />
               </div>
-              <h2 style={{ fontSize: '20px', fontWeight: 500, color: 'var(--app-text-secondary)', margin: '0 0 8px 0' }}>
+              <h2 className="app-chat-empty-title">
                 {t('chat.greeting')}
               </h2>
-              <p style={{ fontSize: '14px', lineHeight: 1.6, margin: 0 }}>
+              <p className="app-chat-empty-copy">
                 {t('chat.intro')}
               </p>
             </div>

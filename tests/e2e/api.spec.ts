@@ -62,6 +62,11 @@ test.describe('API automation: boundaries and exception flows', () => {
     const unauthenticated = await request.get('/api/admin/faq/index/status');
     expect(unauthenticated.status()).toBe(401);
 
+    const unauthenticatedDebug = await request.post('/api/admin/faq/search/debug', {
+      data: { query: '退款' },
+    });
+    expect(unauthenticatedDebug.status()).toBe(401);
+
     const invalidToken = await request.get('/api/admin/faq/index/status', {
       headers: authHeaders('not-a-token'),
     });
@@ -81,6 +86,38 @@ test.describe('API automation: boundaries and exception flows', () => {
       data: { question: 'bad active', answer: 'bad active', category: 'general', keywords: [], isActive: 2 },
     });
     expect(invalidActive.status()).toBe(400);
+  });
+
+  test('admin FAQ debug search requires valid input and returns ranked explanations', async ({ request }) => {
+    const token = await login(request);
+
+    const invalidDebug = await request.post('/api/admin/faq/search/debug', {
+      headers: authHeaders(token),
+      data: { query: '', topK: 5 },
+    });
+    expect(invalidDebug.status()).toBe(400);
+
+    const debugResponse = await request.post('/api/admin/faq/search/debug', {
+      headers: authHeaders(token),
+      data: { query: '如何申请退款？', topK: 3 },
+    });
+    expect(debugResponse.status()).toBe(200);
+    const debugBody = (await readJson(debugResponse)).data;
+    expect(debugBody).toMatchObject({
+      query: '如何申请退款？',
+      topK: 3,
+      indexStatus: {
+        initialized: true,
+      },
+    });
+    expect(debugBody.matches[0]).toMatchObject({
+      rank: 1,
+      question: '如何申请退款？',
+      source: expect.stringMatching(/keyword|vector|hybrid/),
+      bestScore: expect.any(Number),
+      rankingReason: expect.any(String),
+    });
+    expect(debugBody.matches[0].matchedBy.length).toBeGreaterThan(0);
   });
 
   test('FAQ CRUD, index rebuild, exact search, wildcard escaping and invalid limits', async ({ request }) => {

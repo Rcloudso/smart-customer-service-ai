@@ -45,7 +45,7 @@ export function LoginPage(): React.ReactElement {
 
   return (
     <div className="app-login-shell">
-      <div style={{ position: 'fixed', top: '16px', right: '16px' }}>
+      <div className="app-login-controls">
         <PreferenceControls />
       </div>
       <Card

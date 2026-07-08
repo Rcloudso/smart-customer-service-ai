@@ -4,6 +4,9 @@ const apiPort = Number(process.env.E2E_API_PORT ?? 3101);
 const webPort = Number(process.env.E2E_WEB_PORT ?? 5174);
 const baseURL = `http://127.0.0.1:${webPort}`;
 const apiURL = `http://127.0.0.1:${apiPort}`;
+const browserChannel = process.env.PLAYWRIGHT_CHANNEL === 'chromium'
+  ? undefined
+  : process.env.PLAYWRIGHT_CHANNEL ?? (process.env.CI ? undefined : 'chrome');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -64,7 +67,7 @@ export default defineConfig({
       testMatch: /web\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        channel: process.env.PLAYWRIGHT_CHANNEL ?? 'chrome',
+        ...(browserChannel ? { channel: browserChannel } : {}),
       },
     },
   ],

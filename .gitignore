@@ -13,3 +13,4 @@ playwright-report/
 test-results/
 AGENTS.md
 agent-loop/
+DESIGN.md
