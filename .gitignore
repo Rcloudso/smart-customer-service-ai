@@ -11,3 +11,5 @@ npm-debug.log*
 .npm-cache/
 playwright-report/
 test-results/
+AGENTS.md
+agent-loop/
