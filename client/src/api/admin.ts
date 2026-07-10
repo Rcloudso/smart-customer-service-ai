@@ -16,6 +16,10 @@ import type {
   FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
+  KnowledgeReviewItem,
+  KnowledgeReviewStats,
+  KnowledgeReviewStatus,
+  KnowledgeReviewTriggerReason,
 } from '../types';
 
 // Re-export types
@@ -32,6 +36,10 @@ export type {
   FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
+  KnowledgeReviewItem,
+  KnowledgeReviewStats,
+  KnowledgeReviewStatus,
+  KnowledgeReviewTriggerReason,
 };
 
 // ── Auth ───────────────────────────────────────────
@@ -140,6 +148,35 @@ export async function rebuildFaqIndex(): Promise<FaqIndexStatus> {
 
 export async function debugFaqSearch(data: { query: string; topK?: number }): Promise<FaqDebugResult> {
   return post<FaqDebugResult>('/admin/faq/search/debug', data);
+}
+
+// ── Knowledge Review ───────────────────────────────
+
+export async function listKnowledgeReviews(params?: {
+  status?: KnowledgeReviewStatus;
+  triggerReason?: KnowledgeReviewTriggerReason;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginationResponse<KnowledgeReviewItem>> {
+  return get<PaginationResponse<KnowledgeReviewItem>>('/admin/knowledge-reviews', params);
+}
+
+export async function getKnowledgeReviewStats(): Promise<KnowledgeReviewStats> {
+  return get<KnowledgeReviewStats>('/admin/knowledge-reviews/stats');
+}
+
+export async function convertKnowledgeReview(id: string, data: {
+  question: string;
+  answer: string;
+  category: IntentCategory;
+  keywords: string[];
+}): Promise<{ review: KnowledgeReviewItem; faq: FaqEntry }> {
+  return post<{ review: KnowledgeReviewItem; faq: FaqEntry }>(`/admin/knowledge-reviews/${id}/convert`, data);
+}
+
+export async function dismissKnowledgeReview(id: string, reason?: string): Promise<KnowledgeReviewItem> {
+  return post<KnowledgeReviewItem>(`/admin/knowledge-reviews/${id}/dismiss`, { reason });
 }
 
 // ── Model Config ───────────────────────────────────

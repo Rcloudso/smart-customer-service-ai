@@ -255,6 +255,26 @@ class SemanticSearch {
     }
   }
 
+  async prepareIndex(entry: FaqEntry): Promise<number[]> {
+    try {
+      const result = await getLLMClient().embed([buildFaqEmbeddingText(entry)]);
+      const embedding = result[0]?.embedding;
+      if (!embedding) throw new Error('Embedding result was empty');
+      return embedding;
+    } catch (error) {
+      this.lastError = 'FAQ index preparation failed';
+      logger.warn({ entryId: entry.id }, 'Failed to prepare FAQ index entry');
+      throw error;
+    }
+  }
+
+  commitPreparedIndex(entry: FaqEntry): void {
+    this.vectorStore.delete(entry.id);
+    if (entry.isActive && entry.embedding) {
+      this.vectorStore.upsert(entry, entry.embedding);
+    }
+  }
+
   async updateIndexBatch(entries: FaqEntry[]): Promise<void> {
     const activeEntries: FaqEntry[] = [];
 

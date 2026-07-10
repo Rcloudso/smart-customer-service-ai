@@ -39,6 +39,46 @@ export enum EscalationStatus {
   DISMISSED = 'dismissed',
 }
 
+export type KnowledgeReviewStatus = 'pending' | 'converted' | 'dismissed';
+export type KnowledgeReviewTriggerReason = 'no_match' | 'low_retrieval_score' | 'negative_feedback';
+
+export interface KnowledgeRetrievalSnapshot {
+  knowledgeType: 'faq';
+  knowledgeId: string;
+  title: string;
+  source?: 'vector' | 'keyword' | 'hybrid';
+  similarity: number;
+  keywordScore?: number;
+  vectorScore?: number;
+}
+
+export interface KnowledgeReviewItem {
+  id: string;
+  sessionId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  question: string;
+  answer: string;
+  intent: IntentCategory | null;
+  intentConf: number | null;
+  retrievalSnapshot: KnowledgeRetrievalSnapshot[];
+  triggerReason: KnowledgeReviewTriggerReason;
+  rating: SatisfactionRating | null;
+  status: KnowledgeReviewStatus;
+  linkedFaqId: string | null;
+  dismissReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface KnowledgeReviewStats {
+  pending: number;
+  converted: number;
+  dismissed: number;
+  total: number;
+}
+
 // ── Domain Models ──────────────────────────────────
 
 export interface FaqEntry {

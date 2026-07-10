@@ -72,6 +72,7 @@ export class FaqRepo {
     category: IntentCategory;
     keywords: string[];
     embedding?: number[] | null;
+    isActive?: number;
     updatedBy?: string | null;
   }): FaqEntry {
     const now = new Date().toISOString();
@@ -82,7 +83,7 @@ export class FaqRepo {
       category: params.category,
       keywords: params.keywords,
       embedding: params.embedding ?? null,
-      isActive: 1,
+      isActive: params.isActive ?? 1,
       createdAt: now,
       updatedAt: now,
       updatedBy: params.updatedBy ?? null,

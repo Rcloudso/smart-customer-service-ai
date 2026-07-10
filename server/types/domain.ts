@@ -36,6 +36,48 @@ export enum AdminRole {
   SUPER_ADMIN = 'super_admin',
 }
 
+export enum KnowledgeReviewTriggerReason {
+  NO_MATCH = 'no_match',
+  LOW_RETRIEVAL_SCORE = 'low_retrieval_score',
+  NEGATIVE_FEEDBACK = 'negative_feedback',
+}
+
+export enum KnowledgeReviewStatus {
+  PENDING = 'pending',
+  CONVERTED = 'converted',
+  DISMISSED = 'dismissed',
+}
+
+export interface KnowledgeRetrievalSnapshot {
+  knowledgeType: 'faq';
+  knowledgeId: string;
+  title: string;
+  source?: 'vector' | 'keyword' | 'hybrid';
+  similarity: number;
+  keywordScore?: number;
+  vectorScore?: number;
+}
+
+export interface KnowledgeReviewItem {
+  id: string;
+  sessionId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  question: string;
+  answer: string;
+  intent: IntentCategory | null;
+  intentConf: number | null;
+  retrievalSnapshot: KnowledgeRetrievalSnapshot[];
+  triggerReason: KnowledgeReviewTriggerReason;
+  rating: SatisfactionRating | null;
+  status: KnowledgeReviewStatus;
+  linkedFaqId: string | null;
+  dismissReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
 export interface Session {
   id: string;
   userIdent: string;
@@ -54,6 +96,8 @@ export interface Message {
   intentConf: number | null;
   satisfaction: SatisfactionRating | null;
   escalated: number;
+  replyToMessageId: string | null;
+  retrievalSnapshot: KnowledgeRetrievalSnapshot[];
   createdAt: string;
 }
 

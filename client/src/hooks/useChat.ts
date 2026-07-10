@@ -163,7 +163,7 @@ export const useChat = create<ChatState>((set, get) => ({
         sessionId: result.sessionId,
         messages: prev.messages.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, isStreaming: false }
+            ? { ...m, id: result.messageId || m.id, isStreaming: false }
             : m,
         ),
       }));
@@ -186,8 +186,7 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!state.sessionId) return;
 
     try {
-      // The server expects sessionId not messageId for satisfaction
-      await chatApi.submitRating(state.sessionId, rating);
+      await chatApi.submitRating(messageId, state.sessionId, rating);
       set((prev) => ({
         messages: prev.messages.map((m) =>
           m.id === messageId ? { ...m, satisfaction: rating } : m,

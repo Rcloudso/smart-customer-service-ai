@@ -13,6 +13,7 @@ let adminConversationRoutes: express.Router;
 let adminFaqRoutes: express.Router;
 let adminStatsRoutes: express.Router;
 let adminConfigRoutes: express.Router;
+let adminKnowledgeReviewRoutes: express.Router;
 
 function createApp(): express.Application {
   const app = express();
@@ -77,6 +78,13 @@ function createApp(): express.Application {
       adminConfigRoutes = require('./routes/admin/config').default;
     }
     return adminConfigRoutes(_req, _res, next);
+  });
+
+  app.use('/api/admin/knowledge-reviews', (_req, _res, next) => {
+    if (!adminKnowledgeReviewRoutes) {
+      adminKnowledgeReviewRoutes = require('./routes/admin/knowledge-reviews').default;
+    }
+    return adminKnowledgeReviewRoutes(_req, _res, next);
   });
 
   // ---- Health check ----

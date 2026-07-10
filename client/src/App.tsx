@@ -12,6 +12,7 @@ const DashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
 const ConversationsPage = lazy(() => import('./pages/admin/ConversationsPage'));
 const FaqManagementPage = lazy(() => import('./pages/admin/FaqManagementPage'));
 const ModelConfigPage = lazy(() => import('./pages/admin/ModelConfigPage'));
+const KnowledgeReviewPage = lazy(() => import('./pages/admin/KnowledgeReviewPage'));
 const AuthGuard = lazy(() => import('./components/common/AuthGuard'));
 
 function PageFallback(): React.ReactElement {
@@ -45,6 +46,7 @@ export function App(): React.ReactElement {
               <Route index element={<DashboardPage />} />
               <Route path="conversations" element={<ConversationsPage />} />
               <Route path="faq" element={<FaqManagementPage />} />
+              <Route path="knowledge-review" element={<KnowledgeReviewPage />} />
               <Route path="config" element={<ModelConfigPage />} />
             </Route>
           </Routes>

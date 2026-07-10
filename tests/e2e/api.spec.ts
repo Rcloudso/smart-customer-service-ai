@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
+import jwt from 'jsonwebtoken';
 
 async function readJson(response: APIResponse): Promise<any> {
   return response.json();
@@ -258,5 +259,183 @@ test.describe('API automation: boundaries and exception flows', () => {
       params: { userIdent: 'somebody-else' },
     });
     expect(wrongOwnerResponse.status()).toBe(404);
+
+    const token = await login(request);
+    const positiveReviewList = await request.get('/api/admin/knowledge-reviews', {
+      headers: authHeaders(token),
+      params: { keyword: question },
+    });
+    expect((await readJson(positiveReviewList)).data.total).toBe(0);
+  });
+
+  test('knowledge review closes the low-confidence feedback loop without duplicate FAQs', async ({ request }) => {
+    const token = await login(request);
+    const headers = authHeaders(token);
+
+    const unauthenticated = await request.get('/api/admin/knowledge-reviews');
+    expect(unauthenticated.status()).toBe(401);
+    const nonAdminToken = jwt.sign(
+      { id: 'viewer-id', username: 'viewer', role: 'viewer' },
+      'test-secret-123',
+    );
+    const forbidden = await request.get('/api/admin/knowledge-reviews', {
+      headers: authHeaders(nonAdminToken),
+    });
+    expect(forbidden.status()).toBe(403);
+    const invalidPageSize = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { pageSize: 101 },
+    });
+    expect(invalidPageSize.status()).toBe(400);
+
+    const matchedQuestion = '订单发货后多久能收到？';
+    const matchedChat = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: matchedQuestion, userIdent: `negative-match-${Date.now()}` },
+    });
+    const matchedDone = (await parseSse(matchedChat)).find((event) => event.type === 'done').content;
+    const messageOnlyRating = await request.post('/api/chat/satisfaction', {
+      data: { messageId: matchedDone.messageId, rating: 1 },
+    });
+    expect(messageOnlyRating.status()).toBe(400);
+    const matchedRating = await request.post('/api/chat/satisfaction', {
+      data: { messageId: matchedDone.messageId, sessionId: matchedDone.sessionId, rating: 1 },
+    });
+    expect(matchedRating.status()).toBe(200);
+    const matchedReview = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { triggerReason: 'negative_feedback', keyword: matchedQuestion },
+    });
+    const matchedReviewData = (await readJson(matchedReview)).data;
+    const matchedReviewItem = matchedReviewData.items.find(
+      (item: { assistantMessageId: string }) => item.assistantMessageId === matchedDone.messageId,
+    );
+    expect(matchedReviewItem).toBeDefined();
+    expect(matchedReviewItem.retrievalSnapshot.length).toBeGreaterThan(0);
+
+    const question = `qqqqqqqqqqqqqqqq-api-${Date.now()}`;
+    const chatResponse = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: question, userIdent: `knowledge-user-${Date.now()}` },
+    });
+    const events = await parseSse(chatResponse);
+    const done = events.find((event) => event.type === 'done').content;
+
+    const pendingResponse = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { status: 'pending', keyword: question, page: 1, pageSize: 10 },
+    });
+    expect(pendingResponse.status()).toBe(200);
+    const pendingData = (await readJson(pendingResponse)).data;
+    expect(pendingData.total).toBe(1);
+    expect(pendingData.items[0]).toMatchObject({
+      question,
+      status: 'pending',
+      triggerReason: expect.stringMatching(/no_match|low_retrieval_score/),
+    });
+    expect(pendingData.items[0].retrievalSnapshot.length).toBeLessThanOrEqual(3);
+
+    const mismatchRating = await request.post('/api/chat/satisfaction', {
+      data: { messageId: done.messageId, sessionId: 'not-the-message-session', rating: 1 },
+    });
+    expect(mismatchRating.status()).toBe(400);
+
+    const lowRating = await request.post('/api/chat/satisfaction', {
+      data: { messageId: done.messageId, sessionId: done.sessionId, rating: 1 },
+    });
+    expect(lowRating.status()).toBe(200);
+    const ratedList = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { keyword: question },
+    });
+    const ratedData = (await readJson(ratedList)).data;
+    expect(ratedData.total).toBe(1);
+    expect(ratedData.items[0]).toMatchObject({ triggerReason: 'negative_feedback', rating: 1 });
+
+    const convertResponse = await request.post(`/api/admin/knowledge-reviews/${ratedData.items[0].id}/convert`, {
+      headers,
+      data: {
+        question,
+        answer: '这是从知识审核闭环沉淀的答案',
+        category: 'general',
+        keywords: ['knowledge-loop'],
+      },
+    });
+    expect(convertResponse.status()).toBe(200);
+    const converted = (await readJson(convertResponse)).data;
+    expect(converted.review.status).toBe('converted');
+    expect(converted.review.linkedFaqId).toBe(converted.faq.id);
+
+    const retryResponse = await request.post(`/api/admin/knowledge-reviews/${ratedData.items[0].id}/convert`, {
+      headers,
+      data: {
+        question: 'retry must not replace the FAQ',
+        answer: 'retry must not replace the FAQ',
+        category: 'general',
+        keywords: [],
+      },
+    });
+    expect(retryResponse.status()).toBe(200);
+    expect((await readJson(retryResponse)).data.faq.id).toBe(converted.faq.id);
+
+    const searchResponse = await request.get('/api/faq/search', { params: { q: question } });
+    expect(searchResponse.status()).toBe(200);
+    expect((await readJson(searchResponse)).data[0]).toMatchObject({
+      id: converted.faq.id,
+      answer: '这是从知识审核闭环沉淀的答案',
+    });
+
+    const dismissConverted = await request.post(`/api/admin/knowledge-reviews/${ratedData.items[0].id}/dismiss`, {
+      headers,
+      data: { reason: 'too late' },
+    });
+    expect(dismissConverted.status()).toBe(409);
+
+    const specialQuestion = '%_%%%%____';
+    const specialChat = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: specialQuestion, userIdent: `special-filter-${Date.now()}` },
+    });
+    const specialDone = (await parseSse(specialChat)).find((event) => event.type === 'done').content;
+    await request.post('/api/chat/satisfaction', {
+      data: { messageId: specialDone.messageId, sessionId: specialDone.sessionId, rating: 1 },
+    });
+    const specialFilter = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { triggerReason: 'negative_feedback', keyword: '%_', page: 1, pageSize: 1 },
+    });
+    const specialFilterData = (await readJson(specialFilter)).data;
+    expect(specialFilterData.items).toHaveLength(1);
+    expect(specialFilterData.items[0].question).toBe(specialQuestion);
+    expect(specialFilterData.pageSize).toBe(1);
+
+    const secondPage = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { triggerReason: 'negative_feedback', page: 2, pageSize: 1 },
+    });
+    expect((await readJson(secondPage)).data.items).toHaveLength(1);
+
+    const explicitQuestion = `转人工客服 ${Date.now()}`;
+    const explicitResponse = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: explicitQuestion, userIdent: `explicit-user-${Date.now()}` },
+    });
+    const explicitEvents = await parseSse(explicitResponse);
+    expect(explicitEvents.some((event) => event.type === 'escalate')).toBe(true);
+    const explicitDone = explicitEvents.find((event) => event.type === 'done').content;
+    const explicitConversation = await request.get(`/api/admin/conversations/${explicitDone.sessionId}`, { headers });
+    expect((await readJson(explicitConversation)).data.escalation).toMatchObject({ status: 'pending' });
+    const explicitList = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { keyword: explicitQuestion },
+    });
+    expect((await readJson(explicitList)).data.total).toBe(0);
+
+    const statsResponse = await request.get('/api/admin/knowledge-reviews/stats', { headers });
+    expect(statsResponse.status()).toBe(200);
+    expect((await readJson(statsResponse)).data).toMatchObject({
+      converted: expect.any(Number),
+      total: expect.any(Number),
+    });
   });
 });

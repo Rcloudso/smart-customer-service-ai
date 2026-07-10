@@ -197,7 +197,7 @@ export async function sendMessage(
 /**
  * Submit satisfaction rating for a chat session.
  */
-export async function submitRating(sessionId: string, rating: number): Promise<void> {
+export async function submitRating(messageId: string, sessionId: string, rating: number): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -210,7 +210,7 @@ export async function submitRating(sessionId: string, rating: number): Promise<v
   const response = await fetch('/api/chat/satisfaction', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ sessionId, rating }),
+    body: JSON.stringify({ messageId, sessionId, rating }),
   });
 
   if (!response.ok) {

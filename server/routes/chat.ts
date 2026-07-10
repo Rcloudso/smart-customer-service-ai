@@ -4,10 +4,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { conversationService } from '../services/conversation.service';
 import { intentService } from '../services/intent.service';
 import { escalationService } from '../services/escalation.service';
+import { knowledgeReviewService } from '../services/knowledge-review.service';
 import { buildSystemPrompt, buildMessages } from '../ai/prompt-manager';
 import { getWindow } from '../ai/context-manager';
 import { getLLMClient } from '../ai/llm-client';
-import { MessageRole } from '../types/domain';
+import { KnowledgeRetrievalSnapshot, MessageRole, SatisfactionRating } from '../types/domain';
 import { FaqMatch, LLMMessage } from '../types/ai';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -27,8 +28,11 @@ const historyQuerySchema = z.object({
 });
 
 const satisfactionSchema = z.object({
-  sessionId: z.string().min(1, 'sessionId不能为空'),
+  messageId: z.string().min(1, 'messageId不能为空').optional(),
+  sessionId: z.string().min(1, 'sessionId不能为空').optional(),
   rating: z.number().int().min(1).max(5),
+}).refine((value) => Boolean(value.sessionId), {
+  message: 'sessionId不能为空',
 });
 
 function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
@@ -36,6 +40,36 @@ function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
     (match.source === 'keyword' || match.source === 'hybrid') &&
     (match.keywordScore ?? match.similarity) >= 0.65,
   ) ?? null;
+}
+
+function toRetrievalSnapshot(faqMatches: FaqMatch[]): KnowledgeRetrievalSnapshot[] {
+  return faqMatches.slice(0, 3).map((match) => ({
+    knowledgeType: 'faq',
+    knowledgeId: match.id,
+    title: match.question,
+    source: match.source,
+    similarity: match.similarity,
+    keywordScore: match.keywordScore,
+    vectorScore: match.vectorScore,
+  }));
+}
+
+function captureKnowledgeGapSafely(
+  params: Parameters<typeof knowledgeReviewService.captureChatGap>[0],
+): void {
+  try {
+    knowledgeReviewService.captureChatGap(params);
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        sessionId: params.userMessage.sessionId,
+        userMessageId: params.userMessage.id,
+        assistantMessageId: params.assistantMessage.id,
+      },
+      'Knowledge review capture failed after assistant message was saved',
+    );
+  }
 }
 
 /**
@@ -60,7 +94,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     // Step 2: Save user message
-    conversationService.saveMessage({
+    const userMessage = conversationService.saveMessage({
       sessionId,
       role: MessageRole.USER,
       content: message,
@@ -145,6 +179,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         content: fullContent,
         intent: intentResult.intent.intent,
         intentConf: intentResult.intent.confidence,
+        replyToMessageId: userMessage.id,
+        retrievalSnapshot: toRetrievalSnapshot(intentResult.faqMatches),
+      });
+
+      captureKnowledgeGapSafely({
+        userMessage,
+        assistantMessage,
+        intent: intentResult.intent.intent,
+        intentConf: intentResult.intent.confidence,
+        faqMatches: intentResult.faqMatches,
+        escalationType: intentResult.escalationType,
       });
 
       sseSend({
@@ -216,8 +261,19 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       content: fullContent,
       intent: intentResult.intent.intent,
       intentConf: intentResult.intent.confidence,
+      replyToMessageId: userMessage.id,
+      retrievalSnapshot: toRetrievalSnapshot(intentResult.faqMatches),
     });
     assistantMessageId = assistantMessage.id;
+
+    captureKnowledgeGapSafely({
+      userMessage,
+      assistantMessage,
+      intent: intentResult.intent.intent,
+      intentConf: intentResult.intent.confidence,
+      faqMatches: intentResult.faqMatches,
+      escalationType: intentResult.escalationType,
+    });
 
     // Mark escalated if needed
     if (escalated) {
@@ -255,34 +311,42 @@ router.post('/satisfaction', async (req: Request, res: Response, next: NextFunct
       throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
     }
 
-    const { sessionId, rating } = parsed.data;
+    const { messageId, sessionId, rating } = parsed.data;
+    let assistantMessage = messageId ? conversationService.getMessage(messageId) : null;
 
-    // Find the last assistant message in the session
-    const messages = conversationService.getMessages(sessionId);
-    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === MessageRole.ASSISTANT);
-
-    if (!lastAssistantMsg) {
-      // Try to find any message to rate
-      const lastMsg = [...messages].reverse().find((m) => m.role === MessageRole.USER);
-      if (!lastMsg) {
-        res.json({ code: 0, data: null, message: '没有可评分的消息' });
-        return;
-      }
-      // Fall back to updating the user message's satisfaction (unconventional but better than failing)
-      const { getDatabase } = await import('../db');
-      const db = getDatabase();
-      const stmt = db.prepare('UPDATE messages SET satisfaction = ? WHERE session_id = ? AND role = ?');
-      stmt.run(rating, sessionId, MessageRole.USER);
-    } else {
-      const { getDatabase } = await import('../db');
-      const db = getDatabase();
-      const stmt = db.prepare('UPDATE messages SET satisfaction = ? WHERE id = ?');
-      stmt.run(rating, lastAssistantMsg.id);
+    if (messageId && (!assistantMessage || assistantMessage.role !== MessageRole.ASSISTANT)) {
+      throw new ValidationError('messageId 必须指向助手消息');
     }
 
-    logger.info({ sessionId, rating }, 'Satisfaction rating submitted');
+    if (!assistantMessage && sessionId) {
+      assistantMessage = [...conversationService.getMessages(sessionId)]
+        .reverse()
+        .find((message) => message.role === MessageRole.ASSISTANT) ?? null;
+    }
 
-    res.json({ code: 0, data: { sessionId, rating }, message: 'ok' });
+    if (!assistantMessage) {
+      res.json({ code: 0, data: null, message: '没有可评分的消息' });
+      return;
+    }
+
+    if (sessionId && assistantMessage.sessionId !== sessionId) {
+      throw new ValidationError('messageId 与 sessionId 不匹配');
+    }
+
+    const resolvedSessionId = assistantMessage.sessionId;
+    knowledgeReviewService.recordRating({
+      sessionId: resolvedSessionId,
+      assistantMessageId: assistantMessage.id,
+      rating: rating as SatisfactionRating,
+    });
+
+    logger.info({ sessionId: resolvedSessionId, messageId: assistantMessage.id, rating }, 'Satisfaction rating submitted');
+
+    res.json({
+      code: 0,
+      data: { sessionId: resolvedSessionId, messageId: assistantMessage.id, rating },
+      message: 'ok',
+    });
   } catch (err) {
     next(err);
   }
