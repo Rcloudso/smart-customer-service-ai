@@ -20,6 +20,9 @@ import type {
   KnowledgeReviewStats,
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
+  DocumentItem,
+  DocumentChunk,
+  DocumentStatus,
 } from '../types';
 
 // Re-export types
@@ -40,6 +43,9 @@ export type {
   KnowledgeReviewStats,
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
+  DocumentItem,
+  DocumentChunk,
+  DocumentStatus,
 };
 
 // ── Auth ───────────────────────────────────────────
@@ -177,6 +183,48 @@ export async function convertKnowledgeReview(id: string, data: {
 
 export async function dismissKnowledgeReview(id: string, reason?: string): Promise<KnowledgeReviewItem> {
   return post<KnowledgeReviewItem>(`/admin/knowledge-reviews/${id}/dismiss`, { reason });
+}
+
+// ── Document Knowledge ────────────────────────────
+
+export async function listDocuments(params?: {
+  status?: DocumentStatus;
+  isActive?: boolean;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginationResponse<DocumentItem>> {
+  return get<PaginationResponse<DocumentItem>>('/admin/documents', {
+    status: params?.status,
+    isActive: params?.isActive === undefined ? undefined : String(params.isActive),
+    keyword: params?.keyword,
+    page: params?.page,
+    pageSize: params?.pageSize,
+  });
+}
+
+export async function uploadDocument(file: File): Promise<DocumentItem> {
+  return uploadFile<DocumentItem>('/admin/documents', file);
+}
+
+export async function getDocument(id: string): Promise<DocumentItem> {
+  return get<DocumentItem>(`/admin/documents/${id}`);
+}
+
+export async function listDocumentChunks(id: string, page: number, pageSize: number): Promise<PaginationResponse<DocumentChunk>> {
+  return get<PaginationResponse<DocumentChunk>>(`/admin/documents/${id}/chunks`, { page, pageSize });
+}
+
+export async function updateDocument(id: string, isActive: boolean): Promise<DocumentItem> {
+  return put<DocumentItem>(`/admin/documents/${id}`, { isActive });
+}
+
+export async function retryDocument(id: string): Promise<DocumentItem> {
+  return post<DocumentItem>(`/admin/documents/${id}/retry`, {});
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  return del<void>(`/admin/documents/${id}`);
 }
 
 // ── Model Config ───────────────────────────────────

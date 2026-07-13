@@ -33,6 +33,7 @@ const envSchema = z.object({
   /** @dev-only: change in production — default password is weak and publicly known */
   ADMIN_PASSWORD: z.string().default('admin123'),
   DB_PATH: z.string().default('./data/customer-service.db'),
+  DOCUMENT_UPLOAD_DIR: z.string().default('./data/uploads'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   RATE_LIMIT_CHAT: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_ADMIN: z.coerce.number().int().positive().default(100),
@@ -111,6 +112,11 @@ export const config = {
     // Use cwd-based resolution: relative DB_PATH resolves against process.cwd(),
     // absolute paths are used as-is. This avoids __dirname pointing to dist/ in production.
     path: path.isAbsolute(env.DB_PATH) ? env.DB_PATH : path.resolve(process.cwd(), env.DB_PATH),
+  },
+  documents: {
+    uploadDir: path.isAbsolute(env.DOCUMENT_UPLOAD_DIR)
+      ? env.DOCUMENT_UPLOAD_DIR
+      : path.resolve(process.cwd(), env.DOCUMENT_UPLOAD_DIR),
   },
   cors: {
     origins: env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),

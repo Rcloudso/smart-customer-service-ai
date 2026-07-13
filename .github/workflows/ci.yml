@@ -28,6 +28,13 @@ jobs:
         env:
           JWT_SECRET: test-secret-123
 
+      - name: Run retrieval evaluations
+        run: |
+          EMBED_PROVIDER=other npm run eval:faq
+          EMBED_PROVIDER=other npm run eval:document
+        env:
+          JWT_SECRET: test-secret-123
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 

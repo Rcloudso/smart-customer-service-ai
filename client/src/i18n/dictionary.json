@@ -910,5 +910,197 @@
   "knowledgeReview.dismissFailed": {
     "zh": "忽略审核记录失败",
     "en": "Failed to dismiss review item"
+  },
+  "nav.documents": {
+    "zh": "文档知识",
+    "en": "Documents"
+  },
+  "documents.title": {
+    "zh": "文档知识",
+    "en": "Document Knowledge"
+  },
+  "documents.description": {
+    "zh": "上传 TXT、Markdown、PDF 或 DOCX，让客服基于企业文档回答问题。",
+    "en": "Upload TXT, Markdown, PDF, or DOCX files for document-grounded answers."
+  },
+  "documents.searchPlaceholder": {
+    "zh": "搜索文件名",
+    "en": "Search file names"
+  },
+  "documents.upload": {
+    "zh": "上传文档",
+    "en": "Upload document"
+  },
+  "documents.fileName": {
+    "zh": "文件名",
+    "en": "File name"
+  },
+  "documents.format": {
+    "zh": "格式",
+    "en": "Format"
+  },
+  "documents.size": {
+    "zh": "大小",
+    "en": "Size"
+  },
+  "documents.chunkCount": {
+    "zh": "切片数",
+    "en": "Chunks"
+  },
+  "documents.enabled": {
+    "zh": "启用",
+    "en": "Enabled"
+  },
+  "documents.active": {
+    "zh": "已启用",
+    "en": "Active"
+  },
+  "documents.inactive": {
+    "zh": "已停用",
+    "en": "Inactive"
+  },
+  "documents.updatedAt": {
+    "zh": "更新时间",
+    "en": "Updated"
+  },
+  "documents.status.pending": {
+    "zh": "处理中",
+    "en": "Processing"
+  },
+  "documents.status.ready": {
+    "zh": "可检索",
+    "en": "Ready"
+  },
+  "documents.status.failed": {
+    "zh": "处理失败",
+    "en": "Failed"
+  },
+  "documents.view": {
+    "zh": "查看",
+    "en": "View"
+  },
+  "documents.retry": {
+    "zh": "重试",
+    "en": "Retry"
+  },
+  "documents.deleteConfirm": {
+    "zh": "确认删除该文档及全部切片？",
+    "en": "Delete this document and all of its chunks?"
+  },
+  "documents.empty": {
+    "zh": "暂无文档，上传第一份知识文档开始使用",
+    "en": "No documents yet. Upload the first knowledge document."
+  },
+  "documents.loadFailed": {
+    "zh": "文档列表加载失败",
+    "en": "Failed to load documents"
+  },
+  "documents.uploaded": {
+    "zh": "文档已解析并加入检索",
+    "en": "Document parsed and indexed"
+  },
+  "documents.uploadFailedAccepted": {
+    "zh": "文档已保存但处理失败，可在列表中重试",
+    "en": "Document saved but processing failed; retry it from the list"
+  },
+  "documents.uploadFailed": {
+    "zh": "文档上传失败",
+    "en": "Document upload failed"
+  },
+  "documents.retrySucceeded": {
+    "zh": "文档重试成功并已加入检索",
+    "en": "Document retry succeeded and was indexed"
+  },
+  "documents.retryFailed": {
+    "zh": "文档仍未能处理，请检查失败原因",
+    "en": "Document processing still failed; check the failure reason"
+  },
+  "documents.updated": {
+    "zh": "文档状态已更新",
+    "en": "Document state updated"
+  },
+  "documents.deleted": {
+    "zh": "文档已删除",
+    "en": "Document deleted"
+  },
+  "documents.detailTitle": {
+    "zh": "文档详情与切片",
+    "en": "Document details and chunks"
+  },
+  "documents.characters": {
+    "zh": "字符数",
+    "en": "Characters"
+  },
+  "documents.failureCode": {
+    "zh": "失败原因",
+    "en": "Failure reason"
+  },
+  "documents.chunkIndex": {
+    "zh": "序号",
+    "en": "Index"
+  },
+  "documents.chunkTitle": {
+    "zh": "标题",
+    "en": "Heading"
+  },
+  "documents.chunkContent": {
+    "zh": "原文片段",
+    "en": "Source excerpt"
+  },
+  "documents.pages": {
+    "zh": "页码",
+    "en": "Pages"
+  },
+  "documents.chunksEmpty": {
+    "zh": "暂无可预览切片",
+    "en": "No chunks available"
+  },
+  "documents.chunksLoadFailed": {
+    "zh": "文档切片加载失败",
+    "en": "Failed to load document chunks"
+  },
+  "documents.failure.invalid_pdf": {
+    "zh": "PDF 文件损坏或无法解析",
+    "en": "The PDF is damaged or cannot be parsed"
+  },
+  "documents.failure.pdf_encrypted": {
+    "zh": "PDF 已加密",
+    "en": "The PDF is encrypted"
+  },
+  "documents.failure.pdf_no_text": {
+    "zh": "PDF 没有可提取文本，扫描件暂不支持",
+    "en": "No text layer found; scanned PDFs are not supported yet"
+  },
+  "documents.failure.invalid_docx": {
+    "zh": "DOCX 文件损坏或无法解析",
+    "en": "The DOCX is damaged or cannot be parsed"
+  },
+  "documents.failure.empty_content": {
+    "zh": "未提取到有效文本",
+    "en": "No usable text was extracted"
+  },
+  "documents.failure.text_too_large": {
+    "zh": "提取文本超过 200,000 字符",
+    "en": "Extracted text exceeds 200,000 characters"
+  },
+  "documents.failure.too_many_units": {
+    "zh": "文档结构单元超过 2,000 个",
+    "en": "Document exceeds 2,000 semantic units"
+  },
+  "documents.failure.too_many_chunks": {
+    "zh": "最终切片超过 300 个",
+    "en": "Document exceeds 300 final chunks"
+  },
+  "documents.failure.embedding_failed": {
+    "zh": "向量生成失败",
+    "en": "Embedding generation failed"
+  },
+  "documents.failure.processing_failed": {
+    "zh": "处理过程失败",
+    "en": "Document processing failed"
+  },
+  "documents.failure.source_file_missing": {
+    "zh": "原文件缺失，无法重试",
+    "en": "Source file is missing and cannot be retried"
   }
 }

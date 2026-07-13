@@ -1,5 +1,22 @@
 import { IntentCategory } from './domain';
 
+export type KnowledgeType = 'faq' | 'document';
+
+export interface RetrievalResult {
+  knowledgeType: KnowledgeType;
+  knowledgeId: string;
+  documentId?: string;
+  title: string;
+  content: string;
+  similarity: number;
+  source?: 'vector' | 'keyword' | 'hybrid';
+  vectorScore?: number;
+  keywordScore?: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
+}
+
 export interface IntentResult {
   intent: IntentCategory;
   confidence: number;
@@ -48,7 +65,7 @@ export interface LLMMessage {
 
 export interface PromptContext {
   intent: IntentCategory;
-  faqResults: FaqMatch[];
+  knowledgeResults: RetrievalResult[];
   userQuestion: string;
   conversationSummary: string | null;
   shouldOfferEscalation: boolean;

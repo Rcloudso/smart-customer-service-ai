@@ -43,13 +43,50 @@ export type KnowledgeReviewStatus = 'pending' | 'converted' | 'dismissed';
 export type KnowledgeReviewTriggerReason = 'no_match' | 'low_retrieval_score' | 'negative_feedback';
 
 export interface KnowledgeRetrievalSnapshot {
-  knowledgeType: 'faq';
+  knowledgeType: 'faq' | 'document';
   knowledgeId: string;
+  documentId?: string;
   title: string;
   source?: 'vector' | 'keyword' | 'hybrid';
   similarity: number;
   keywordScore?: number;
   vectorScore?: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
+}
+
+export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type DocumentStatus = 'pending' | 'ready' | 'failed';
+
+export interface DocumentItem {
+  id: string;
+  fileName: string;
+  format: DocumentFormat;
+  mimeType: string;
+  sizeBytes: number;
+  status: DocumentStatus;
+  isActive: number;
+  parserVersion: string;
+  chunkerVersion: string;
+  failureCode: string | null;
+  characterCount: number;
+  chunkCount: number;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentChunk {
+  id: string;
+  documentId: string;
+  chunkIndex: number;
+  content: string;
+  title: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  characterCount: number;
+  createdAt: string;
 }
 
 export interface KnowledgeReviewItem {

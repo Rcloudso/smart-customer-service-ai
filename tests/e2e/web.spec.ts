@@ -24,6 +24,10 @@ function knowledgeReviewRow(page: Page, question: string) {
   return page.getByTestId('knowledge-review-table').locator('tr').filter({ hasText: question });
 }
 
+function documentRow(page: Page, fileName: string) {
+  return page.getByTestId('documents-page').locator('tr').filter({ hasText: fileName });
+}
+
 test.describe('Web automation: customer chat experience', () => {
   test.beforeEach(async ({ page }) => {
     await clearBrowserState(page);
@@ -128,6 +132,67 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByTestId('faq-debug-results')).toContainText('如何申请退款？');
     await expect(page.getByTestId('faq-debug-results')).toContainText('最佳分');
     await expect(page.getByTestId('faq-debug-results')).toContainText(/keyword|vector|hybrid/);
+  });
+
+  test('admin uploads a document, previews chunks, and customers retrieve its source text', async ({ page }) => {
+    const fileName = 'refund-policy.md';
+    await loginAsAdmin(page);
+    await page.getByText('文档知识').click();
+    await expect(page).toHaveURL(/\/admin\/documents$/);
+    await expect(page.getByTestId('documents-page')).toBeVisible();
+
+    const [uploadResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/api/admin/documents') && response.request().method() === 'POST'),
+      page.locator('input[type="file"]').setInputFiles('tests/fixtures/refund-policy.md'),
+    ]);
+    expect(uploadResponse.status()).toBe(201);
+    const documentId = (await uploadResponse.json()).data.id as string;
+    const row = documentRow(page, fileName);
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await expect(row).toContainText('可检索');
+    await expect(row).toContainText('MD');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await expect(page.getByText('登录成功')).toBeHidden({ timeout: 8_000 });
+      await expect(page.getByText('文档已解析并加入检索')).toBeHidden({ timeout: 8_000 });
+      await page.screenshot({ path: 'docs/releases/assets/v0.2.6-documents.png', fullPage: true });
+    }
+
+    await row.getByTestId('document-view').click();
+    await expect(page.getByTestId('document-detail')).toBeVisible();
+    await expect(page.getByTestId('document-detail')).toContainText('三个工作日');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.waitForTimeout(350);
+      await page.screenshot({ path: 'docs/releases/assets/v0.2.6-document-detail.png', fullPage: true });
+    }
+    await page.getByRole('button', { name: '关闭' }).click();
+
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: 'Document Knowledge' })).toBeVisible();
+    await expect(documentRow(page, fileName)).toContainText('Ready');
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId('documents-page')).toBeVisible();
+    const overflow = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({ path: 'docs/releases/assets/v0.2.6-documents-mobile-dark.png', fullPage: true });
+    }
+
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill('银杏计划退款审核通过后，会在三个工作日内原路返回。');
+    await page.getByTestId('chat-send-button').click();
+    await expect(page.getByTestId('chat-messages')).toContainText(fileName, { timeout: 15_000 });
+    await expect(page.getByTestId('chat-messages')).toContainText('三个工作日');
+
+    const deleted = await page.request.delete(`/api/admin/documents/${documentId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(deleted.status()).toBe(200);
   });
 
   test('admin reviews a knowledge gap, inspects evidence, and converts it to a searchable FAQ', async ({ page }) => {

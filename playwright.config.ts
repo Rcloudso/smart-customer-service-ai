@@ -45,6 +45,7 @@ export default defineConfig({
       EMBED_API_BASE: '',
       EMBED_MODEL: '',
       DB_PATH: './data/e2e-test.db',
+      DOCUMENT_UPLOAD_DIR: './data/e2e-uploads',
       PORT: String(apiPort),
       VITE_PORT: String(webPort),
       API_PROXY_TARGET: apiURL,

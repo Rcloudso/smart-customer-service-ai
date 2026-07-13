@@ -73,6 +73,46 @@ export function initSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_faq_entries_category ON faq_entries(category);
     CREATE INDEX IF NOT EXISTS idx_faq_entries_is_active ON faq_entries(is_active);
 
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      format TEXT NOT NULL CHECK(format IN ('txt', 'md', 'pdf', 'docx')),
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256 TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'ready', 'failed')),
+      is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+      parser_version TEXT NOT NULL,
+      chunker_version TEXT NOT NULL,
+      failure_code TEXT,
+      character_count INTEGER NOT NULL DEFAULT 0,
+      chunk_count INTEGER NOT NULL DEFAULT 0,
+      uploaded_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_sha256 ON documents(sha256);
+    CREATE INDEX IF NOT EXISTS idx_documents_status_updated ON documents(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_documents_active_updated ON documents(is_active, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_chunks (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      title TEXT,
+      page_start INTEGER,
+      page_end INTEGER,
+      character_count INTEGER NOT NULL,
+      embedding TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(document_id, chunk_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_chunks_document ON document_chunks(document_id, chunk_index);
+
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,

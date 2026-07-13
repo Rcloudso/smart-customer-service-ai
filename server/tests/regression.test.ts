@@ -123,7 +123,7 @@ function testVectorStoreContractExists(): void {
 
 function testFaqEmbeddingTextIncludesAnswerAndKeywords(): void {
   const source = fs.readFileSync(
-    path.resolve(process.cwd(), 'server/ai/semantic-search.ts'),
+    path.resolve(process.cwd(), 'server/ai/knowledge-adapters.ts'),
     'utf8',
   );
 
@@ -134,17 +134,22 @@ function testFaqEmbeddingTextIncludesAnswerAndKeywords(): void {
 }
 
 function testHybridSearchMergesVectorAndKeywordMatches(): void {
-  const source = fs.readFileSync(
-    path.resolve(process.cwd(), 'server/ai/semantic-search.ts'),
+  const retrieverSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'server/ai/knowledge-retriever.ts'),
     'utf8',
   );
+  const adapterSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'server/ai/knowledge-adapters.ts'),
+    'utf8',
+  );
+  const source = `${retrieverSource}\n${adapterSource}`;
 
   assert.match(source, /keywordScore/, 'hybrid FAQ matches should expose keyword scores');
   assert.match(source, /vectorScore/, 'hybrid FAQ matches should expose vector scores');
   assert.match(source, /source:\s*'hybrid'/, 'matches found by both paths should be marked hybrid');
-  assert.match(source, /Map<string,\s*FaqMatch>/, 'hybrid search should merge matches by FAQ id');
+  assert.match(source, /Map<string,\s*RetrievalResult>/, 'hybrid search should merge matches by knowledge id');
   assert.match(source, /KEYWORD_EXACT_MATCH_SCORE/, 'exact keyword matches should have a strong score');
-  assert.match(source, /Math\.max\(a\.vectorScore/, 'hybrid ranking should compare best available score before source tie-breaks');
+  assert.match(source, /Math\.max\(existing\.vectorScore/, 'hybrid ranking should keep the best available score');
   assert.doesNotMatch(
     source,
     /if \(this\.index\.size > 0\)\s*\{\s*return await this\.semanticSearch\(query, topK\);?\s*\}/,
@@ -279,7 +284,7 @@ function testOpenSourceReadinessArtifactsExist(): void {
     /npm run db:seed/,
     'Docker Compose should seed the default local admin before starting the demo',
   );
-  assert.match(readmeSource, /Hybrid retrieval/, 'README should document hybrid retrieval');
+  assert.match(readmeSource, /Hybrid (multi-source )?retrieval/, 'README should document hybrid retrieval');
   assert.match(readmeSource, /Docker/, 'README should document Docker usage');
   assert.match(readmeCnSource, /混合检索/, 'Chinese README should document hybrid retrieval');
   assert.match(readmeCnSource, /Docker/, 'Chinese README should document Docker usage');
@@ -567,6 +572,8 @@ function testRetrievalEvaluationAndDebuggingArtifactsExist(): void {
   ) as { scripts?: Record<string, string> };
   const evalCasesPath = path.resolve(process.cwd(), 'eval/faq-cases.json');
   const evalScriptPath = path.resolve(process.cwd(), 'server/eval/faq-eval.ts');
+  const documentEvalCasesPath = path.resolve(process.cwd(), 'eval/document-cases.json');
+  const documentEvalScriptPath = path.resolve(process.cwd(), 'server/eval/document-eval.ts');
   const semanticSource = fs.readFileSync(path.resolve(process.cwd(), 'server/ai/semantic-search.ts'), 'utf8');
   const faqRouteSource = fs.readFileSync(path.resolve(process.cwd(), 'server/routes/admin/faq.ts'), 'utf8');
   const faqPageSource = fs.readFileSync(path.resolve(process.cwd(), 'client/src/pages/admin/FaqManagementPage.tsx'), 'utf8');
@@ -574,11 +581,18 @@ function testRetrievalEvaluationAndDebuggingArtifactsExist(): void {
   assert.equal(packageJson.scripts?.['eval:faq'], 'tsx server/eval/faq-eval.ts', 'package.json should expose FAQ retrieval evaluation');
   assert.ok(fs.existsSync(evalCasesPath), 'FAQ retrieval evaluation cases should exist');
   assert.ok(fs.existsSync(evalScriptPath), 'FAQ retrieval evaluation script should exist');
+  assert.equal(packageJson.scripts?.['eval:document'], 'tsx server/eval/document-eval.ts', 'package.json should expose document retrieval evaluation');
+  assert.ok(fs.existsSync(documentEvalCasesPath), 'document retrieval evaluation cases should exist');
+  assert.ok(fs.existsSync(documentEvalScriptPath), 'document retrieval evaluation script should exist');
 
   const evalCases = JSON.parse(fs.readFileSync(evalCasesPath, 'utf8')) as Array<Record<string, unknown>>;
   assert.ok(evalCases.length >= 10, 'FAQ retrieval evaluation should include a useful baseline case set');
   assert.match(fs.readFileSync(evalScriptPath, 'utf8'), /Top1 accuracy/, 'FAQ evaluation should report Top1 accuracy');
   assert.match(fs.readFileSync(evalScriptPath, 'utf8'), /Source distribution/, 'FAQ evaluation should report source distribution');
+  const documentEval = JSON.parse(fs.readFileSync(documentEvalCasesPath, 'utf8')) as { cases: unknown[] };
+  assert.ok(documentEval.cases.length >= 12, 'document retrieval evaluation should include at least twelve cases');
+  assert.match(fs.readFileSync(documentEvalScriptPath, 'utf8'), /semantic-v1/, 'document evaluation should report semantic-v1 metrics');
+  assert.match(fs.readFileSync(documentEvalScriptPath, 'utf8'), /structure-baseline/, 'document evaluation should compare the structure-only baseline');
 
   assert.match(semanticSource, /debugSearch\(/, 'semantic search should expose debug search');
   assert.match(semanticSource, /rankingReason/, 'debug search should explain ranking reasons');

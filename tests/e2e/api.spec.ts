@@ -189,6 +189,135 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(deleteResponse.status()).toBe(200);
   });
 
+  test('document upload is private, searchable, paginated and lifecycle-safe', async ({ request }) => {
+    const unauthenticated = await request.get('/api/admin/documents');
+    expect(unauthenticated.status()).toBe(401);
+
+    const token = await login(request);
+    const headers = authHeaders(token);
+    const invalidPageSize = await request.get('/api/admin/documents', {
+      headers,
+      params: { pageSize: 101 },
+    });
+    expect(invalidPageSize.status()).toBe(400);
+
+    const fileName = `refund-policy-${Date.now()}.md`;
+    const content = [
+      '# 退款到账时间',
+      '',
+      '银杏计划退款将在审核通过后的三个工作日内到账。',
+      '银行卡到账速度可能受发卡行处理时间影响。',
+    ].join('\n');
+    const upload = await request.post('/api/admin/documents', {
+      headers,
+      multipart: {
+        file: {
+          name: fileName,
+          mimeType: 'text/markdown',
+          buffer: Buffer.from(content),
+        },
+      },
+    });
+    expect(upload.status()).toBe(201);
+    const document = (await readJson(upload)).data;
+    expect(document).toMatchObject({ fileName, format: 'md', status: 'ready', isActive: 1 });
+    expect(document.chunkCount).toBeGreaterThan(0);
+    expect(document).not.toHaveProperty('storagePath');
+    expect(document).not.toHaveProperty('sha256');
+
+    const list = await request.get('/api/admin/documents', {
+      headers,
+      params: { status: 'ready', isActive: true, keyword: 'refund-policy', page: 1, pageSize: 10 },
+    });
+    expect(list.status()).toBe(200);
+    expect((await readJson(list)).data.items[0].id).toBe(document.id);
+
+    const chunks = await request.get(`/api/admin/documents/${document.id}/chunks`, {
+      headers,
+      params: { page: 1, pageSize: 10 },
+    });
+    expect(chunks.status()).toBe(200);
+    const chunkData = (await readJson(chunks)).data;
+    expect(chunkData.total).toBeGreaterThan(0);
+    expect(chunkData.items[0].content).toContain('三个工作日');
+    expect(chunkData.items[0]).not.toHaveProperty('embedding');
+
+    const duplicate = await request.post('/api/admin/documents', {
+      headers,
+      multipart: {
+        file: {
+          name: `same-content-${Date.now()}.md`,
+          mimeType: 'text/markdown',
+          buffer: Buffer.from(content),
+        },
+      },
+    });
+    expect(duplicate.status()).toBe(409);
+
+    const invalidUpdate = await request.put(`/api/admin/documents/${document.id}`, {
+      headers,
+      data: { isActive: false, fileName: 'not-allowed.md' },
+    });
+    expect(invalidUpdate.status()).toBe(400);
+
+    const chat = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: '银杏计划退款将在审核通过后的三个工作日内到账。', userIdent: `document-user-${Date.now()}` },
+    });
+    expect(chat.status()).toBe(200);
+    const events = await parseSse(chat);
+    const faqEvent = events.find((event) => event.type === 'faq');
+    expect(faqEvent?.content ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ question: expect.stringContaining(fileName) }),
+    ]));
+    const tokenText = events
+      .filter((event) => event.type === 'token')
+      .map((event) => event.content)
+      .join('');
+    expect(tokenText).toContain(fileName);
+    expect(tokenText).toContain('三个工作日');
+    expect(events.find((event) => event.type === 'done').content).toMatchObject({
+      sessionId: expect.any(String),
+      messageId: expect.any(String),
+    });
+    const done = events.find((event) => event.type === 'done').content;
+    const rating = await request.post('/api/chat/satisfaction', {
+      data: { messageId: done.messageId, sessionId: done.sessionId, rating: 1 },
+    });
+    expect(rating.status()).toBe(200);
+    const reviews = await request.get('/api/admin/knowledge-reviews', {
+      headers,
+      params: { keyword: '银杏计划退款', page: 1, pageSize: 10 },
+    });
+    const documentSnapshot = (await readJson(reviews)).data.items[0].retrievalSnapshot
+      .find((item: { knowledgeType: string }) => item.knowledgeType === 'document');
+    expect(documentSnapshot).toMatchObject({
+      knowledgeType: 'document',
+      documentId: document.id,
+      knowledgeId: expect.any(String),
+      chunkIndex: expect.any(Number),
+    });
+
+    const deactivate = await request.put(`/api/admin/documents/${document.id}`, {
+      headers,
+      data: { isActive: false },
+    });
+    expect(deactivate.status()).toBe(200);
+    expect((await readJson(deactivate)).data.isActive).toBe(0);
+
+    const activate = await request.put(`/api/admin/documents/${document.id}`, {
+      headers,
+      data: { isActive: true },
+    });
+    expect(activate.status()).toBe(200);
+    expect((await readJson(activate)).data.isActive).toBe(1);
+
+    const deleted = await request.delete(`/api/admin/documents/${document.id}`, { headers });
+    expect(deleted.status()).toBe(200);
+    const missing = await request.get(`/api/admin/documents/${document.id}`, { headers });
+    expect(missing.status()).toBe(404);
+  });
+
   test('chat SSE validates input boundaries, returns direct FAQ answer, and enforces history ownership', async ({ request }) => {
     const question = '如何申请退款？';
     const userIdent = `api-user-${Date.now()}`;

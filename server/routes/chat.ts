@@ -9,7 +9,7 @@ import { buildSystemPrompt, buildMessages } from '../ai/prompt-manager';
 import { getWindow } from '../ai/context-manager';
 import { getLLMClient } from '../ai/llm-client';
 import { KnowledgeRetrievalSnapshot, MessageRole, SatisfactionRating } from '../types/domain';
-import { FaqMatch, LLMMessage } from '../types/ai';
+import { FaqMatch, LLMMessage, RetrievalResult } from '../types/ai';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -35,22 +35,32 @@ const satisfactionSchema = z.object({
   message: 'messageId或sessionId不能为空',
 });
 
-function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
+function findDirectFaqAnswer(
+  faqMatches: FaqMatch[],
+  retrievalResults: RetrievalResult[],
+): FaqMatch | null {
+  const topResult = retrievalResults[0];
+  if (!topResult || topResult.knowledgeType !== 'faq') return null;
   return faqMatches.find((match) =>
+    match.id === topResult.knowledgeId &&
     (match.source === 'keyword' || match.source === 'hybrid') &&
     (match.keywordScore ?? match.similarity) >= 0.65,
   ) ?? null;
 }
 
-function toRetrievalSnapshot(faqMatches: FaqMatch[]): KnowledgeRetrievalSnapshot[] {
-  return faqMatches.slice(0, 3).map((match) => ({
-    knowledgeType: 'faq',
-    knowledgeId: match.id,
-    title: match.question,
-    source: match.source,
-    similarity: match.similarity,
-    keywordScore: match.keywordScore,
-    vectorScore: match.vectorScore,
+function toRetrievalSnapshot(results: RetrievalResult[]): KnowledgeRetrievalSnapshot[] {
+  return results.slice(0, 3).map((result) => ({
+    knowledgeType: result.knowledgeType,
+    knowledgeId: result.knowledgeId,
+    documentId: result.documentId,
+    title: result.title,
+    source: result.source,
+    similarity: result.similarity,
+    keywordScore: result.keywordScore,
+    vectorScore: result.vectorScore,
+    chunkIndex: result.chunkIndex,
+    pageStart: result.pageStart,
+    pageEnd: result.pageEnd,
   }));
 }
 
@@ -118,7 +128,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Step 6: Build system prompt
     const systemPrompt = buildSystemPrompt({
       intent: intentResult.intent.intent,
-      faqResults: intentResult.faqMatches,
+      knowledgeResults: intentResult.retrievalResults,
       userQuestion: message,
       conversationSummary: null,
       shouldOfferEscalation: intentResult.needsEscalation,
@@ -127,7 +137,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Step 7: Build full messages array for LLM
     const fullMessages = buildMessages(systemPrompt, {
       intent: intentResult.intent.intent,
-      faqResults: intentResult.faqMatches,
+      knowledgeResults: intentResult.retrievalResults,
       userQuestion: message,
       conversationSummary: null,
       shouldOfferEscalation: intentResult.needsEscalation,
@@ -175,7 +185,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       sseSend({ type: 'escalate', content: intentResult.escalationReason });
     }
 
-    const directFaq = intentResult.needsEscalation ? null : findDirectFaqAnswer(intentResult.faqMatches);
+    const directFaq = intentResult.needsEscalation
+      ? null
+      : findDirectFaqAnswer(intentResult.faqMatches, intentResult.retrievalResults);
     if (directFaq) {
       const fullContent = directFaq.answer;
       sseSend({ type: 'token', content: fullContent });
@@ -187,7 +199,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         intent: intentResult.intent.intent,
         intentConf: intentResult.intent.confidence,
         replyToMessageId: userMessage.id,
-        retrievalSnapshot: toRetrievalSnapshot(intentResult.faqMatches),
+        retrievalSnapshot: toRetrievalSnapshot(intentResult.retrievalResults),
       });
 
       captureKnowledgeGapSafely({
@@ -196,6 +208,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         intent: intentResult.intent.intent,
         intentConf: intentResult.intent.confidence,
         faqMatches: intentResult.faqMatches,
+        retrievalResults: intentResult.retrievalResults,
         escalationType: intentResult.escalationType,
       });
 
@@ -269,7 +282,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       intent: intentResult.intent.intent,
       intentConf: intentResult.intent.confidence,
       replyToMessageId: userMessage.id,
-      retrievalSnapshot: toRetrievalSnapshot(intentResult.faqMatches),
+      retrievalSnapshot: toRetrievalSnapshot(intentResult.retrievalResults),
     });
     assistantMessageId = assistantMessage.id;
 
@@ -279,6 +292,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       intent: intentResult.intent.intent,
       intentConf: intentResult.intent.confidence,
       faqMatches: intentResult.faqMatches,
+      retrievalResults: intentResult.retrievalResults,
       escalationType: intentResult.escalationType,
     });
 

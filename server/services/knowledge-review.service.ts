@@ -4,7 +4,7 @@ import { semanticSearch } from '../ai/semantic-search';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { KnowledgeReviewRepo } from '../db/repos/knowledge-review.repo';
 import { MessageRepo } from '../db/repos/message.repo';
-import { FaqMatch } from '../types/ai';
+import { FaqMatch, RetrievalResult } from '../types/ai';
 import {
   FaqEntry,
   IntentCategory,
@@ -44,25 +44,40 @@ export class KnowledgeReviewService {
     intent: IntentCategory;
     intentConf: number;
     faqMatches: FaqMatch[];
+    retrievalResults?: RetrievalResult[];
     escalationType: 'explicit' | 'low_confidence' | null;
   }): KnowledgeReviewItem | null {
     if (params.escalationType === 'explicit') return null;
 
-    const triggerReason = params.faqMatches.length === 0
+    const retrievalResults: RetrievalResult[] = params.retrievalResults ?? params.faqMatches.map((match) => ({
+      knowledgeType: 'faq' as const,
+      knowledgeId: match.id,
+      title: match.question,
+      content: match.answer,
+      similarity: match.similarity,
+      source: match.source,
+      keywordScore: match.keywordScore,
+      vectorScore: match.vectorScore,
+    }));
+    const triggerReason = retrievalResults.length === 0
       ? KnowledgeReviewTriggerReason.NO_MATCH
-      : params.faqMatches[0].similarity < KNOWLEDGE_GAP_THRESHOLD
+      : retrievalResults[0].similarity < KNOWLEDGE_GAP_THRESHOLD
         ? KnowledgeReviewTriggerReason.LOW_RETRIEVAL_SCORE
         : null;
     if (!triggerReason) return null;
 
-    const retrievalSnapshot: KnowledgeRetrievalSnapshot[] = params.faqMatches.slice(0, 3).map((match) => ({
-      knowledgeType: 'faq',
-      knowledgeId: match.id,
-      title: match.question,
-      source: match.source,
-      similarity: match.similarity,
-      keywordScore: match.keywordScore,
-      vectorScore: match.vectorScore,
+    const retrievalSnapshot: KnowledgeRetrievalSnapshot[] = retrievalResults.slice(0, 3).map((result) => ({
+      knowledgeType: result.knowledgeType,
+      knowledgeId: result.knowledgeId,
+      documentId: result.documentId,
+      title: result.title,
+      source: result.source,
+      similarity: result.similarity,
+      keywordScore: result.keywordScore,
+      vectorScore: result.vectorScore,
+      chunkIndex: result.chunkIndex,
+      pageStart: result.pageStart,
+      pageEnd: result.pageEnd,
     }));
 
     return this.reviewRepo.create({

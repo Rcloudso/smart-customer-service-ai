@@ -191,6 +191,10 @@ class LocalFallbackClientImpl implements LLMClient {
 
   private buildResponse(messages: LLMMessage[]): string {
     const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
+    const documentExcerpt = this.extractFirstDocumentExcerpt(systemPrompt);
+    if (documentExcerpt) {
+      return `来自文档《${documentExcerpt.title}》的原文片段：\n${documentExcerpt.content}`;
+    }
     const faqAnswer = this.extractFirstFaqAnswer(systemPrompt);
     if (faqAnswer) {
       return faqAnswer;
@@ -200,9 +204,16 @@ class LocalFallbackClientImpl implements LLMClient {
   }
 
   private extractFirstFaqAnswer(systemPrompt: string): string | null {
-    const match = systemPrompt.match(/【FAQ 1】[\s\S]*?回答：([\s\S]*?)\n相关度：/);
+    const match = systemPrompt.match(/【FAQ \d+】[\s\S]*?内容：<knowledge>([\s\S]*?)<\/knowledge>\n相关度：/);
     const answer = match?.[1]?.trim();
     return answer || null;
+  }
+
+  private extractFirstDocumentExcerpt(systemPrompt: string): { title: string; content: string } | null {
+    const match = systemPrompt.match(/【DOCUMENT \d+】\n文档：([^\n]+)(?:\n页码：[^\n]+)?\n原文：<knowledge>([\s\S]*?)<\/knowledge>\n相关度：/);
+    const title = match?.[1]?.trim();
+    const content = match?.[2]?.trim();
+    return title && content ? { title, content } : null;
   }
 
   private hashEmbedding(text: string): number[] {

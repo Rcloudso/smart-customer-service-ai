@@ -14,6 +14,7 @@ let adminFaqRoutes: express.Router;
 let adminStatsRoutes: express.Router;
 let adminConfigRoutes: express.Router;
 let adminKnowledgeReviewRoutes: express.Router;
+let adminDocumentRoutes: express.Router;
 
 function createApp(): express.Application {
   const app = express();
@@ -85,6 +86,13 @@ function createApp(): express.Application {
       adminKnowledgeReviewRoutes = require('./routes/admin/knowledge-reviews').default;
     }
     return adminKnowledgeReviewRoutes(_req, _res, next);
+  });
+
+  app.use('/api/admin/documents', (_req, _res, next) => {
+    if (!adminDocumentRoutes) {
+      adminDocumentRoutes = require('./routes/admin/documents').default;
+    }
+    return adminDocumentRoutes(_req, _res, next);
   });
 
   // ---- Health check ----
