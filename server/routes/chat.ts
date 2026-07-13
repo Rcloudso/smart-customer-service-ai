@@ -31,8 +31,8 @@ const satisfactionSchema = z.object({
   messageId: z.string().min(1, 'messageId不能为空').optional(),
   sessionId: z.string().min(1, 'sessionId不能为空').optional(),
   rating: z.number().int().min(1).max(5),
-}).refine((value) => Boolean(value.sessionId), {
-  message: 'sessionId不能为空',
+}).refine((value) => Boolean(value.messageId || value.sessionId), {
+  message: 'messageId或sessionId不能为空',
 });
 
 function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
@@ -168,6 +168,13 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       });
     }
 
+    let escalated = 0;
+    if (intentResult.escalationType === 'explicit' && intentResult.escalationReason) {
+      escalated = 1;
+      escalationService.createEscalation(sessionId, intentResult.escalationReason);
+      sseSend({ type: 'escalate', content: intentResult.escalationReason });
+    }
+
     const directFaq = intentResult.needsEscalation ? null : findDirectFaqAnswer(intentResult.faqMatches);
     if (directFaq) {
       const fullContent = directFaq.answer;
@@ -232,16 +239,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     // Step 9: Check for escalation marker in content
     const escalateMatch = fullContent.match(/ESCALATE:\s*(.+?)(?:\n|$)/);
-    let escalated = 0;
     if (escalateMatch) {
-      escalated = 1;
       const reason = escalateMatch[1].trim();
-      escalationService.createEscalation(sessionId, reason);
+      if (!escalated) {
+        escalated = 1;
+        escalationService.createEscalation(sessionId, reason);
+        sseSend({ type: 'escalate', content: reason });
+      }
 
       // Clean content by removing the ESCALATE marker
       fullContent = fullContent.replace(/ESCALATE:\s*.+?(?:\n|$)/g, '').trim();
-
-      sseSend({ type: 'escalate', content: reason });
     }
 
     // Also check content for frustration triggers via escalation service

@@ -297,7 +297,12 @@ test.describe('API automation: boundaries and exception flows', () => {
     const messageOnlyRating = await request.post('/api/chat/satisfaction', {
       data: { messageId: matchedDone.messageId, rating: 1 },
     });
-    expect(messageOnlyRating.status()).toBe(400);
+    expect(messageOnlyRating.status()).toBe(200);
+    expect((await readJson(messageOnlyRating)).data).toMatchObject({
+      messageId: matchedDone.messageId,
+      sessionId: matchedDone.sessionId,
+      rating: 1,
+    });
     const matchedRating = await request.post('/api/chat/satisfaction', {
       data: { messageId: matchedDone.messageId, sessionId: matchedDone.sessionId, rating: 1 },
     });

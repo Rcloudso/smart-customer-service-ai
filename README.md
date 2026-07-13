@@ -173,6 +173,8 @@ Admins can also use the FAQ management page to run a live retrieval debug query.
 
 Explicit “transfer to human” requests remain in the escalation workflow and are not automatically treated as knowledge gaps.
 
+Satisfaction ratings remain backward compatible: clients may rate an exact assistant reply by `messageId` (optionally verified against `sessionId`), while legacy session-only requests rate the latest assistant reply in that session.
+
 ---
 
 ## Validation
