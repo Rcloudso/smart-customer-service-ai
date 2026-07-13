@@ -87,7 +87,8 @@ export interface ChatHistorySession {
 
 // ---- Satisfaction ----
 export interface SatisfactionRequest {
-  messageId: string;
+  messageId?: string;
+  sessionId?: string;
   rating: SatisfactionRating;
 }
 

@@ -1,12 +1,15 @@
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Message, MessageRole, IntentCategory, SatisfactionRating } from '../../types/domain';
+import { Message, MessageRole, IntentCategory, KnowledgeRetrievalSnapshot, SatisfactionRating } from '../../types/domain';
+import { parseKnowledgeSnapshot } from '../../utils/knowledge-snapshot';
 
 export class MessageRepo {
   private db: Database.Database;
   private insertStmt: Database.Statement;
   private findBySessionStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
+  private findPreviousUserStmt: Database.Statement;
+  private findLegacyPreviousUserStmt: Database.Statement;
   private updateSatisfactionStmt: Database.Statement;
   private updateEscalatedStmt: Database.Statement;
   private countBySessionStmt: Database.Statement;
@@ -18,13 +21,27 @@ export class MessageRepo {
   constructor(db: Database.Database) {
     this.db = db;
     this.insertStmt = db.prepare(
-      `INSERT INTO messages (id, session_id, role, content, intent, intent_conf, satisfaction, escalated, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (
+        id, session_id, role, content, intent, intent_conf, satisfaction, escalated,
+        reply_to_message_id, retrieval_snapshot, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.findBySessionStmt = db.prepare(
       'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC',
     );
     this.findByIdStmt = db.prepare('SELECT * FROM messages WHERE id = ?');
+    this.findPreviousUserStmt = db.prepare(
+      `SELECT user_message.* FROM messages AS assistant_message
+       JOIN messages AS user_message ON user_message.id = assistant_message.reply_to_message_id
+       WHERE assistant_message.id = ? AND user_message.role = 'user'`,
+    );
+    this.findLegacyPreviousUserStmt = db.prepare(
+      `SELECT user_message.* FROM messages AS user_message
+       JOIN messages AS assistant_message ON assistant_message.id = ?
+       WHERE user_message.session_id = assistant_message.session_id
+         AND user_message.role = 'user' AND user_message.rowid < assistant_message.rowid
+       ORDER BY user_message.rowid DESC LIMIT 1`,
+    );
     this.updateSatisfactionStmt = db.prepare(
       'UPDATE messages SET satisfaction = ? WHERE id = ?',
     );
@@ -60,6 +77,8 @@ export class MessageRepo {
     content: string;
     intent?: IntentCategory | null;
     intentConf?: number | null;
+    replyToMessageId?: string | null;
+    retrievalSnapshot?: KnowledgeRetrievalSnapshot[];
   }): Message {
     const now = new Date().toISOString();
     const message: Message = {
@@ -71,13 +90,16 @@ export class MessageRepo {
       intentConf: params.intentConf ?? null,
       satisfaction: null,
       escalated: 0,
+      replyToMessageId: params.replyToMessageId ?? null,
+      retrievalSnapshot: params.retrievalSnapshot ?? [],
       createdAt: now,
     };
 
     this.insertStmt.run(
       message.id, message.sessionId, message.role, message.content,
       message.intent, message.intentConf, message.satisfaction,
-      message.escalated, message.createdAt,
+      message.escalated, message.replyToMessageId,
+      JSON.stringify(message.retrievalSnapshot), message.createdAt,
     );
     return message;
   }
@@ -89,6 +111,12 @@ export class MessageRepo {
 
   findById(id: string): Message | null {
     const row = this.findByIdStmt.get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapRow(row) : null;
+  }
+
+  findPreviousUserMessage(assistantMessageId: string): Message | null {
+    const linked = this.findPreviousUserStmt.get(assistantMessageId) as Record<string, unknown> | undefined;
+    const row = linked ?? this.findLegacyPreviousUserStmt.get(assistantMessageId) as Record<string, unknown> | undefined;
     return row ? this.mapRow(row) : null;
   }
 
@@ -168,6 +196,8 @@ export class MessageRepo {
       intentConf: row.intent_conf as number | null,
       satisfaction: row.satisfaction as SatisfactionRating | null,
       escalated: row.escalated as number,
+      replyToMessageId: row.reply_to_message_id as string | null,
+      retrievalSnapshot: parseKnowledgeSnapshot(row.retrieval_snapshot),
       createdAt: row.created_at as string,
     };
   }

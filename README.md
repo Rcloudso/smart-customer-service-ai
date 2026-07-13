@@ -11,6 +11,8 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
+Current release: **v0.2.5 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
+
 ## English
 
 Smart Customer Service AI is a full-stack demo for building an AI-assisted support system. It combines a customer-facing chat page, FAQ knowledge management, hybrid retrieval, runtime model configuration, conversation analytics, bilingual UI, light/dark themes, and retrieval evaluation tooling.
@@ -33,7 +35,7 @@ Smart Customer Service AI:
   Step 4: show references, confidence, and feedback controls
 ```
 
-Admins can maintain FAQ entries, rebuild the FAQ index, inspect retrieval status, debug why a query matched a FAQ, and review conversations from the dashboard.
+Admins can maintain FAQ entries, rebuild the FAQ index, inspect retrieval status, debug why a query matched a FAQ, review conversations, and turn weak answers into reusable knowledge from the Knowledge Review page.
 
 This project is designed for demos, learning, and small open-source MVPs that need a clear customer-support foundation without introducing a dedicated vector database on day one.
 
@@ -43,6 +45,7 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 
 - **Customer chat experience** - streaming-style support UI with conversation context, references, feedback, and history.
 - **Admin console** - FAQ management, conversation list, dashboard analytics, and runtime model configuration.
+- **Knowledge gap feedback loop** - no-match, low-score, and negatively rated answers become review items that admins can edit, dismiss, or convert into indexed FAQs.
 - **Hybrid retrieval** - in-memory vector similarity plus SQL keyword fallback, merged and ranked consistently.
 - **Open vector-store interface** - `VectorStore` keeps the default deployment simple while leaving room for Qdrant or pgvector later.
 - **Richer FAQ embeddings** - FAQ vectors are generated from question, answer, and keywords, not only the question.
@@ -74,6 +77,8 @@ Query
 ```
 
 The default `VectorStore` implementation is in-memory. FAQ embeddings are serialized in SQLite, then loaded into the process index. This keeps local setup dependency-free while making the future vector database boundary explicit.
+
+FAQ is the current MVP knowledge source, not the permanent RAG boundary. v0.2.5 stores generic retrieval snapshots so future versions can add documents and chunks from text files, web pages, PDFs/Word files, OCR for scans and screenshots, and vision handling for images without rewriting the review workflow.
 
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
@@ -159,6 +164,17 @@ The report includes:
 
 Admins can also use the FAQ management page to run a live retrieval debug query. The debug response explains what matched, how it ranked, and whether the match came from vector search, keyword fallback, or both.
 
+### Knowledge Review Workflow
+
+1. A completed answer with no FAQ match or a top retrieval score below `0.55` is saved as a pending review item. A 1–2 star rating also creates or updates the item for that exact answer.
+2. Open **Admin Console → Knowledge Review** to inspect the question, answer, intent, rating, and the top three retrieval results captured at answer time.
+3. Edit the proposed question, answer, category, and keywords, then convert the item to an FAQ. Successful conversion updates the semantic index automatically.
+4. Ask the same question again to confirm the new FAQ is retrieved. Items with no reusable value can be dismissed with an optional reason.
+
+Explicit “transfer to human” requests remain in the escalation workflow and are not automatically treated as knowledge gaps.
+
+Satisfaction ratings remain backward compatible: clients may rate an exact assistant reply by `messageId` (optionally verified against `sessionId`), while legacy session-only requests rate the latest assistant reply in that session.
+
 ---
 
 ## Validation
@@ -166,7 +182,7 @@ Admins can also use the FAQ management page to run a live retrieval debug query.
 ```bash
 EMBED_PROVIDER=other npm test
 EMBED_PROVIDER=other npm run eval:faq
-npm run test:e2e
+PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
 
@@ -190,9 +206,10 @@ data/          Local SQLite database files
 
 - The default vector index is process-local memory and scans FAQ embeddings, so it is suitable for demos and small FAQ collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
+- FAQ is the only knowledge source in v0.2.5; document upload, web ingestion, OCR, and image RAG are planned work.
 - `VectorStore` is ready for future Qdrant or pgvector implementations, but the default deployment stays dependency-light.
 - Intent classification falls back to keyword rules when the LLM call fails.
-- This is an MVP foundation, not a production support platform. Add observability, stricter auth, backup strategy, and external vector storage before serious production use.
+- This is a pre-1.0 MVP foundation, not a production support platform. Add observability, stricter auth, backup strategy, and external vector storage before serious production use.
 
 ---
 
@@ -200,7 +217,7 @@ data/          Local SQLite database files
 
 - External vector-store adapters such as Qdrant or pgvector.
 - Better retrieval datasets and threshold tuning.
-- More admin analytics for unanswered questions and low-confidence responses.
+- Document, web-page, PDF/Word, OCR, and image knowledge-source adapters.
 - Role-based admin permissions.
 - Import/export flows for larger FAQ collections.
 

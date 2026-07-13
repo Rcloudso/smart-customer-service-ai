@@ -231,6 +231,10 @@
     "zh": "FAQ管理",
     "en": "FAQ"
   },
+  "nav.knowledgeReview": {
+    "zh": "知识审核",
+    "en": "Knowledge Review"
+  },
   "nav.config": {
     "zh": "模型配置",
     "en": "Model Config"
@@ -354,6 +358,10 @@
   "common.cancel": {
     "zh": "取消",
     "en": "Cancel"
+  },
+  "common.close": {
+    "zh": "关闭",
+    "en": "Close"
   },
   "common.delete": {
     "zh": "删除",
@@ -750,5 +758,157 @@
   "config.saveFailed": {
     "zh": "保存模型配置失败",
     "en": "Failed to save model configuration"
+  },
+  "knowledgeReview.title": {
+    "zh": "知识审核",
+    "en": "Knowledge Review"
+  },
+  "knowledgeReview.description": {
+    "zh": "把未命中、低置信和负反馈问题沉淀为可复用 FAQ。",
+    "en": "Turn missed, low-confidence, and negatively rated answers into reusable FAQs."
+  },
+  "knowledgeReview.loadFailed": {
+    "zh": "知识审核列表加载失败",
+    "en": "Failed to load knowledge reviews"
+  },
+  "knowledgeReview.statsLoadFailed": {
+    "zh": "知识审核统计加载失败",
+    "en": "Failed to load knowledge review stats"
+  },
+  "knowledgeReview.stats.pending": {
+    "zh": "待审核",
+    "en": "Pending"
+  },
+  "knowledgeReview.stats.converted": {
+    "zh": "已转 FAQ",
+    "en": "Converted"
+  },
+  "knowledgeReview.stats.dismissed": {
+    "zh": "已忽略",
+    "en": "Dismissed"
+  },
+  "knowledgeReview.stats.total": {
+    "zh": "全部",
+    "en": "Total"
+  },
+  "knowledgeReview.status.pending": {
+    "zh": "待审核",
+    "en": "Pending"
+  },
+  "knowledgeReview.status.converted": {
+    "zh": "已转换",
+    "en": "Converted"
+  },
+  "knowledgeReview.status.dismissed": {
+    "zh": "已忽略",
+    "en": "Dismissed"
+  },
+  "knowledgeReview.reason.no_match": {
+    "zh": "无知识命中",
+    "en": "No match"
+  },
+  "knowledgeReview.reason.low_retrieval_score": {
+    "zh": "检索分过低",
+    "en": "Low retrieval score"
+  },
+  "knowledgeReview.reason.negative_feedback": {
+    "zh": "用户负反馈",
+    "en": "Negative feedback"
+  },
+  "knowledgeReview.searchPlaceholder": {
+    "zh": "搜索问题或回答",
+    "en": "Search questions or answers"
+  },
+  "knowledgeReview.question": {
+    "zh": "问题",
+    "en": "Question"
+  },
+  "knowledgeReview.answer": {
+    "zh": "回答",
+    "en": "Answer"
+  },
+  "knowledgeReview.triggerReason": {
+    "zh": "触发原因",
+    "en": "Trigger"
+  },
+  "knowledgeReview.topScore": {
+    "zh": "最高检索分",
+    "en": "Top score"
+  },
+  "knowledgeReview.rating": {
+    "zh": "评分",
+    "en": "Rating"
+  },
+  "knowledgeReview.createdAt": {
+    "zh": "创建时间",
+    "en": "Created"
+  },
+  "knowledgeReview.view": {
+    "zh": "查看",
+    "en": "View"
+  },
+  "knowledgeReview.convert": {
+    "zh": "转为 FAQ",
+    "en": "Convert to FAQ"
+  },
+  "knowledgeReview.dismiss": {
+    "zh": "忽略",
+    "en": "Dismiss"
+  },
+  "knowledgeReview.empty": {
+    "zh": "暂无知识审核记录",
+    "en": "No knowledge review items"
+  },
+  "knowledgeReview.detailTitle": {
+    "zh": "审核详情",
+    "en": "Review details"
+  },
+  "knowledgeReview.userQuestion": {
+    "zh": "用户问题",
+    "en": "Customer question"
+  },
+  "knowledgeReview.aiAnswer": {
+    "zh": "AI 回答",
+    "en": "AI answer"
+  },
+  "knowledgeReview.intent": {
+    "zh": "意图与置信度",
+    "en": "Intent and confidence"
+  },
+  "knowledgeReview.retrievalSnapshot": {
+    "zh": "当时的检索依据",
+    "en": "Retrieval evidence at answer time"
+  },
+  "knowledgeReview.noRetrieval": {
+    "zh": "当时没有检索结果",
+    "en": "No retrieval result was available"
+  },
+  "knowledgeReview.convertTitle": {
+    "zh": "编辑并转为 FAQ",
+    "en": "Edit and convert to FAQ"
+  },
+  "knowledgeReview.converted": {
+    "zh": "已转换为 FAQ 并同步索引",
+    "en": "Converted to FAQ and indexed"
+  },
+  "knowledgeReview.convertFailed": {
+    "zh": "转换 FAQ 失败，可稍后重试",
+    "en": "FAQ conversion failed; you can retry"
+  },
+  "knowledgeReview.dismissTitle": {
+    "zh": "忽略审核记录",
+    "en": "Dismiss review item"
+  },
+  "knowledgeReview.dismissPlaceholder": {
+    "zh": "可选：填写忽略原因",
+    "en": "Optional: explain why this item is dismissed"
+  },
+  "knowledgeReview.dismissed": {
+    "zh": "审核记录已忽略",
+    "en": "Review item dismissed"
+  },
+  "knowledgeReview.dismissFailed": {
+    "zh": "忽略审核记录失败",
+    "en": "Failed to dismiss review item"
   }
 }

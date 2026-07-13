@@ -12,6 +12,7 @@ export interface IntentProcessingResult {
   faqMatches: FaqMatch[];
   needsEscalation: boolean;
   escalationReason: string | null;
+  escalationType: 'explicit' | 'low_confidence' | null;
 }
 
 export class IntentService {
@@ -26,6 +27,7 @@ export class IntentService {
     let faqMatches: FaqMatch[] = [];
     let needsEscalation = false;
     let escalationReason: string | null = null;
+    let escalationType: IntentProcessingResult['escalationType'] = null;
 
     if (intent.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
       // High confidence: search FAQ by category + semantics
@@ -39,6 +41,7 @@ export class IntentService {
       if (faqMatches.length === 0 || faqMatches[0].similarity < 0.5) {
         needsEscalation = true;
         escalationReason = '意图置信度低且无匹配FAQ，建议转人工';
+        escalationType = 'low_confidence';
       }
     }
 
@@ -48,6 +51,7 @@ export class IntentService {
     if (hasEscalationKeyword) {
       needsEscalation = true;
       escalationReason = '用户明确要求转人工客服';
+      escalationType = 'explicit';
     }
 
     logger.debug(
@@ -65,6 +69,7 @@ export class IntentService {
       faqMatches,
       needsEscalation,
       escalationReason,
+      escalationType,
     };
   }
 }

@@ -1,7 +1,7 @@
 import { getDatabase } from '../db';
 import { SessionRepo } from '../db/repos/session.repo';
 import { MessageRepo } from '../db/repos/message.repo';
-import { Session, SessionStatus, Message, MessageRole } from '../types/domain';
+import { KnowledgeRetrievalSnapshot, Session, SessionStatus, Message, MessageRole } from '../types/domain';
 import { ChatHistorySession, ConversationDetail, PaginationResponse } from '../types/api';
 import { NotFoundError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -36,6 +36,8 @@ export class ConversationService {
     content: string;
     intent?: string | null;
     intentConf?: number | null;
+    replyToMessageId?: string | null;
+    retrievalSnapshot?: KnowledgeRetrievalSnapshot[];
   }): Message {
     const message = this.messageRepo.create({
       sessionId: params.sessionId,
@@ -43,6 +45,8 @@ export class ConversationService {
       content: params.content,
       intent: params.intent as Message['intent'],
       intentConf: params.intentConf,
+      replyToMessageId: params.replyToMessageId,
+      retrievalSnapshot: params.retrievalSnapshot,
     });
     this.sessionRepo.touch(params.sessionId);
     return message;
@@ -50,6 +54,10 @@ export class ConversationService {
 
   getMessages(sessionId: string): Message[] {
     return this.messageRepo.findBySession(sessionId);
+  }
+
+  getMessage(messageId: string): Message | null {
+    return this.messageRepo.findById(messageId);
   }
 
   getConversations(params: {

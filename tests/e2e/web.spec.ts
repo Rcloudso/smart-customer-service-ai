@@ -20,6 +20,10 @@ async function loginAsAdmin(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/admin$/);
 }
 
+function knowledgeReviewRow(page: Page, question: string) {
+  return page.getByTestId('knowledge-review-table').locator('tr').filter({ hasText: question });
+}
+
 test.describe('Web automation: customer chat experience', () => {
   test.beforeEach(async ({ page }) => {
     await clearBrowserState(page);
@@ -124,5 +128,136 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByTestId('faq-debug-results')).toContainText('如何申请退款？');
     await expect(page.getByTestId('faq-debug-results')).toContainText('最佳分');
     await expect(page.getByTestId('faq-debug-results')).toContainText(/keyword|vector|hybrid/);
+  });
+
+  test('admin reviews a knowledge gap, inspects evidence, and converts it to a searchable FAQ', async ({ page }) => {
+    const question = `yyyyyyyyyyyyyyyy-web-${Date.now()}`;
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill(question);
+    const [chatResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/api/chat') && response.request().method() === 'POST'),
+      page.getByTestId('chat-send-button').click(),
+    ]);
+    await chatResponse.finished();
+    await expect(page.getByTestId('chat-messages')).toContainText(question);
+
+    await loginAsAdmin(page);
+    await page.getByText('知识审核').click();
+    await expect(page).toHaveURL(/\/admin\/knowledge-review$/);
+    await expect(page.getByTestId('knowledge-review-page')).toBeVisible();
+    await expect(page.getByTestId('knowledge-review-table')).toContainText(question);
+    const reviewRow = knowledgeReviewRow(page, question);
+    await expect(reviewRow).toBeVisible();
+
+    await reviewRow.getByTestId('knowledge-review-view').click();
+    await expect(page.getByTestId('knowledge-review-detail')).toContainText('当时的检索依据');
+    await expect(page.getByTestId('knowledge-review-detail')).toContainText(/vector|keyword|hybrid/);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await expect(page.getByText('登录成功')).toBeHidden({ timeout: 8_000 });
+      await page.screenshot({ path: 'docs/releases/assets/v0.2.5-review-detail.png', fullPage: true });
+    }
+    await page.getByRole('button', { name: '关闭' }).click();
+
+    await reviewRow.getByTestId('knowledge-review-convert').click();
+    await page.getByTestId('knowledge-convert-answer').fill('来自管理员审核的闭环答案');
+    const [convertResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes('/api/admin/knowledge-reviews/') && response.url().endsWith('/convert')),
+      page.getByRole('button', { name: '转为 FAQ', exact: true }).last().click(),
+    ]);
+    expect(convertResponse.status()).toBe(200);
+    await expect(page.getByText('已转换为 FAQ 并同步索引')).toBeVisible();
+    await expect(page.getByTestId('knowledge-review-stats')).toContainText('已转 FAQ');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await expect(page.getByText('编辑并转为 FAQ')).toBeHidden({ timeout: 8_000 });
+      await page.screenshot({ path: 'docs/releases/assets/v0.2.5-converted.png', fullPage: true });
+    }
+
+    const searchResponse = await page.request.get(`/api/faq/search?q=${encodeURIComponent(question)}`);
+    expect(searchResponse.status()).toBe(200);
+    const searchBody = await searchResponse.json();
+    expect(searchBody.data[0]).toMatchObject({
+      question,
+      answer: '来自管理员审核的闭环答案',
+    });
+
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: 'Knowledge Review' })).toBeVisible();
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId('knowledge-review-page')).toBeVisible();
+    const overflow = await page.evaluate(() => {
+      const inspect = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          selector,
+          left: Math.round(rect.left),
+          right: Math.round(rect.right),
+          width: Math.round(rect.width),
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          overflowX: getComputedStyle(element).overflowX,
+        };
+      };
+      return {
+        document: {
+          clientWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          bodyClientWidth: document.body.clientWidth,
+          bodyScrollWidth: document.body.scrollWidth,
+        },
+        elements: [
+          '.app-admin-layout',
+          '.app-admin-sidebar',
+          '.app-admin-sidebar .t-menu',
+          '.app-content',
+          '.app-page-container',
+          '.app-table-card',
+          '.app-table-card .t-card__body',
+          '.app-table-card .t-table',
+        ].map(inspect),
+      };
+    });
+    expect(
+      overflow.document.scrollWidth,
+      `mobile overflow: ${JSON.stringify(overflow)}`,
+    ).toBeLessThanOrEqual(overflow.document.clientWidth);
+  });
+
+  test('admin can dismiss a pending knowledge review with a reason', async ({ page }) => {
+    const question = `kkkkkkkkkkkkkkkk-dismiss-${Date.now()}`;
+    const chatResponse = await page.request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: question, userIdent: `dismiss-user-${Date.now()}` },
+    });
+    expect(chatResponse.status()).toBe(200);
+
+    await loginAsAdmin(page);
+    await page.getByText('知识审核').click();
+    await expect(page.getByTestId('knowledge-review-table')).toContainText(question);
+    const reviewRow = knowledgeReviewRow(page, question);
+    await expect(reviewRow).toBeVisible();
+    await reviewRow.getByTestId('knowledge-review-dismiss').click();
+    await page.getByTestId('knowledge-dismiss-reason').fill('重复或无业务价值');
+    const [dismissResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/dismiss')),
+      page.getByRole('button', { name: '忽略', exact: true }).last().click(),
+    ]);
+    expect(dismissResponse.status()).toBe(200);
+    await expect(page.getByText('审核记录已忽略')).toBeVisible();
+
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
+    const dismissedList = await page.request.get('/api/admin/knowledge-reviews', {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { status: 'dismissed', keyword: question },
+    });
+    expect(dismissedList.status()).toBe(200);
+    const body = await dismissedList.json();
+    expect(body.data.items[0]).toMatchObject({
+      status: 'dismissed',
+      dismissReason: '重复或无业务价值',
+    });
   });
 });

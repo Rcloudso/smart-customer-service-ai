@@ -187,6 +187,20 @@ function testFaqServiceExposesIndexOperations(): void {
   assert.match(source, /semanticSearch\.rebuildIndex/, 'FAQ service should delegate rebuild to semantic search');
 }
 
+function testKnowledgeConversionPreparesIndexBeforeActivation(): void {
+  const source = fs.readFileSync(path.resolve(process.cwd(), 'server/ai/semantic-search.ts'), 'utf8');
+  assert.match(
+    source,
+    /prepareIndex\(/,
+    'semantic search should prepare embeddings before knowledge-review activation',
+  );
+  assert.match(
+    source,
+    /commitPreparedIndex\(/,
+    'semantic search should commit a successfully prepared FAQ to the in-memory index',
+  );
+}
+
 function testEmbeddingRefreshDoesNotTouchFaqBusinessTimestamp(): void {
   const repoSource = fs.readFileSync(path.resolve(process.cwd(), 'server/db/repos/faq.repo.ts'), 'utf8');
   const semanticSource = fs.readFileSync(
@@ -574,6 +588,33 @@ function testRetrievalEvaluationAndDebuggingArtifactsExist(): void {
   assert.match(faqPageSource, /debugFaqSearch/, 'FAQ management should call the debug API');
 }
 
+function testKnowledgeReviewApiAndChatCompatibility(): void {
+  const chatSource = fs.readFileSync(path.resolve(process.cwd(), 'server/routes/chat.ts'), 'utf8');
+  const intentSource = fs.readFileSync(path.resolve(process.cwd(), 'server/services/intent.service.ts'), 'utf8');
+  const routeSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'server/routes/admin/knowledge-reviews.ts'),
+    'utf8',
+  );
+  const indexSource = fs.readFileSync(path.resolve(process.cwd(), 'server/index.ts'), 'utf8');
+
+  assert.match(chatSource, /messageId: z\.string\(\)\.min\(1[^\n]*optional\(\)/, 'rating should accept messageId');
+  assert.match(chatSource, /sessionId: z\.string\(\)\.min\(1[^\n]*optional\(\)/, 'legacy session-only rating should remain accepted');
+  assert.match(chatSource, /knowledgeReviewService\.recordRating/, 'ratings should update or upsert the matching review');
+  assert.match(chatSource, /knowledgeReviewService\.captureChatGap/, 'completed chat answers should evaluate knowledge gaps');
+  assert.match(chatSource, /captureKnowledgeGapSafely/, 'knowledge review persistence failures must not leave SSE responses open');
+  assert.match(intentSource, /escalationType/, 'intent processing should expose structured escalation type');
+  assert.doesNotMatch(chatSource, /reason.*===.*用户明确要求转人工/, 'chat must not infer escalation type from localized reason text');
+
+  const authPos = routeSource.indexOf('router.use(authMiddleware)');
+  const adminPos = routeSource.indexOf('router.use(adminOnlyMiddleware)');
+  const statsPos = routeSource.indexOf("router.get('/stats'");
+  const convertPos = routeSource.indexOf("router.post('/:id/convert'");
+  assert.ok(authPos !== -1 && authPos < statsPos, 'knowledge review routes must require auth');
+  assert.ok(adminPos !== -1 && adminPos < statsPos, 'knowledge review routes must be admin-only');
+  assert.ok(statsPos !== -1 && statsPos < convertPos, 'static stats route must precede parameter routes');
+  assert.match(indexSource, /\/api\/admin\/knowledge-reviews/, 'server should mount knowledge review admin routes');
+}
+
 async function main(): Promise<void> {
   await testStartupHydratesBeforeSemanticSearch();
   await testExplicitEmbedApiKeySurvivesHydrate();
@@ -587,6 +628,7 @@ async function main(): Promise<void> {
   testFaqMatchMetadataCrossesApiTypes();
   testFaqIndexStatusRoutesRequireAdmin();
   testFaqServiceExposesIndexOperations();
+  testKnowledgeConversionPreparesIndexBeforeActivation();
   testEmbeddingRefreshDoesNotTouchFaqBusinessTimestamp();
   testFaqManagementExposesIndexControls();
   testFaqIndexStatusFetchAvoidsTranslationLoop();
@@ -606,6 +648,7 @@ async function main(): Promise<void> {
   testBilingualReadmeExists();
   testEndToEndAutomationArtifactsExist();
   testRetrievalEvaluationAndDebuggingArtifactsExist();
+  testKnowledgeReviewApiAndChatCompatibility();
   console.log('Regression checks passed');
 }
 

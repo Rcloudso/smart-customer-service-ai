@@ -43,10 +43,26 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class ConflictError extends AppError {
+  constructor(message: string = 'Resource state conflict') {
+    super(409, 409, message);
+    this.name = 'ConflictError';
+    Object.setPrototypeOf(this, ConflictError.prototype);
+  }
+}
+
 export class RateLimitError extends AppError {
   constructor(message: string = 'Too many requests') {
     super(429, 429, message);
     this.name = 'RateLimitError';
     Object.setPrototypeOf(this, RateLimitError.prototype);
+  }
+}
+
+export class ServiceUnavailableError extends AppError {
+  constructor(message: string = 'Service temporarily unavailable') {
+    super(503, 503, message);
+    this.name = 'ServiceUnavailableError';
+    Object.setPrototypeOf(this, ServiceUnavailableError.prototype);
   }
 }

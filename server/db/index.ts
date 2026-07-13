@@ -29,7 +29,7 @@ export function getDatabase(): Database.Database {
   return db;
 }
 
-function initSchema(database: Database.Database): void {
+export function initSchema(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -49,6 +49,8 @@ function initSchema(database: Database.Database): void {
       intent_conf REAL,
       satisfaction INTEGER CHECK(satisfaction >= 1 AND satisfaction <= 5),
       escalated INTEGER NOT NULL DEFAULT 0,
+      reply_to_message_id TEXT REFERENCES messages(id),
+      retrieval_snapshot TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL
     );
 
@@ -91,12 +93,59 @@ function initSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_escalation_log_session_id ON escalation_log(session_id);
     CREATE INDEX IF NOT EXISTS idx_escalation_log_status ON escalation_log(status);
 
+    CREATE TABLE IF NOT EXISTS knowledge_review_items (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      user_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      assistant_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      intent TEXT CHECK(intent IN ('refund', 'order', 'technical', 'general')),
+      intent_conf REAL,
+      retrieval_snapshot TEXT NOT NULL DEFAULT '[]',
+      trigger_reason TEXT NOT NULL CHECK(trigger_reason IN ('no_match', 'low_retrieval_score', 'negative_feedback')),
+      rating INTEGER CHECK(rating >= 1 AND rating <= 5),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'converted', 'dismissed')),
+      linked_faq_id TEXT REFERENCES faq_entries(id),
+      dismiss_reason TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      resolved_at TEXT
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_review_user_message
+      ON knowledge_review_items(user_message_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_review_status_created
+      ON knowledge_review_items(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_review_trigger_reason
+      ON knowledge_review_items(trigger_reason);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_review_session_id
+      ON knowledge_review_items(session_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_review_linked_faq
+      ON knowledge_review_items(linked_faq_id);
+
     CREATE TABLE IF NOT EXISTS model_configs (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL
     );
   `);
+
+  ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
+  ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
+  database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
+}
+
+function ensureColumn(
+  database: Database.Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((item) => item.name === column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 export function closeDatabase(): void {
