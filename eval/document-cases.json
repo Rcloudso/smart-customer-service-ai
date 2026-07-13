@@ -42,17 +42,17 @@
     }
   ],
   "cases": [
-    { "id": "txt-standard-shipping", "query": "北极星标准配送通常需要三到五个工作日", "expectedDocumentId": "shipping-txt" },
-    { "id": "txt-expedited-shipping", "query": "琥珀加急配送会在当日十六点前出库", "expectedDocumentId": "shipping-txt" },
-    { "id": "txt-damage-report", "query": "破损需要在二十四小时内提交照片", "expectedDocumentId": "shipping-txt" },
-    { "id": "md-refund-time", "query": "银杏计划退款审核通过后", "expectedDocumentId": "refund-md" },
-    { "id": "md-membership", "query": "海棠会员取消续费后仍可使用权益", "expectedDocumentId": "refund-md" },
-    { "id": "md-refund-exclusion", "query": "白鹭无理由退款规则", "expectedDocumentId": "refund-md" },
-    { "id": "pdf-warranty-duration", "query": "twenty four month limited warranty from activation", "expectedDocumentId": "warranty-pdf" },
-    { "id": "pdf-warranty-exclusion", "query": "Spruce warranty excludes liquid damage", "expectedDocumentId": "warranty-pdf" },
-    { "id": "pdf-repair-preparation", "query": "sign out before requesting Laurel mail-in repair service", "expectedDocumentId": "warranty-pdf" },
-    { "id": "docx-member-limit", "query": "星河企业账户最多可以邀请二十名成员", "expectedDocumentId": "account-docx" },
-    { "id": "docx-admin-role", "query": "只有木兰管理员可以修改成员角色", "expectedDocumentId": "account-docx" },
-    { "id": "docx-two-factor", "query": "启用松涛双重验证后", "expectedDocumentId": "account-docx" }
+    { "id": "txt-standard-shipping", "query": "北极星订单寄到偏远地区要多久？", "expectedDocumentId": "shipping-txt" },
+    { "id": "txt-expedited-shipping", "query": "琥珀订单几点前能当天发货？", "expectedDocumentId": "shipping-txt" },
+    { "id": "txt-damage-report", "query": "青松签收发现破损，最晚什么时候上传照片？", "expectedDocumentId": "shipping-txt" },
+    { "id": "md-refund-time", "query": "银杏退款审核过了还要等几个工作日到账？", "expectedDocumentId": "refund-md" },
+    { "id": "md-membership", "query": "海棠取消自动续费后权益会立刻失效吗？", "expectedDocumentId": "refund-md" },
+    { "id": "md-refund-exclusion", "query": "哪类商品不能走白鹭无理由退货？", "expectedDocumentId": "refund-md" },
+    { "id": "pdf-warranty-duration", "query": "How long does Dawn console coverage last after activation?", "expectedDocumentId": "warranty-pdf" },
+    { "id": "pdf-warranty-exclusion", "query": "What kinds of damage are not covered by Spruce?", "expectedDocumentId": "warranty-pdf" },
+    { "id": "pdf-repair-preparation", "query": "How should I prepare my account and data before Laurel mail-in service?", "expectedDocumentId": "warranty-pdf" },
+    { "id": "docx-member-limit", "query": "星河企业工作区一共能加多少成员？", "expectedDocumentId": "account-docx" },
+    { "id": "docx-admin-role", "query": "谁有权限导出团队审计记录？", "expectedDocumentId": "account-docx" },
+    { "id": "docx-two-factor", "query": "打开松涛二次验证后，成员登录还需要做什么？", "expectedDocumentId": "account-docx" }
   ]
 }

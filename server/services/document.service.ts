@@ -15,6 +15,7 @@ import {
   DocumentStatus,
 } from '../types/domain';
 import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '../utils/errors';
+import { logger } from '../utils/logger';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 200_000;
@@ -26,6 +27,7 @@ export interface DocumentServiceDependencies {
   embedTexts: (texts: string[]) => Promise<number[][]>;
   publishChunks?: (chunks: DocumentChunk[]) => void | Promise<void>;
   removeDocumentFromIndex?: (documentId: string, chunks: DocumentChunk[]) => void | Promise<void>;
+  synchronizeIndex?: () => void | Promise<void>;
 }
 
 export class DocumentService {
@@ -44,6 +46,7 @@ export class DocumentService {
     buffer: Buffer;
     uploadedBy: string;
   }): Promise<Document> {
+    const operationId = uuidv4();
     const format = this.validateUpload(params.originalName, params.mimeType, params.buffer);
     const sha256 = crypto.createHash('sha256').update(params.buffer).digest('hex');
     if (this.repo.findBySha256(sha256)) {
@@ -60,7 +63,7 @@ export class DocumentService {
       fs.writeFileSync(temporaryPath, params.buffer, { flag: 'wx', mode: 0o600 });
       fs.renameSync(temporaryPath, finalPath);
     } catch {
-      fs.rmSync(temporaryPath, { force: true });
+      this.removeFileSafely(temporaryPath, operationId, 'upload_temporary_cleanup');
       throw new ServiceUnavailableError('Document storage is unavailable');
     }
 
@@ -77,7 +80,7 @@ export class DocumentService {
         uploadedBy: params.uploadedBy,
       });
     } catch (error) {
-      fs.rmSync(finalPath, { force: true });
+      this.removeFileSafely(finalPath, operationId, 'upload_accepted_file_cleanup');
       throw error;
     }
 
@@ -160,6 +163,7 @@ export class DocumentService {
   }
 
   async delete(documentId: string): Promise<void> {
+    const operationId = uuidv4();
     const record = this.requireDocument(documentId);
     const chunks = this.repo.listChunks(documentId, 300, 0).items;
     const filePath = this.resolveStoragePath(record.storagePath);
@@ -171,27 +175,59 @@ export class DocumentService {
         fs.renameSync(filePath, temporaryPath);
         renamed = true;
       }
-      await this.dependencies.removeDocumentFromIndex?.(documentId, chunks);
       if (!this.repo.delete(documentId)) throw new Error('Document delete did not change a row');
       databaseDeleted = true;
+      await this.synchronizeDocumentIndex('remove', record, chunks);
       if (renamed) fs.rmSync(temporaryPath);
     } catch (error) {
+      let databaseRestored = !databaseDeleted;
       if (databaseDeleted) {
         try {
           this.db.transaction(() => this.repo.restore(record, chunks))();
-        } catch {
-          // Continue the remaining compensation steps before returning a stable failure.
+          databaseRestored = true;
+        } catch (restoreError) {
+          logger.error({
+            operationId,
+            documentId,
+            errorName: restoreError instanceof Error ? restoreError.name : 'UnknownError',
+          }, 'Document delete database compensation failed');
         }
       }
+      let fileRestored = !renamed;
       try {
-        if (record.isActive) await this.dependencies.publishChunks?.(chunks);
-      } catch {
-        // Preserve the original failure after best-effort index restoration.
+        if (renamed && fs.existsSync(temporaryPath)) {
+          fs.renameSync(temporaryPath, filePath);
+          fileRestored = true;
+        }
+      } catch (restoreError) {
+        logger.error({
+          operationId,
+          documentId,
+          errorName: restoreError instanceof Error ? restoreError.name : 'UnknownError',
+        }, 'Document delete file compensation failed');
       }
-      try {
-        if (renamed && fs.existsSync(temporaryPath)) fs.renameSync(temporaryPath, filePath);
-      } catch {
-        // Avoid exposing local paths while preserving the original delete failure.
+      let indexRestored = false;
+      if (databaseRestored && fileRestored) {
+        try {
+          await this.synchronizeDocumentIndex('restore', record, chunks);
+          indexRestored = true;
+        } catch (restoreError) {
+          logger.error({
+            operationId,
+            documentId,
+            errorName: restoreError instanceof Error ? restoreError.name : 'UnknownError',
+          }, 'Document delete index compensation failed');
+        }
+      }
+      if (!databaseRestored || !fileRestored || !indexRestored) {
+        await this.convergeFailedDeleteToRemovedState({
+          operationId,
+          documentId,
+          filePath,
+          temporaryPath,
+          record,
+          chunks,
+        });
       }
       throw error instanceof ConflictError || error instanceof NotFoundError
         ? error
@@ -260,6 +296,176 @@ export class DocumentService {
 
   private resolveStoragePath(storagePath: string): string {
     return path.join(this.dependencies.uploadDir, path.basename(storagePath));
+  }
+
+  private async convergeFailedDeleteToRemovedState(params: {
+    operationId: string;
+    documentId: string;
+    filePath: string;
+    temporaryPath: string;
+    record: DocumentRecord;
+    chunks: DocumentChunk[];
+  }): Promise<void> {
+    let databaseRemoved = false;
+    try {
+      databaseRemoved = !this.repo.findById(params.documentId) || this.repo.delete(params.documentId);
+    } catch (cleanupError) {
+      logger.error({
+        operationId: params.operationId,
+        documentId: params.documentId,
+        errorName: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+      }, 'Document delete database convergence failed');
+    }
+    if (!databaseRemoved) {
+      let fileRestored = fs.existsSync(params.filePath);
+      try {
+        if (!fileRestored && fs.existsSync(params.temporaryPath)) {
+          fs.renameSync(params.temporaryPath, params.filePath);
+          fileRestored = true;
+        }
+      } catch (cleanupError) {
+        logger.error({
+          operationId: params.operationId,
+          documentId: params.documentId,
+          errorName: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+        }, 'Document delete file rollback after convergence failure failed');
+      }
+      let currentRecord = this.repo.findById(params.documentId) ?? params.record;
+      if (!fileRestored && currentRecord.isActive) {
+        try {
+          currentRecord = this.repo.setActive(params.documentId, 0);
+        } catch (disableError) {
+          logger.error({
+            operationId: params.operationId,
+            documentId: params.documentId,
+            errorName: disableError instanceof Error ? disableError.name : 'UnknownError',
+          }, 'Document disable after file rollback failure failed');
+        }
+      }
+      try {
+        await this.synchronizeDocumentIndex('restore', currentRecord, params.chunks);
+      } catch (cleanupError) {
+        if (currentRecord.isActive) {
+          try {
+            currentRecord = this.repo.setActive(params.documentId, 0);
+            await this.synchronizeDocumentIndex('restore', currentRecord, params.chunks);
+          } catch (disableError) {
+            logger.error({
+              operationId: params.operationId,
+              documentId: params.documentId,
+              errorName: disableError instanceof Error ? disableError.name : 'UnknownError',
+            }, 'Document disable and index reconciliation failed');
+          }
+        }
+        logger.error({
+          operationId: params.operationId,
+          documentId: params.documentId,
+          errorName: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+        }, 'Document delete index rollback after convergence failure failed');
+      }
+      return;
+    }
+    try {
+      await this.synchronizeDocumentIndex('remove', params.record, params.chunks);
+    } catch (cleanupError) {
+      logger.error({
+        operationId: params.operationId,
+        documentId: params.documentId,
+        errorName: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+      }, 'Document delete index convergence failed');
+      let databaseRestored = false;
+      try {
+        this.db.transaction(() => this.repo.restore(params.record, params.chunks))();
+        databaseRestored = true;
+      } catch (restoreError) {
+        logger.error({
+          operationId: params.operationId,
+          documentId: params.documentId,
+          errorName: restoreError instanceof Error ? restoreError.name : 'UnknownError',
+        }, 'Document restore after index convergence failure failed');
+      }
+      let fileRestored = fs.existsSync(params.filePath);
+      try {
+        if (!fileRestored && fs.existsSync(params.temporaryPath)) {
+          fs.renameSync(params.temporaryPath, params.filePath);
+          fileRestored = true;
+        }
+      } catch (restoreError) {
+        logger.error({
+          operationId: params.operationId,
+          documentId: params.documentId,
+          errorName: restoreError instanceof Error ? restoreError.name : 'UnknownError',
+        }, 'Document file restore after index convergence failure failed');
+      }
+      if (databaseRestored) {
+        let restoredRecord = this.repo.findById(params.documentId) ?? params.record;
+        if (!fileRestored && restoredRecord.isActive) {
+          try {
+            restoredRecord = this.repo.setActive(params.documentId, 0);
+          } catch (disableError) {
+            logger.error({
+              operationId: params.operationId,
+              documentId: params.documentId,
+              errorName: disableError instanceof Error ? disableError.name : 'UnknownError',
+            }, 'Document disable after failed file restore failed');
+          }
+        }
+        try {
+          await this.synchronizeDocumentIndex('restore', restoredRecord, params.chunks);
+        } catch (restoreError) {
+          if (restoredRecord.isActive) {
+            try {
+              restoredRecord = this.repo.setActive(params.documentId, 0);
+              await this.synchronizeDocumentIndex('restore', restoredRecord, params.chunks);
+            } catch (disableError) {
+              logger.error({
+                operationId: params.operationId,
+                documentId: params.documentId,
+                errorName: disableError instanceof Error ? disableError.name : 'UnknownError',
+              }, 'Document disable after index convergence restore failure failed');
+            }
+          }
+          logger.error({
+            operationId: params.operationId,
+            documentId: params.documentId,
+            errorName: restoreError instanceof Error ? restoreError.name : 'UnknownError',
+          }, 'Document index restore after convergence failure failed');
+        }
+      }
+      return;
+    }
+    this.removeFileSafely(params.filePath, params.operationId, 'delete_file_convergence');
+    this.removeFileSafely(params.temporaryPath, params.operationId, 'delete_temporary_convergence');
+  }
+
+  private async synchronizeDocumentIndex(
+    mode: 'remove' | 'restore',
+    record: DocumentRecord,
+    chunks: DocumentChunk[],
+  ): Promise<void> {
+    if (this.dependencies.synchronizeIndex) {
+      await this.dependencies.synchronizeIndex();
+      return;
+    }
+    if (mode === 'remove' || !record.isActive) {
+      await this.dependencies.removeDocumentFromIndex?.(record.id, chunks);
+    } else {
+      await this.dependencies.publishChunks?.(chunks);
+    }
+  }
+
+  private removeFileSafely(filePath: string, operationId: string, operation: string): boolean {
+    try {
+      fs.rmSync(filePath, { force: true });
+      return true;
+    } catch (cleanupError) {
+      logger.error({
+        operationId,
+        operation,
+        errorName: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+      }, 'Document file cleanup failed');
+      return false;
+    }
   }
 
   private toPublicDocument(record: DocumentRecord): Document {

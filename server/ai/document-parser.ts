@@ -1,3 +1,4 @@
+import JSZip, { JSZipObject } from 'jszip';
 import mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
 import { DocumentFormat } from '../types/domain';
@@ -101,7 +102,7 @@ async function fromDocx(buffer: Buffer): Promise<ParsedDocument> {
     throw new DocumentParserError('invalid_docx');
   }
   try {
-    validateDocxArchive(buffer);
+    await validateDocxArchive(buffer);
     const result = await mammoth.extractRawText({ buffer });
     if (result.value.length > MAX_EXTRACTED_CHARACTERS) {
       throw new DocumentParserError('text_too_large');
@@ -113,7 +114,7 @@ async function fromDocx(buffer: Buffer): Promise<ParsedDocument> {
   }
 }
 
-function validateDocxArchive(buffer: Buffer): void {
+async function validateDocxArchive(buffer: Buffer): Promise<void> {
   const minimumEocdOffset = Math.max(0, buffer.length - 65_557);
   let eocdOffset = -1;
   for (let offset = buffer.length - 22; offset >= minimumEocdOffset; offset -= 1) {
@@ -148,6 +149,45 @@ function validateDocxArchive(buffer: Buffer): void {
     const commentLength = buffer.readUInt16LE(offset + 32);
     offset += 46 + fileNameLength + extraLength + commentLength;
   }
+
+  let archive: JSZip;
+  try {
+    archive = await JSZip.loadAsync(buffer, { createFolders: false });
+  } catch {
+    throw new DocumentParserError('invalid_docx');
+  }
+  const entries = Object.values(archive.files).filter((entry) => !entry.dir);
+  if (entries.length > MAX_DOCX_ENTRIES) throw new DocumentParserError('docx_resource_limit');
+  let actualUncompressedBytes = 0;
+  for (const entry of entries) {
+    actualUncompressedBytes = await countExpandedBytes(entry, actualUncompressedBytes);
+  }
+}
+
+function countExpandedBytes(entry: JSZipObject, initialBytes: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let total = initialBytes;
+    let settled = false;
+    const stream = entry.nodeStream('nodebuffer');
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      (stream as NodeJS.ReadableStream & { destroy(): void }).destroy();
+      reject(error);
+    };
+    stream.on('data', (chunk: Buffer) => {
+      total += chunk.byteLength;
+      if (total > MAX_DOCX_UNCOMPRESSED_BYTES) {
+        fail(new DocumentParserError('docx_resource_limit'));
+      }
+    });
+    stream.on('error', () => fail(new DocumentParserError('docx_resource_limit')));
+    stream.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve(total);
+    });
+  });
 }
 
 function splitParagraphs(text: string): string[] {

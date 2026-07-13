@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { KnowledgeType, RetrievalResult } from '../types/ai';
 import { logger } from '../utils/logger';
 import { VectorStore } from './vector-store';
@@ -23,6 +24,9 @@ const SOURCE_PRIORITY: Record<NonNullable<RetrievalResult['source']>, number> = 
 export class KnowledgeRetriever {
   private initialized = false;
   private readonly indexedIds = new Map<KnowledgeType, Set<string>>();
+  private readonly indexedItems = new Map<KnowledgeType, Map<string, KnowledgeIndexItem>>();
+  private readonly failedSources = new Set<KnowledgeType>();
+  private readonly retryAfter = new Map<KnowledgeType, number>();
 
   constructor(
     private readonly vectorStore: VectorStore<KnowledgeIndexItem>,
@@ -31,12 +35,25 @@ export class KnowledgeRetriever {
   ) {}
 
   async initialize(): Promise<void> {
-    if (this.initialized) return;
-    for (const adapter of this.adapters) {
+    const operationId = uuidv4();
+    const now = Date.now();
+    const pendingAdapters = this.initialized
+      ? this.adapters.filter((adapter) => (
+          this.failedSources.has(adapter.knowledgeType)
+          && (this.retryAfter.get(adapter.knowledgeType) ?? 0) <= now
+        ))
+      : this.adapters;
+    if (this.initialized && pendingAdapters.length === 0) return;
+    for (const adapter of pendingAdapters) {
       try {
-        await this.refreshSource(adapter.knowledgeType);
+        await this.refreshSource(adapter.knowledgeType, operationId);
+        this.failedSources.delete(adapter.knowledgeType);
+        this.retryAfter.delete(adapter.knowledgeType);
       } catch (error) {
+        this.failedSources.add(adapter.knowledgeType);
+        this.retryAfter.set(adapter.knowledgeType, now + 30_000);
         logger.warn({
+          operationId,
           knowledgeType: adapter.knowledgeType,
           errorName: error instanceof Error ? error.name : 'UnknownError',
         }, 'Knowledge vector source initialization failed');
@@ -45,20 +62,49 @@ export class KnowledgeRetriever {
     this.initialized = true;
   }
 
-  async refreshSource(knowledgeType: KnowledgeType): Promise<void> {
+  async refreshSource(knowledgeType: KnowledgeType, operationId: string = uuidv4()): Promise<void> {
     const adapter = this.adapters.find((candidate) => candidate.knowledgeType === knowledgeType);
     if (!adapter) return;
-    const items = await adapter.loadIndexItems();
-    const ids = new Set<string>();
-    for (const item of items) {
-      if (!item.id.startsWith(`${knowledgeType}:`)) {
-        throw new Error(`Knowledge index id must use the ${knowledgeType}: namespace`);
+    const previousItems = this.indexedItems.get(knowledgeType) ?? new Map<string, KnowledgeIndexItem>();
+    try {
+      const items = await adapter.loadIndexItems();
+      const nextItems = new Map<string, KnowledgeIndexItem>();
+      for (const item of items) {
+        if (!item.id.startsWith(`${knowledgeType}:`)) {
+          throw new Error(`Knowledge index id must use the ${knowledgeType}: namespace`);
+        }
+        nextItems.set(item.id, item);
       }
-      ids.add(item.id);
+      try {
+        for (const id of previousItems.keys()) this.vectorStore.delete(id);
+        for (const item of nextItems.values()) this.vectorStore.upsert(item, item.embedding);
+      } catch (applyError) {
+        try {
+          for (const id of nextItems.keys()) this.vectorStore.delete(id);
+          for (const item of previousItems.values()) this.vectorStore.upsert(item, item.embedding);
+        } catch (rollbackError) {
+          logger.error({
+            operationId,
+            knowledgeType,
+            errorName: rollbackError instanceof Error ? rollbackError.name : 'UnknownError',
+          }, 'Knowledge vector source rollback failed');
+        }
+        throw applyError;
+      }
+      this.indexedItems.set(knowledgeType, nextItems);
+      this.indexedIds.set(knowledgeType, new Set(nextItems.keys()));
+      this.failedSources.delete(knowledgeType);
+      this.retryAfter.delete(knowledgeType);
+    } catch (error) {
+      this.failedSources.add(knowledgeType);
+      this.retryAfter.set(knowledgeType, Date.now() + 30_000);
+      logger.warn({
+        operationId,
+        knowledgeType,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Knowledge vector source refresh failed');
+      throw error;
     }
-    for (const id of this.indexedIds.get(knowledgeType) ?? []) this.vectorStore.delete(id);
-    for (const item of items) this.vectorStore.upsert(item, item.embedding);
-    this.indexedIds.set(knowledgeType, ids);
   }
 
   async search(
@@ -67,6 +113,7 @@ export class KnowledgeRetriever {
     knowledgeTypes: KnowledgeType[] = ['faq', 'document'],
   ): Promise<RetrievalResult[]> {
     await this.initialize();
+    const operationId = uuidv4();
     const allowed = new Set(knowledgeTypes);
     const merged = new Map<string, RetrievalResult>();
 
@@ -75,9 +122,11 @@ export class KnowledgeRetriever {
         const embeddings = await this.embedTexts([query]);
         const queryEmbedding = embeddings[0];
         if (queryEmbedding) {
-          const candidateLimit = this.vectorStore.stats().indexedCount;
-          for (const match of this.vectorStore.search(queryEmbedding, candidateLimit)) {
-            if (!allowed.has(match.entry.result.knowledgeType)) continue;
+          for (const match of this.vectorStore.search(
+            queryEmbedding,
+            topK,
+            (entry) => allowed.has(entry.result.knowledgeType),
+          )) {
             const vectorScore = match.score;
             merged.set(this.resultKey(match.entry.result), {
               ...match.entry.result,
@@ -87,7 +136,11 @@ export class KnowledgeRetriever {
             });
           }
         }
-      } catch {
+      } catch (error) {
+        logger.warn({
+          operationId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }, 'Knowledge vector query failed; using keyword fallback');
         // Keyword retrieval remains available when query embedding fails.
       }
     }
@@ -99,6 +152,7 @@ export class KnowledgeRetriever {
         keywordResults = await adapter.searchKeyword(query, topK);
       } catch (error) {
         logger.warn({
+          operationId,
           knowledgeType: adapter.knowledgeType,
           errorName: error instanceof Error ? error.name : 'UnknownError',
         }, 'Knowledge keyword source search failed');
@@ -134,8 +188,19 @@ export class KnowledgeRetriever {
     return this.indexedIds.get(knowledgeType)?.size ?? 0;
   }
 
+  getFailedSources(): KnowledgeType[] {
+    return [...this.failedSources];
+  }
+
+  hasInitialized(): boolean {
+    return this.initialized;
+  }
+
   upsertIndexItem(item: KnowledgeIndexItem): void {
     this.vectorStore.upsert(item, item.embedding);
+    const items = this.indexedItems.get(item.result.knowledgeType) ?? new Map<string, KnowledgeIndexItem>();
+    items.set(item.id, item);
+    this.indexedItems.set(item.result.knowledgeType, items);
     const ids = this.indexedIds.get(item.result.knowledgeType) ?? new Set<string>();
     ids.add(item.id);
     this.indexedIds.set(item.result.knowledgeType, ids);
@@ -143,6 +208,7 @@ export class KnowledgeRetriever {
 
   deleteIndexItem(knowledgeType: KnowledgeType, namespacedId: string): void {
     this.vectorStore.delete(namespacedId);
+    this.indexedItems.get(knowledgeType)?.delete(namespacedId);
     this.indexedIds.get(knowledgeType)?.delete(namespacedId);
   }
 
@@ -151,8 +217,16 @@ export class KnowledgeRetriever {
   }
 
   private compare(a: RetrievalResult, b: RetrievalResult): number {
+    const directFaqDelta = Number(this.isDirectFaqCandidate(b)) - Number(this.isDirectFaqCandidate(a));
+    if (directFaqDelta !== 0) return directFaqDelta;
     const scoreDelta = b.similarity - a.similarity;
     if (scoreDelta !== 0) return scoreDelta;
     return SOURCE_PRIORITY[b.source ?? 'keyword'] - SOURCE_PRIORITY[a.source ?? 'keyword'];
+  }
+
+  private isDirectFaqCandidate(result: RetrievalResult): boolean {
+    return result.knowledgeType === 'faq'
+      && (result.source === 'keyword' || result.source === 'hybrid')
+      && (result.keywordScore ?? result.similarity) >= 0.65;
   }
 }

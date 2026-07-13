@@ -20,9 +20,10 @@ class SemanticSearch {
     try {
       if (force) await knowledgeRetriever.refreshSource('faq');
       else await knowledgeRetriever.initialize();
-      this.initialized = true;
+      const failedSources = knowledgeRetriever.getFailedSources();
+      this.initialized = !failedSources.includes('faq');
       this.lastRebuiltAt = new Date().toISOString();
-      this.lastError = null;
+      this.lastError = this.initialized ? null : 'FAQ vector index is degraded; keyword fallback remains available';
     } catch (error) {
       this.initialized = true;
       this.lastError = error instanceof Error ? error.message : String(error);
@@ -38,14 +39,17 @@ class SemanticSearch {
   getStatus(): FaqIndexStatus {
     const activeEntries = this.faqRepo.listAllActive();
     const stats = knowledgeRetriever.stats();
+    const isDegraded = knowledgeRetriever.getFailedSources().includes('faq');
     return {
-      initialized: this.initialized,
+      initialized: knowledgeRetriever.hasInitialized() && !isDegraded,
       activeCount: activeEntries.length,
       indexedCount: knowledgeRetriever.getIndexedCount('faq'),
       missingEmbeddingCount: activeEntries.filter((entry) => !entry.embedding?.length).length,
       embeddingDimensions: stats.embeddingDimensions,
       lastRebuiltAt: this.lastRebuiltAt ?? stats.updatedAt,
-      lastError: this.lastError,
+      lastError: isDegraded
+        ? this.lastError ?? 'FAQ vector index is degraded; keyword fallback remains available'
+        : null,
     };
   }
 

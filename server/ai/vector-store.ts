@@ -19,7 +19,11 @@ export interface VectorStoreStats {
 export interface VectorStore<T extends { id: string } = FaqEntry> {
   upsert(entry: T, embedding: number[]): void;
   delete(id: string): void;
-  search(queryEmbedding: number[], limit: number): VectorSearchResult<T>[];
+  search(
+    queryEmbedding: number[],
+    limit: number,
+    predicate?: (entry: T) => boolean,
+  ): VectorSearchResult<T>[];
   stats(): VectorStoreStats;
   clear(): void;
 }
@@ -41,14 +45,22 @@ export class InMemoryVectorStore<T extends { id: string } = FaqEntry> implements
     if (this.items.delete(id)) this.updatedAt = new Date().toISOString();
   }
 
-  search(queryEmbedding: number[], limit: number): VectorSearchResult<T>[] {
+  search(
+    queryEmbedding: number[],
+    limit: number,
+    predicate: (entry: T) => boolean = () => true,
+  ): VectorSearchResult<T>[] {
     if (queryEmbedding.length === 0 || limit <= 0) return [];
-    const scored = [...this.items.values()].map((item) => ({
-      ...item,
-      score: cosineSimilarity(queryEmbedding, item.embedding),
-    }));
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit);
+    const best: VectorSearchResult<T>[] = [];
+    for (const item of this.items.values()) {
+      if (!predicate(item.entry)) continue;
+      const result = { ...item, score: cosineSimilarity(queryEmbedding, item.embedding) };
+      const insertAt = best.findIndex((candidate) => result.score > candidate.score);
+      if (insertAt < 0) best.push(result);
+      else best.splice(insertAt, 0, result);
+      if (best.length > limit) best.pop();
+    }
+    return best;
   }
 
   stats(): VectorStoreStats {

@@ -24,7 +24,7 @@ function createSimplePdf(text: string): Buffer {
   return Buffer.from(body, 'latin1');
 }
 
-async function createDocx(text: string): Promise<Buffer> {
+async function createDocx(text: string, compression: 'STORE' | 'DEFLATE' = 'STORE'): Promise<Buffer> {
   const zip = new JSZip();
   zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?>
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -40,7 +40,7 @@ async function createDocx(text: string): Promise<Buffer> {
     <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
       <w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body>
     </w:document>`);
-  return zip.generateAsync({ type: 'nodebuffer' });
+  return zip.generateAsync({ type: 'nodebuffer', compression });
 }
 
 async function testFourFormatsAndStructure(): Promise<void> {
@@ -75,6 +75,17 @@ async function testInvalidAndScannedDocumentsFailSafely(): Promise<void> {
   await assert.rejects(
     parseDocument(expandedDocx, 'docx'),
     (error) => error instanceof DocumentParserError && error.failureCode === 'docx_resource_limit',
+  );
+
+  const compressedBomb = await createDocx('A'.repeat(21 * 1024 * 1024), 'DEFLATE');
+  for (let offset = compressedBomb.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02])); offset >= 0;) {
+    compressedBomb.writeUInt32LE(100, offset + 24);
+    offset = compressedBomb.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), offset + 4);
+  }
+  await assert.rejects(
+    parseDocument(compressedBomb, 'docx'),
+    (error) => error instanceof DocumentParserError && error.failureCode === 'docx_resource_limit',
+    'actual expanded output must be capped even when ZIP metadata understates its size',
   );
 }
 
