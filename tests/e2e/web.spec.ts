@@ -137,62 +137,77 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
   test('admin uploads a document, previews chunks, and customers retrieve its source text', async ({ page }) => {
     const fileName = 'refund-policy.md';
     await loginAsAdmin(page);
+    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
     await page.getByText('文档知识').click();
     await expect(page).toHaveURL(/\/admin\/documents$/);
     await expect(page.getByTestId('documents-page')).toBeVisible();
 
-    const [uploadResponse] = await Promise.all([
-      page.waitForResponse((response) => response.url().endsWith('/api/admin/documents') && response.request().method() === 'POST'),
-      page.locator('input[type="file"]').setInputFiles('tests/fixtures/refund-policy.md'),
-    ]);
-    expect(uploadResponse.status()).toBe(201);
-    const documentId = (await uploadResponse.json()).data.id as string;
-    const row = documentRow(page, fileName);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await expect(row).toContainText('可检索');
-    await expect(row).toContainText('MD');
-    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
-      await expect(page.getByText('登录成功')).toBeHidden({ timeout: 8_000 });
-      await expect(page.getByText('文档已解析并加入检索')).toBeHidden({ timeout: 8_000 });
-      await page.screenshot({ path: 'docs/releases/assets/v0.2.6-documents.png', fullPage: true });
+    let documentId: string | undefined;
+    try {
+      const [uploadResponse] = await Promise.all([
+        page.waitForResponse((response) => response.url().endsWith('/api/admin/documents') && response.request().method() === 'POST'),
+        page.locator('input[type="file"]').setInputFiles('tests/fixtures/refund-policy.md'),
+      ]);
+      expect(uploadResponse.status()).toBe(201);
+      documentId = (await uploadResponse.json()).data.id as string;
+      const row = documentRow(page, fileName);
+      await expect(row).toBeVisible({ timeout: 15_000 });
+      await expect(row).toContainText('可检索');
+      await expect(row).toContainText('MD');
+      await expect.poll(() => page.evaluate(() => (
+        document.documentElement.scrollWidth - document.documentElement.clientWidth
+      ))).toBeLessThanOrEqual(0);
+      await expect(page.locator('.app-admin-sidebar')).toBeVisible();
+      await expect.poll(() => page.locator('.app-admin-sidebar').evaluate((element) => (
+        Math.round(element.getBoundingClientRect().width)
+      ))).toBeGreaterThan(200);
+      if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+        await expect(page.getByText('登录成功')).toBeHidden({ timeout: 8_000 });
+        await expect(page.getByText('文档已解析并加入检索')).toBeHidden({ timeout: 8_000 });
+        await page.screenshot({ path: 'docs/releases/assets/v0.2.6-documents.png', fullPage: true });
+      }
+
+      await row.getByTestId('document-view').click();
+      await expect(page.getByTestId('document-detail')).toBeVisible();
+      await expect(page.getByTestId('document-detail')).toContainText('三个工作日');
+      if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+        await page.waitForTimeout(350);
+        await page.screenshot({ path: 'docs/releases/assets/v0.2.6-document-detail.png', fullPage: true });
+      }
+      await page.getByRole('button', { name: '关闭' }).click();
+
+      await page.getByTestId('language-toggle').click();
+      await expect(page.getByRole('heading', { name: 'Document Knowledge' })).toBeVisible();
+      await expect(documentRow(page, fileName)).toContainText('Ready');
+      await page.getByTestId('theme-toggle').click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+      const filters = page.locator('.app-toolbar-row .t-select input');
+      await expect(filters).toHaveCount(2);
+      await expect(filters.nth(0)).toHaveValue('All');
+      await expect(filters.nth(1)).toHaveValue('All');
+      await expect(page.getByRole('button', { name: 'admin' })).toBeVisible();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(page.getByTestId('documents-page')).toBeVisible();
+      await expect.poll(() => page.evaluate(() => (
+        document.documentElement.scrollWidth - document.documentElement.clientWidth
+      ))).toBeLessThanOrEqual(0);
+      if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+        await page.screenshot({ path: 'docs/releases/assets/v0.2.6-documents-mobile-dark.png', fullPage: true });
+      }
+
+      await page.goto('/');
+      await page.getByTestId('chat-input').fill('银杏计划退款审核通过后，会在三个工作日内原路返回。');
+      await page.getByTestId('chat-send-button').click();
+      await expect(page.getByTestId('chat-messages')).toContainText(fileName, { timeout: 15_000 });
+      await expect(page.getByTestId('chat-messages')).toContainText('三个工作日');
+    } finally {
+      if (documentId) {
+        const deleted = await page.request.delete(`/api/admin/documents/${documentId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(deleted.status()).toBe(200);
+      }
     }
-
-    await row.getByTestId('document-view').click();
-    await expect(page.getByTestId('document-detail')).toBeVisible();
-    await expect(page.getByTestId('document-detail')).toContainText('三个工作日');
-    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
-      await page.waitForTimeout(350);
-      await page.screenshot({ path: 'docs/releases/assets/v0.2.6-document-detail.png', fullPage: true });
-    }
-    await page.getByRole('button', { name: '关闭' }).click();
-
-    await page.getByTestId('language-toggle').click();
-    await expect(page.getByRole('heading', { name: 'Document Knowledge' })).toBeVisible();
-    await expect(documentRow(page, fileName)).toContainText('Ready');
-    await page.getByTestId('theme-toggle').click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByTestId('documents-page')).toBeVisible();
-    const overflow = await page.evaluate(() => ({
-      clientWidth: document.documentElement.clientWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-    }));
-    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
-    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
-      await page.screenshot({ path: 'docs/releases/assets/v0.2.6-documents-mobile-dark.png', fullPage: true });
-    }
-
-    const token = await page.evaluate(() => localStorage.getItem('auth_token'));
-    await page.goto('/');
-    await page.getByTestId('chat-input').fill('银杏计划退款审核通过后，会在三个工作日内原路返回。');
-    await page.getByTestId('chat-send-button').click();
-    await expect(page.getByTestId('chat-messages')).toContainText(fileName, { timeout: 15_000 });
-    await expect(page.getByTestId('chat-messages')).toContainText('三个工作日');
-
-    const deleted = await page.request.delete(`/api/admin/documents/${documentId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(deleted.status()).toBe(200);
   });
 
   test('admin reviews a knowledge gap, inspects evidence, and converts it to a searchable FAQ', async ({ page }) => {
