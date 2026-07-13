@@ -1,4 +1,5 @@
 import { KnowledgeType, RetrievalResult } from '../types/ai';
+import { logger } from '../utils/logger';
 import { VectorStore } from './vector-store';
 
 export interface KnowledgeIndexItem {
@@ -31,7 +32,16 @@ export class KnowledgeRetriever {
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
-    for (const adapter of this.adapters) await this.refreshSource(adapter.knowledgeType);
+    for (const adapter of this.adapters) {
+      try {
+        await this.refreshSource(adapter.knowledgeType);
+      } catch (error) {
+        logger.warn({
+          knowledgeType: adapter.knowledgeType,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }, 'Knowledge vector source initialization failed');
+      }
+    }
     this.initialized = true;
   }
 
@@ -65,7 +75,8 @@ export class KnowledgeRetriever {
         const embeddings = await this.embedTexts([query]);
         const queryEmbedding = embeddings[0];
         if (queryEmbedding) {
-          for (const match of this.vectorStore.search(queryEmbedding, Math.max(topK * 4, topK))) {
+          const candidateLimit = this.vectorStore.stats().indexedCount;
+          for (const match of this.vectorStore.search(queryEmbedding, candidateLimit)) {
             if (!allowed.has(match.entry.result.knowledgeType)) continue;
             const vectorScore = match.score;
             merged.set(this.resultKey(match.entry.result), {
@@ -83,7 +94,16 @@ export class KnowledgeRetriever {
 
     for (const adapter of this.adapters) {
       if (!allowed.has(adapter.knowledgeType)) continue;
-      const keywordResults = await adapter.searchKeyword(query, topK);
+      let keywordResults: RetrievalResult[];
+      try {
+        keywordResults = await adapter.searchKeyword(query, topK);
+      } catch (error) {
+        logger.warn({
+          knowledgeType: adapter.knowledgeType,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }, 'Knowledge keyword source search failed');
+        continue;
+      }
       for (const result of keywordResults) {
         const key = this.resultKey(result);
         const existing = merged.get(key);

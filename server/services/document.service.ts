@@ -14,7 +14,7 @@ import {
   DocumentRecord,
   DocumentStatus,
 } from '../types/domain';
-import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
+import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '../utils/errors';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 200_000;
@@ -25,14 +25,14 @@ export interface DocumentServiceDependencies {
   uploadDir: string;
   embedTexts: (texts: string[]) => Promise<number[][]>;
   publishChunks?: (chunks: DocumentChunk[]) => void | Promise<void>;
-  removeDocumentFromIndex?: (documentId: string) => void | Promise<void>;
+  removeDocumentFromIndex?: (documentId: string, chunks: DocumentChunk[]) => void | Promise<void>;
 }
 
 export class DocumentService {
   private readonly repo: DocumentRepo;
 
   constructor(
-    db: Database.Database,
+    private readonly db: Database.Database,
     private readonly dependencies: DocumentServiceDependencies,
   ) {
     this.repo = new DocumentRepo(db);
@@ -50,13 +50,19 @@ export class DocumentService {
       throw new ConflictError('An identical document already exists');
     }
 
-    fs.mkdirSync(this.dependencies.uploadDir, { recursive: true });
     const id = uuidv4();
     const storagePath = `${id}.${format}`;
     const finalPath = this.resolveStoragePath(storagePath);
     const temporaryPath = `${finalPath}.tmp`;
-    fs.writeFileSync(temporaryPath, params.buffer, { flag: 'wx' });
-    fs.renameSync(temporaryPath, finalPath);
+    try {
+      fs.mkdirSync(this.dependencies.uploadDir, { recursive: true, mode: 0o700 });
+      fs.chmodSync(this.dependencies.uploadDir, 0o700);
+      fs.writeFileSync(temporaryPath, params.buffer, { flag: 'wx', mode: 0o600 });
+      fs.renameSync(temporaryPath, finalPath);
+    } catch {
+      fs.rmSync(temporaryPath, { force: true });
+      throw new ServiceUnavailableError('Document storage is unavailable');
+    }
 
     let record: DocumentRecord;
     try {
@@ -118,7 +124,9 @@ export class DocumentService {
     try {
       buffer = fs.readFileSync(this.resolveStoragePath(record.storagePath));
     } catch {
-      return this.toPublicDocument(this.repo.markFailed(documentId, 'source_file_missing'));
+      return this.toPublicDocument(this.db.transaction(() => (
+        this.repo.markFailed(documentId, 'source_file_missing')
+      ))());
     }
     record = this.repo.markPending(documentId);
     return this.toPublicDocument(await this.process(record, buffer));
@@ -128,19 +136,20 @@ export class DocumentService {
     const record = this.requireDocument(documentId);
     if (record.status !== 'ready') throw new ConflictError('Only ready documents can be activated or deactivated');
     const updated = this.repo.setActive(documentId, Number(isActive));
+    const chunks = this.repo.listChunks(documentId, 300, 0).items;
     try {
       if (isActive) {
-        await this.dependencies.publishChunks?.(this.repo.listChunks(documentId, 300, 0).items);
+        await this.dependencies.publishChunks?.(chunks);
       } else {
-        await this.dependencies.removeDocumentFromIndex?.(documentId);
+        await this.dependencies.removeDocumentFromIndex?.(documentId, chunks);
       }
     } catch (error) {
       this.repo.setActive(documentId, record.isActive);
       try {
         if (record.isActive) {
-          await this.dependencies.publishChunks?.(this.repo.listChunks(documentId, 300, 0).items);
+          await this.dependencies.publishChunks?.(chunks);
         } else {
-          await this.dependencies.removeDocumentFromIndex?.(documentId);
+          await this.dependencies.removeDocumentFromIndex?.(documentId, chunks);
         }
       } catch {
         // Preserve the original indexing error after best-effort rollback.
@@ -152,21 +161,42 @@ export class DocumentService {
 
   async delete(documentId: string): Promise<void> {
     const record = this.requireDocument(documentId);
+    const chunks = this.repo.listChunks(documentId, 300, 0).items;
     const filePath = this.resolveStoragePath(record.storagePath);
     const temporaryPath = `${filePath}.deleting`;
     let renamed = false;
+    let databaseDeleted = false;
     try {
       if (fs.existsSync(filePath)) {
         fs.renameSync(filePath, temporaryPath);
         renamed = true;
       }
+      await this.dependencies.removeDocumentFromIndex?.(documentId, chunks);
       if (!this.repo.delete(documentId)) throw new Error('Document delete did not change a row');
+      databaseDeleted = true;
+      if (renamed) fs.rmSync(temporaryPath);
     } catch (error) {
-      if (renamed && fs.existsSync(temporaryPath)) fs.renameSync(temporaryPath, filePath);
-      throw error;
+      if (databaseDeleted) {
+        try {
+          this.db.transaction(() => this.repo.restore(record, chunks))();
+        } catch {
+          // Continue the remaining compensation steps before returning a stable failure.
+        }
+      }
+      try {
+        if (record.isActive) await this.dependencies.publishChunks?.(chunks);
+      } catch {
+        // Preserve the original failure after best-effort index restoration.
+      }
+      try {
+        if (renamed && fs.existsSync(temporaryPath)) fs.renameSync(temporaryPath, filePath);
+      } catch {
+        // Avoid exposing local paths while preserving the original delete failure.
+      }
+      throw error instanceof ConflictError || error instanceof NotFoundError
+        ? error
+        : new ServiceUnavailableError('Document deletion could not be completed');
     }
-    await this.dependencies.removeDocumentFromIndex?.(documentId);
-    if (renamed) fs.rmSync(temporaryPath, { force: true });
   }
 
   private async process(record: DocumentRecord, buffer: Buffer): Promise<DocumentRecord> {
@@ -176,7 +206,9 @@ export class DocumentService {
         throw new DocumentProcessingError('text_too_large');
       }
       const chunks = await semanticChunk(parsed.units, this.dependencies.embedTexts) as ReadyChunk[];
-      const updated = this.repo.replaceChunksAndMarkReady(record.id, chunks, parsed.characterCount);
+      const updated = this.db.transaction(() => (
+        this.repo.replaceChunksAndMarkReady(record.id, chunks, parsed.characterCount)
+      ))();
       await this.dependencies.publishChunks?.(this.repo.listChunks(record.id, 300, 0).items);
       return updated;
     } catch (error) {
@@ -185,7 +217,7 @@ export class DocumentService {
         || error instanceof ChunkingError
         ? error.failureCode
         : 'processing_failed';
-      return this.repo.markFailed(record.id, failureCode);
+      return this.db.transaction(() => this.repo.markFailed(record.id, failureCode))();
     }
   }
 

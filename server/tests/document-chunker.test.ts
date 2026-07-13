@@ -26,7 +26,19 @@ async function testSemanticBreaksAndBatchEmbedding(): Promise<void> {
   assert.ok(chunks.every((chunk) => chunk.content.length <= 1_200));
 }
 
-testSemanticBreaksAndBatchEmbedding()
+async function testLongUnitsSplitBeforeEmbedding(): Promise<void> {
+  const calls: string[][] = [];
+  await semanticChunk([
+    { content: '第一主题句。'.repeat(140) + '第二主题句。'.repeat(140), title: '长段落' },
+  ], async (texts) => {
+    calls.push(texts);
+    return texts.map(() => [1, 0]);
+  });
+  assert.ok(calls[0].length > 1, 'long structure units should split before unit embeddings');
+  assert.ok(calls[0].every((text) => text.length <= 1_200), 'provider inputs must respect the hard chunk limit');
+}
+
+Promise.all([testSemanticBreaksAndBatchEmbedding(), testLongUnitsSplitBeforeEmbedding()])
   .then(() => console.log('document chunker tests passed'))
   .catch((error) => {
     console.error(error);

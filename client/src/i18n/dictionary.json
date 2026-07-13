@@ -1071,9 +1071,17 @@
     "zh": "PDF 没有可提取文本，扫描件暂不支持",
     "en": "No text layer found; scanned PDFs are not supported yet"
   },
+  "documents.failure.pdf_too_many_pages": {
+    "zh": "PDF 页数超过处理上限",
+    "en": "The PDF exceeds the page limit"
+  },
   "documents.failure.invalid_docx": {
     "zh": "DOCX 文件损坏或无法解析",
     "en": "The DOCX is damaged or cannot be parsed"
+  },
+  "documents.failure.docx_resource_limit": {
+    "zh": "DOCX 解压后的资源规模超过处理上限",
+    "en": "The expanded DOCX exceeds processing limits"
   },
   "documents.failure.empty_content": {
     "zh": "未提取到有效文本",

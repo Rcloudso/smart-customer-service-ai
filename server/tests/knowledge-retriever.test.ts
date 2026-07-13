@@ -23,6 +23,12 @@ class FakeAdapter implements KnowledgeAdapter {
   }
 }
 
+class FailingLoadAdapter extends FakeAdapter {
+  async loadIndexItems(): Promise<KnowledgeIndexItem[]> {
+    throw new Error('embedding provider unavailable');
+  }
+}
+
 async function testHybridKnowledgeSearchUsesOneQueryEmbedding(): Promise<void> {
   let embedCalls = 0;
   const faqResult: RetrievalResult = {
@@ -60,7 +66,47 @@ async function testHybridKnowledgeSearchUsesOneQueryEmbedding(): Promise<void> {
   assert.ok(afterFaqRefresh.some((result) => result.knowledgeType === 'document'));
 }
 
-testHybridKnowledgeSearchUsesOneQueryEmbedding()
+async function testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(): Promise<void> {
+  const keywordDocument: RetrievalResult = {
+    knowledgeType: 'document', knowledgeId: 'keyword-chunk', documentId: 'document-1',
+    title: 'policy.md', content: '关键词仍可用', similarity: 0.95, source: 'keyword', keywordScore: 0.95,
+  };
+  const failing = new FailingLoadAdapter('document', [], [keywordDocument]);
+  const fallbackRetriever = new KnowledgeRetriever(
+    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    async () => [[1, 0]],
+    [failing],
+  );
+  const fallback = await fallbackRetriever.search('关键词', 3, ['document']);
+  assert.equal(fallback[0].knowledgeId, 'keyword-chunk');
+  assert.equal(fallback[0].source, 'keyword');
+
+  const faqResult: RetrievalResult = {
+    knowledgeType: 'faq', knowledgeId: 'faq-low', title: 'FAQ', content: 'answer', similarity: 0,
+  };
+  const documentItems: KnowledgeIndexItem[] = Array.from({ length: 30 }, (_, index) => ({
+    id: `document:high-${index}`,
+    result: {
+      knowledgeType: 'document', knowledgeId: `high-${index}`, documentId: `document-${index}`,
+      title: `doc-${index}`, content: 'document', similarity: 0,
+    },
+    embedding: [1, 0],
+  }));
+  const faqAdapter = new FakeAdapter('faq', [{ id: 'faq:faq-low', result: faqResult, embedding: [0, 1] }], []);
+  const documentAdapter = new FakeAdapter('document', documentItems, []);
+  const isolatedRetriever = new KnowledgeRetriever(
+    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    async () => [[1, 0]],
+    [faqAdapter, documentAdapter],
+  );
+  const faqOnly = await isolatedRetriever.search('FAQ only', 1, ['faq']);
+  assert.equal(faqOnly[0].knowledgeId, 'faq-low', 'document vectors must not displace FAQ-only candidates');
+}
+
+Promise.all([
+  testHybridKnowledgeSearchUsesOneQueryEmbedding(),
+  testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(),
+])
   .then(() => console.log('knowledge retriever tests passed'))
   .catch((error) => {
     console.error(error);

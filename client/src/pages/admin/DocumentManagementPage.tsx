@@ -73,8 +73,8 @@ export function DocumentManagementPage(): React.ReactElement {
       });
       setDocuments(result.items ?? []);
       setTotal(result.total ?? 0);
-    } catch (error) {
-      MessagePlugin.error(error instanceof Error ? error.message : t('documents.loadFailed'));
+    } catch {
+      MessagePlugin.error(t('documents.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -86,8 +86,8 @@ export function DocumentManagementPage(): React.ReactElement {
       const result = await adminApi.listDocumentChunks(documentId, targetPage, targetPageSize);
       setChunks(result.items ?? []);
       setChunkTotal(result.total ?? 0);
-    } catch (error) {
-      MessagePlugin.error(error instanceof Error ? error.message : t('documents.chunksLoadFailed'));
+    } catch {
+      MessagePlugin.error(t('documents.chunksLoadFailed'));
     } finally {
       setChunksLoading(false);
     }
@@ -110,8 +110,8 @@ export function DocumentManagementPage(): React.ReactElement {
       );
       setPage(1);
       await fetchDocuments();
-    } catch (error) {
-      MessagePlugin.error(error instanceof Error ? error.message : t('documents.uploadFailed'));
+    } catch {
+      MessagePlugin.error(t('documents.uploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -125,8 +125,8 @@ export function DocumentManagementPage(): React.ReactElement {
         result.status === 'ready' ? t('documents.retrySucceeded') : t('documents.retryFailed'),
       );
       await fetchDocuments();
-    } catch (error) {
-      MessagePlugin.error(error instanceof Error ? error.message : t('documents.retryFailed'));
+    } catch {
+      MessagePlugin.error(t('documents.retryFailed'));
     } finally {
       setBusyId(null);
     }
@@ -138,8 +138,8 @@ export function DocumentManagementPage(): React.ReactElement {
       await adminApi.updateDocument(document.id, isActive);
       MessagePlugin.success(t('documents.updated'));
       await fetchDocuments();
-    } catch (error) {
-      MessagePlugin.error(error instanceof Error ? error.message : t('common.operationFailed'));
+    } catch {
+      MessagePlugin.error(t('common.operationFailed'));
     } finally {
       setBusyId(null);
     }
@@ -152,8 +152,8 @@ export function DocumentManagementPage(): React.ReactElement {
       MessagePlugin.success(t('documents.deleted'));
       if (selected?.id === document.id) setSelected(null);
       await fetchDocuments();
-    } catch (error) {
-      MessagePlugin.error(error instanceof Error ? error.message : t('common.deleteFailed'));
+    } catch {
+      MessagePlugin.error(t('common.deleteFailed'));
     } finally {
       setBusyId(null);
     }

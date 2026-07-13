@@ -26,6 +26,7 @@ const chunkListSchema = z.object({
 });
 
 const updateSchema = z.object({ isActive: z.boolean() }).strict();
+const idSchema = z.string().uuid('Invalid document id');
 
 router.get('/', (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -59,9 +60,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
 router.get('/:id/chunks', (req: Request, res: Response, next: NextFunction) => {
   try {
+    const documentId = parseDocumentId(req.params.id);
     const parsed = chunkListSchema.safeParse(req.query);
     if (!parsed.success) throw validationFrom(parsed.error);
-    const result = documentService.listChunks(req.params.id, parsed.data);
+    const result = documentService.listChunks(documentId, parsed.data);
     res.json({ code: 0, data: { ...result, ...parsed.data }, message: 'ok' });
   } catch (error) {
     next(error);
@@ -70,7 +72,7 @@ router.get('/:id/chunks', (req: Request, res: Response, next: NextFunction) => {
 
 router.post('/:id/retry', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const document = await documentService.retry(req.params.id);
+    const document = await documentService.retry(parseDocumentId(req.params.id));
     res.json({ code: 0, data: document, message: 'Document retry completed' });
   } catch (error) {
     next(error);
@@ -79,7 +81,7 @@ router.post('/:id/retry', async (req: Request, res: Response, next: NextFunction
 
 router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   try {
-    res.json({ code: 0, data: documentService.get(req.params.id), message: 'ok' });
+    res.json({ code: 0, data: documentService.get(parseDocumentId(req.params.id)), message: 'ok' });
   } catch (error) {
     next(error);
   }
@@ -87,9 +89,10 @@ router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const documentId = parseDocumentId(req.params.id);
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) throw validationFrom(parsed.error);
-    const document = await documentService.setActive(req.params.id, parsed.data.isActive);
+    const document = await documentService.setActive(documentId, parsed.data.isActive);
     res.json({ code: 0, data: document, message: 'Document updated' });
   } catch (error) {
     next(error);
@@ -98,7 +101,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await documentService.delete(req.params.id);
+    await documentService.delete(parseDocumentId(req.params.id));
     res.json({ code: 0, data: null, message: 'Document deleted' });
   } catch (error) {
     next(error);
@@ -121,6 +124,12 @@ function receiveFile(req: Request, res: Response): Promise<void> {
 
 function validationFrom(error: z.ZodError): ValidationError {
   return new ValidationError(error.errors.map((item) => item.message).join('; '));
+}
+
+function parseDocumentId(value: string): string {
+  const parsed = idSchema.safeParse(value);
+  if (!parsed.success) throw validationFrom(parsed.error);
+  return parsed.data;
 }
 
 export default router;

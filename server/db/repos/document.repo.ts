@@ -62,49 +62,43 @@ export class DocumentRepo {
     chunks: Array<Omit<DocumentChunk, 'id' | 'documentId' | 'createdAt'>>,
     characterCount: number,
   ): DocumentRecord {
-    const replace = this.db.transaction(() => {
-      this.db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(documentId);
-      const insert = this.db.prepare(`
+    this.db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(documentId);
+    const insert = this.db.prepare(`
         INSERT INTO document_chunks (
           id, document_id, chunk_index, content, title, page_start, page_end,
           character_count, embedding, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      const now = new Date().toISOString();
-      for (const chunk of chunks) {
-        insert.run(
-          uuidv4(),
-          documentId,
-          chunk.chunkIndex,
-          chunk.content,
-          chunk.title,
-          chunk.pageStart,
-          chunk.pageEnd,
-          chunk.characterCount,
-          JSON.stringify(chunk.embedding),
-          now,
-        );
-      }
-      this.db.prepare(`
+    const now = new Date().toISOString();
+    for (const chunk of chunks) {
+      insert.run(
+        uuidv4(),
+        documentId,
+        chunk.chunkIndex,
+        chunk.content,
+        chunk.title,
+        chunk.pageStart,
+        chunk.pageEnd,
+        chunk.characterCount,
+        JSON.stringify(chunk.embedding),
+        now,
+      );
+    }
+    this.db.prepare(`
         UPDATE documents
         SET status = 'ready', failure_code = NULL, character_count = ?, chunk_count = ?, updated_at = ?
         WHERE id = ?
       `).run(characterCount, chunks.length, now, documentId);
-    });
-    replace();
     return this.findById(documentId) as DocumentRecord;
   }
 
   markFailed(documentId: string, failureCode: string): DocumentRecord {
-    const mark = this.db.transaction(() => {
-      this.db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(documentId);
-      this.db.prepare(`
+    this.db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(documentId);
+    this.db.prepare(`
         UPDATE documents
         SET status = 'failed', failure_code = ?, character_count = 0, chunk_count = 0, updated_at = ?
         WHERE id = ?
       `).run(failureCode, new Date().toISOString(), documentId);
-    });
-    mark();
     return this.findById(documentId) as DocumentRecord;
   }
 
@@ -195,6 +189,54 @@ export class DocumentRepo {
 
   delete(documentId: string): boolean {
     return this.db.prepare('DELETE FROM documents WHERE id = ?').run(documentId).changes > 0;
+  }
+
+  restore(document: DocumentRecord, chunks: DocumentChunk[]): void {
+    this.db.prepare(`
+      INSERT INTO documents (
+        id, file_name, storage_path, format, mime_type, size_bytes, sha256,
+        status, is_active, parser_version, chunker_version, failure_code,
+        character_count, chunk_count, uploaded_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      document.id,
+      document.fileName,
+      document.storagePath,
+      document.format,
+      document.mimeType,
+      document.sizeBytes,
+      document.sha256,
+      document.status,
+      document.isActive,
+      document.parserVersion,
+      document.chunkerVersion,
+      document.failureCode,
+      document.characterCount,
+      document.chunkCount,
+      document.uploadedBy,
+      document.createdAt,
+      document.updatedAt,
+    );
+    const insertChunk = this.db.prepare(`
+      INSERT INTO document_chunks (
+        id, document_id, chunk_index, content, title, page_start, page_end,
+        character_count, embedding, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const chunk of chunks) {
+      insertChunk.run(
+        chunk.id,
+        chunk.documentId,
+        chunk.chunkIndex,
+        chunk.content,
+        chunk.title,
+        chunk.pageStart,
+        chunk.pageEnd,
+        chunk.characterCount,
+        JSON.stringify(chunk.embedding),
+        chunk.createdAt,
+      );
+    }
   }
 
   listChunks(documentId: string, limit: number, offset: number): { items: DocumentChunk[]; total: number } {

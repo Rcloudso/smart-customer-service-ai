@@ -25,9 +25,9 @@
       "format": "pdf",
       "title": "warranty-guide.pdf",
       "units": [
-        "晨雾系列主机自激活日起享受二十四个月有限保修。",
-        "云杉保修不包含进液、摔落和未经授权拆机造成的损坏。",
-        "申请月桂寄修服务前需要备份数据并退出设备账户。"
+        "Dawn series consoles include a twenty four month limited warranty from activation.",
+        "Spruce warranty excludes liquid damage, drops, and unauthorized disassembly.",
+        "Back up all data and sign out before requesting Laurel mail-in repair service."
       ]
     },
     {
@@ -48,9 +48,9 @@
     { "id": "md-refund-time", "query": "银杏计划退款审核通过后", "expectedDocumentId": "refund-md" },
     { "id": "md-membership", "query": "海棠会员取消续费后仍可使用权益", "expectedDocumentId": "refund-md" },
     { "id": "md-refund-exclusion", "query": "白鹭无理由退款规则", "expectedDocumentId": "refund-md" },
-    { "id": "pdf-warranty-duration", "query": "晨雾系列主机自激活日起享受二十四个月有限保修", "expectedDocumentId": "warranty-pdf" },
-    { "id": "pdf-warranty-exclusion", "query": "云杉保修不包含进液", "expectedDocumentId": "warranty-pdf" },
-    { "id": "pdf-repair-preparation", "query": "申请月桂寄修服务前需要备份数据", "expectedDocumentId": "warranty-pdf" },
+    { "id": "pdf-warranty-duration", "query": "twenty four month limited warranty from activation", "expectedDocumentId": "warranty-pdf" },
+    { "id": "pdf-warranty-exclusion", "query": "Spruce warranty excludes liquid damage", "expectedDocumentId": "warranty-pdf" },
+    { "id": "pdf-repair-preparation", "query": "sign out before requesting Laurel mail-in repair service", "expectedDocumentId": "warranty-pdf" },
     { "id": "docx-member-limit", "query": "星河企业账户最多可以邀请二十名成员", "expectedDocumentId": "account-docx" },
     { "id": "docx-admin-role", "query": "只有木兰管理员可以修改成员角色", "expectedDocumentId": "account-docx" },
     { "id": "docx-two-factor", "query": "启用松涛双重验证后", "expectedDocumentId": "account-docx" }

@@ -39,6 +39,8 @@ async function testTextUploadPublishesOnlyReadyChunks(): Promise<void> {
     const storedFiles = fs.readdirSync(uploadDir);
     assert.equal(storedFiles.length, 1);
     assert.match(storedFiles[0], /^[0-9a-f-]+\.txt$/);
+    assert.equal(fs.statSync(uploadDir).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(path.join(uploadDir, storedFiles[0])).mode & 0o777, 0o600);
     assert.equal(
       (db.prepare("SELECT COUNT(*) AS total FROM document_chunks WHERE document_id = ?").get(document.id) as { total: number }).total,
       1,
@@ -145,10 +147,46 @@ async function testActivationRollsBackWhenIndexRefreshFails(): Promise<void> {
   }
 }
 
+async function testDeleteRestoresFileAndDatabaseWhenIndexRemovalFails(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-delete-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  let failRemoval = true;
+  const service = new DocumentService(db, {
+    uploadDir,
+    embedTexts: async (texts) => texts.map(() => [1, 0]),
+    removeDocumentFromIndex: () => {
+      if (failRemoval) throw new Error('index removal failed');
+    },
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'delete.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('删除一致性\n\n索引失败时必须保留原始状态。'),
+      uploadedBy: 'admin-1',
+    });
+    await assert.rejects(service.delete(document.id), /could not be completed/);
+    assert.equal(service.get(document.id).status, 'ready');
+    assert.equal(fs.readdirSync(uploadDir).filter((name) => name.endsWith('.txt')).length, 1);
+    assert.equal(fs.readdirSync(uploadDir).some((name) => name.endsWith('.deleting')), false);
+
+    failRemoval = false;
+    await service.delete(document.id);
+    assert.throws(() => service.get(document.id), /Document not found/);
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await testTextUploadPublishesOnlyReadyChunks();
   await testFailureRetryLifecycleAndDuplicateProtection();
   await testActivationRollsBackWhenIndexRefreshFails();
+  await testDeleteRestoresFileAndDatabaseWhenIndexRemovalFails();
   console.log('document RAG tests passed');
 }
 

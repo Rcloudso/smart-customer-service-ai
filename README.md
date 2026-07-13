@@ -3,7 +3,7 @@
 > Open-source AI customer service starter: chat, FAQ and document RAG, admin operations, evaluation, and debugging in one runnable project.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20.16%2B%20%7C%2022.3%2B-green.svg)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/Frontend-React%20%2B%20TDesign-0052d9.svg)](https://tdesign.tencent.com/react/overview)
 [![SQLite](https://img.shields.io/badge/Storage-SQLite-044a64.svg)](https://www.sqlite.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-10a37f.svg)](https://platform.openai.com/docs/api-reference)
@@ -90,6 +90,8 @@ FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. v
 ---
 
 ## Quick Start
+
+Use Node.js 20.16+ or 22.3+.
 
 ```bash
 npm install

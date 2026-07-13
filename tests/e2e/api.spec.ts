@@ -200,6 +200,8 @@ test.describe('API automation: boundaries and exception flows', () => {
       params: { pageSize: 101 },
     });
     expect(invalidPageSize.status()).toBe(400);
+    const invalidDocumentId = await request.get('/api/admin/documents/not-a-uuid', { headers });
+    expect(invalidDocumentId.status()).toBe(400);
 
     const fileName = `refund-policy-${Date.now()}.md`;
     const content = [

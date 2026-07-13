@@ -35,14 +35,8 @@ const satisfactionSchema = z.object({
   message: 'messageId或sessionId不能为空',
 });
 
-function findDirectFaqAnswer(
-  faqMatches: FaqMatch[],
-  retrievalResults: RetrievalResult[],
-): FaqMatch | null {
-  const topResult = retrievalResults[0];
-  if (!topResult || topResult.knowledgeType !== 'faq') return null;
+function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
   return faqMatches.find((match) =>
-    match.id === topResult.knowledgeId &&
     (match.source === 'keyword' || match.source === 'hybrid') &&
     (match.keywordScore ?? match.similarity) >= 0.65,
   ) ?? null;
@@ -185,9 +179,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       sseSend({ type: 'escalate', content: intentResult.escalationReason });
     }
 
-    const directFaq = intentResult.needsEscalation
-      ? null
-      : findDirectFaqAnswer(intentResult.faqMatches, intentResult.retrievalResults);
+    const directFaq = intentResult.needsEscalation ? null : findDirectFaqAnswer(intentResult.faqMatches);
     if (directFaq) {
       const fullContent = directFaq.answer;
       sseSend({ type: 'token', content: fullContent });

@@ -67,6 +67,15 @@ async function testInvalidAndScannedDocumentsFailSafely(): Promise<void> {
     parseDocument(createSimplePdf(''), 'pdf'),
     (error) => error instanceof DocumentParserError && error.failureCode === 'pdf_no_text',
   );
+
+  const expandedDocx = await createDocx('small document');
+  const centralDirectoryOffset = expandedDocx.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  assert.ok(centralDirectoryOffset >= 0);
+  expandedDocx.writeUInt32LE(21 * 1024 * 1024, centralDirectoryOffset + 24);
+  await assert.rejects(
+    parseDocument(expandedDocx, 'docx'),
+    (error) => error instanceof DocumentParserError && error.failureCode === 'docx_resource_limit',
+  );
 }
 
 Promise.all([testFourFormatsAndStructure(), testInvalidAndScannedDocumentsFailSafely()])

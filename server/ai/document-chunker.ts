@@ -33,7 +33,8 @@ export async function semanticChunk(
 ): Promise<SemanticChunk[]> {
   const units = inputUnits
     .map((unit) => ({ ...unit, content: normalizeText(unit.content) }))
-    .filter((unit) => unit.content.length > 0);
+    .filter((unit) => unit.content.length > 0)
+    .flatMap(splitLongUnit);
   if (units.length === 0) throw new ChunkingError('empty_content');
   if (units.length > MAX_UNITS) throw new ChunkingError('too_many_units');
 
@@ -146,6 +147,29 @@ function hardSplit(text: string): string[] {
     start = Math.max(start + 1, end - HARD_SPLIT_OVERLAP);
   }
   return parts.filter(Boolean);
+}
+
+function splitLongUnit(unit: SemanticUnit): SemanticUnit[] {
+  if (unit.content.length <= MAX_CHUNK_CHARACTERS) return [unit];
+  const sentences = unit.content.match(/[^。！？.!?]+[。！？.!?]?/g) ?? [unit.content];
+  const parts: string[] = [];
+  let current = '';
+  for (const sentence of sentences) {
+    if (sentence.length > MAX_CHUNK_CHARACTERS) {
+      if (current) parts.push(current.trim());
+      parts.push(...hardSplit(sentence));
+      current = '';
+      continue;
+    }
+    if (current && current.length + sentence.length > MAX_CHUNK_CHARACTERS) {
+      parts.push(current.trim());
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts.map((content) => ({ ...unit, content }));
 }
 
 function normalizeText(text: string): string {
