@@ -86,16 +86,20 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
 
   test('login rejects wrong password and accepts admin credentials', async ({ page }) => {
     await page.goto('/login');
+    await page.evaluate(() => localStorage.setItem('auth_token', 'existing-token'));
 
     await page.getByTestId('login-username').locator('input').fill('admin');
     await page.getByTestId('login-password').locator('input').fill('wrong-password');
-    const [wrongResponse] = await Promise.all([
+    const [wrongRequest, wrongResponse] = await Promise.all([
+      page.waitForRequest((request) => request.url().includes('/api/auth/login')),
       page.waitForResponse((res) => res.url().includes('/api/auth/login')),
       page.getByRole('button', { name: '登录' }).click(),
     ]);
+    expect(wrongRequest.headers()['authorization']).toBeUndefined();
     expect(wrongResponse.status()).toBe(401);
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByText('用户名或密码错误')).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('auth_token'))).toBe('existing-token');
 
     await page.getByTestId('login-password').locator('input').fill('admin123');
     const [successResponse] = await Promise.all([
@@ -105,6 +109,170 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     expect(successResponse.status()).toBe(200);
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('heading', { name: '管理后台' })).toBeVisible();
+  });
+
+  test('an authenticated 401 clears local auth state and returns to login', async ({ page }) => {
+    await loginAsAdmin(page);
+    await expect.poll(() => page.evaluate(() => ({
+      token: localStorage.getItem('auth_token'),
+      user: localStorage.getItem('auth_user'),
+    }))).not.toEqual({ token: null, user: null });
+
+    await page.getByText('FAQ管理').click();
+    await expect(page).toHaveURL(/\/admin\/faq$/);
+    await expect(page.getByRole('heading', { name: /FAQ\s*管理/ })).toBeVisible();
+
+    let requestAuthorization: string | undefined;
+    await page.route('**/api/admin/stats/overview**', async (route) => {
+      requestAuthorization = route.request().headers()['authorization'];
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 401, data: null, message: 'Invalid token' }),
+      });
+    });
+
+    await page.locator('.app-admin-sidebar').getByText('数据概览').click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    expect(requestAuthorization).toMatch(/^Bearer\s+\S+$/);
+    await expect.poll(() => page.evaluate(() => ({
+      token: localStorage.getItem('auth_token'),
+      user: localStorage.getItem('auth_user'),
+    }))).toEqual({ token: null, user: null });
+  });
+
+  test('an authenticated 401 with malformed JSON still clears auth state', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByText('FAQ管理').click();
+    await expect(page).toHaveURL(/\/admin\/faq$/);
+    await expect(page.getByRole('heading', { name: /FAQ\s*管理/ })).toBeVisible();
+
+    await page.route('**/api/admin/stats/overview**', async (route) => {
+      expect(route.request().headers()['authorization']).toMatch(/^Bearer\s+\S+$/);
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: '{',
+      });
+    });
+
+    await page.locator('.app-admin-sidebar').getByText('数据概览').click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    await expect.poll(() => page.evaluate(() => ({
+      token: localStorage.getItem('auth_token'),
+      user: localStorage.getItem('auth_user'),
+    }))).toEqual({ token: null, user: null });
+  });
+
+  test('an authenticated export 401 clears auth state', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByText('对话管理').click();
+    await expect(page).toHaveURL(/\/admin\/conversations$/);
+    await expect(page.getByRole('heading', { name: '对话管理' })).toBeVisible();
+
+    let requestAuthorization: string | undefined;
+    await page.route('**/api/admin/conversations/export**', async (route) => {
+      requestAuthorization = route.request().headers()['authorization'];
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 401, data: null, message: 'Invalid token' }),
+      });
+    });
+
+    await page.getByRole('button', { name: '导出CSV' }).click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    expect(requestAuthorization).toMatch(/^Bearer\s+\S+$/);
+    await expect.poll(() => page.evaluate(() => ({
+      token: localStorage.getItem('auth_token'),
+      user: localStorage.getItem('auth_user'),
+    }))).toEqual({ token: null, user: null });
+  });
+
+  test('a delayed 401 from an old token does not clear a newer login', async ({ page }) => {
+    await loginAsAdmin(page);
+    const oldToken = await page.evaluate(() => localStorage.getItem('auth_token'));
+    expect(oldToken).toBeTruthy();
+
+    await page.getByText('FAQ管理').click();
+    await expect(page).toHaveURL(/\/admin\/faq$/);
+    await expect(page.getByRole('heading', { name: /FAQ\s*管理/ })).toBeVisible();
+
+    let releaseOldRequest: (() => void) | undefined;
+    const oldRequestRelease = new Promise<void>((resolve) => {
+      releaseOldRequest = resolve;
+    });
+    let markOldRequestSeen: (() => void) | undefined;
+    const oldRequestSeen = new Promise<void>((resolve) => {
+      markOldRequestSeen = resolve;
+    });
+    let capturedOldRequest = false;
+
+    await page.route('**/api/admin/stats/overview**', async (route) => {
+      if (capturedOldRequest) {
+        await route.continue();
+        return;
+      }
+      capturedOldRequest = true;
+      expect(route.request().headers()['authorization']).toBe(`Bearer ${oldToken}`);
+      markOldRequestSeen?.();
+      await oldRequestRelease;
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 401, data: null, message: 'Invalid token' }),
+      });
+    });
+
+    await page.locator('.app-admin-sidebar').getByText('数据概览').click();
+    await oldRequestSeen;
+
+    let expireCurrentSession = true;
+    await page.route('**/api/admin/faq**', async (route) => {
+      if (expireCurrentSession && route.request().method() === 'GET') {
+        expireCurrentSession = false;
+        await route.fulfill({
+          status: 401,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 401, data: null, message: 'Invalid token' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.locator('.app-admin-sidebar').getByText('FAQ管理').click();
+    await expect(page).toHaveURL(/\/login$/);
+
+    await page.waitForTimeout(1_100);
+    await page.getByTestId('login-username').locator('input').fill('admin');
+    await page.getByTestId('login-password').locator('input').fill('admin123');
+    const [loginResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes('/api/auth/login')),
+      page.getByRole('button', { name: '登录' }).click(),
+    ]);
+    expect(loginResponse.status()).toBe(200);
+    await expect(page).toHaveURL(/\/admin$/);
+    const newToken = await page.evaluate(() => localStorage.getItem('auth_token'));
+    expect(newToken).toBeTruthy();
+    expect(newToken).not.toBe(oldToken);
+
+    const old401Response = page.waitForResponse((response) => (
+      response.url().includes('/api/admin/stats/overview')
+      && response.status() === 401
+      && response.request().headers()['authorization'] === `Bearer ${oldToken}`
+    ));
+    releaseOldRequest?.();
+    await (await old401Response).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('auth_token'))).toBe(newToken);
   });
 
   test('FAQ page exposes index status and rebuild action for admins', async ({ page }) => {

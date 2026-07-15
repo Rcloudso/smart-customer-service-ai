@@ -51,7 +51,7 @@ export type {
 // ── Auth ───────────────────────────────────────────
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
-  return post<LoginResponse>('/auth/login', { username, password });
+  return post<LoginResponse>('/auth/login', { username, password }, { auth: false });
 }
 
 // ── Conversations ──────────────────────────────────

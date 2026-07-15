@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as adminApi from '../api/admin';
+import { setUnauthorizedHandler } from '../api/client';
 import { usePreferences } from './usePreferences';
 
 export interface AuthUser {
@@ -133,3 +134,10 @@ export const useAuth = create<AuthState>((set) => ({
     set({ error: null });
   },
 }));
+
+setUnauthorizedHandler((requestToken) => {
+  const auth = useAuth.getState();
+  if (auth.token === requestToken) {
+    auth.logout();
+  }
+});

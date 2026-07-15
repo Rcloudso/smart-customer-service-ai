@@ -20,6 +20,18 @@ export class ApiError extends Error {
 
 const BASE_URL = '/api';
 
+type UnauthorizedHandler = (requestToken: string) => void;
+
+interface RequestOptions {
+  auth?: boolean;
+}
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
+  unauthorizedHandler = handler;
+}
+
 function t(key: string, params?: Record<string, string | number>): string {
   return usePreferences.getState().t(key, params);
 }
@@ -32,7 +44,15 @@ function getToken(): string | null {
   }
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
+function handleUnauthorized(response: Response, requestToken: string | null): void {
+  if (response.status === 401 && requestToken) {
+    unauthorizedHandler?.(requestToken);
+  }
+}
+
+async function handleResponse<T>(response: Response, requestToken: string | null): Promise<T> {
+  handleUnauthorized(response, requestToken);
+
   if (response.status === 204) {
     return null as T;
   }
@@ -41,7 +61,13 @@ async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get('content-type') || '';
 
   if (contentType.includes('application/json')) {
-    body = await response.json();
+    try {
+      body = await response.json();
+    } catch (err) {
+      if (response.ok) {
+        throw err;
+      }
+    }
   }
 
   if (!response.ok) {
@@ -82,16 +108,16 @@ export async function get<T = unknown>(path: string, params?: Record<string, str
     headers,
   });
 
-  return handleResponse<T>(response);
+  return handleResponse<T>(response, token);
 }
 
-export async function post<T = unknown>(path: string, body?: unknown): Promise<T> {
+export async function post<T = unknown>(path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
   };
 
-  const token = getToken();
+  const token = options.auth === false ? null : getToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -102,7 +128,7 @@ export async function post<T = unknown>(path: string, body?: unknown): Promise<T
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  return handleResponse<T>(response);
+  return handleResponse<T>(response, token);
 }
 
 export async function put<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -122,7 +148,7 @@ export async function put<T = unknown>(path: string, body?: unknown): Promise<T>
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  return handleResponse<T>(response);
+  return handleResponse<T>(response, token);
 }
 
 export async function del<T = unknown>(path: string): Promise<T> {
@@ -140,7 +166,7 @@ export async function del<T = unknown>(path: string): Promise<T> {
     headers,
   });
 
-  return handleResponse<T>(response);
+  return handleResponse<T>(response, token);
 }
 
 export async function uploadFile<T = unknown>(path: string, file: File, fieldName: string = 'file'): Promise<T> {
@@ -159,7 +185,7 @@ export async function uploadFile<T = unknown>(path: string, file: File, fieldNam
     body: formData,
   });
 
-  return handleResponse<T>(response);
+  return handleResponse<T>(response, token);
 }
 
 export async function downloadBlob(path: string, filename: string): Promise<void> {
@@ -172,6 +198,7 @@ export async function downloadBlob(path: string, filename: string): Promise<void
   const response = await fetch(`${BASE_URL}${path}`, { headers });
 
   if (!response.ok) {
+    handleUnauthorized(response, token);
     throw new ApiError(response.status, response.status, t('common.exportFailed'));
   }
 
