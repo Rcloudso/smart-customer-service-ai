@@ -171,6 +171,12 @@ export function initSchema(database: Database.Database): void {
     );
   `);
 
+  // v0.2.6 security migration: model credentials are environment-injected only.
+  // Delete legacy plaintext overrides without reading or logging their values.
+  database.prepare(
+    "DELETE FROM model_configs WHERE key IN ('llmApiKey', 'embedApiKey')",
+  ).run();
+
   ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
   ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');

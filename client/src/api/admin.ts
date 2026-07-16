@@ -229,15 +229,13 @@ export async function deleteDocument(id: string): Promise<void> {
 
 // ── Model Config ───────────────────────────────────
 
-/**
- * Get current effective model configuration (API keys are masked server-side).
- */
+/** Get non-secret model configuration and environment credential status. */
 export async function getModelConfig(): Promise<ModelConfigResponseDTO> {
   return get<ModelConfigResponseDTO>('/admin/config/model');
 }
 
 /**
- * Update model configuration. Only non-empty fields are persisted.
+ * Update non-secret model configuration. Only non-empty fields are persisted.
  * Empty/omitted fields keep their current value.
  */
 export async function updateModelConfig(updates: Partial<ModelConfigDTO>, resetKeys: string[] = []): Promise<void> {

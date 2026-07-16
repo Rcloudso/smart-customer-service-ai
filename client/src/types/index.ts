@@ -168,16 +168,14 @@ export interface FaqDebugResult {
 export interface ModelConfigDTO {
   llmApiBase: string;
   llmModel: string;
-  llmApiKey: string;
   embedProvider: string;
   embedApiBase: string;
   embedModel: string;
-  embedApiKey: string;
 }
 
 export interface ModelConfigResponseDTO extends ModelConfigDTO {
-  llmApiKeyOverridden: boolean;
-  embedApiKeyOverridden: boolean;
+  llmApiKeyConfigured: boolean;
+  embedApiKeyConfigured: boolean;
 }
 
 // ── API Types ──────────────────────────────────────

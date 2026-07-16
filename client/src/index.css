@@ -329,6 +329,14 @@ select {
   min-width: 0;
 }
 
+.app-config-secret-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--app-text-secondary);
+}
+
 .app-toolbar-row {
   width: 100%;
   display: flex;

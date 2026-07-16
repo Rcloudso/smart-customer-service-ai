@@ -743,6 +743,18 @@
     "zh": "API Key",
     "en": "API Key"
   },
+  "config.apiKeyConfigured": {
+    "zh": "已通过环境变量配置",
+    "en": "Configured by environment"
+  },
+  "config.apiKeyNotConfigured": {
+    "zh": "未配置",
+    "en": "Not configured"
+  },
+  "config.apiKeyEnvironmentHelp": {
+    "zh": "请通过 {variable} 或部署 Secret 安全注入；系统不会将密钥保存到数据库。",
+    "en": "Inject {variable} through the environment or a deployment secret. The key is never stored in the database."
+  },
   "config.otherProvider": {
     "zh": "其他",
     "en": "Other"

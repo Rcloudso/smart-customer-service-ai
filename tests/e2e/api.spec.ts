@@ -89,6 +89,40 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(invalidActive.status()).toBe(400);
   });
 
+  test('model configuration never accepts or returns API keys', async ({ request }) => {
+    const token = await login(request);
+    const headers = authHeaders(token);
+
+    const initial = await request.get('/api/admin/config/model', { headers });
+    expect(initial.status()).toBe(200);
+    const initialData = (await readJson(initial)).data;
+    expect(initialData).toMatchObject({
+      llmApiKeyConfigured: false,
+      embedApiKeyConfigured: false,
+    });
+    expect(initialData).not.toHaveProperty('llmApiKey');
+    expect(initialData).not.toHaveProperty('embedApiKey');
+
+    const rejected = await request.put('/api/admin/config/model', {
+      headers,
+      data: { llmApiKey: 'must-not-be-persisted' },
+    });
+    expect(rejected.status()).toBe(400);
+
+    const update = await request.put('/api/admin/config/model', {
+      headers,
+      data: { llmModel: 'safe-model-name' },
+    });
+    expect(update.status()).toBe(200);
+
+    const refreshed = await request.get('/api/admin/config/model', { headers });
+    expect((await readJson(refreshed)).data).toMatchObject({
+      llmModel: 'safe-model-name',
+      llmApiKeyConfigured: false,
+      embedApiKeyConfigured: false,
+    });
+  });
+
   test('admin FAQ debug search requires valid input and returns ranked explanations', async ({ request }) => {
     const token = await login(request);
 

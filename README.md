@@ -146,7 +146,7 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `DOCUMENT_UPLOAD_DIR` | Private document file directory; defaults to `./data/uploads` |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API rate limits |
 
-Selected runtime model settings can also be overridden from the admin model configuration page and persisted in SQLite.
+Non-secret runtime model settings such as endpoint, provider and model name can also be overridden from the admin model configuration page and persisted in SQLite. API keys are never stored in SQLite; inject them through environment variables or deployment secrets.
 
 ---
 

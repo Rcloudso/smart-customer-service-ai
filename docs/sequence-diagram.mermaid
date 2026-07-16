@@ -6,30 +6,28 @@ sequenceDiagram
 
     %% ── GET ──
     rect rgb(240, 248, 255)
-        Note over Admin,DB: GET /api/admin/config/model — 获取配置（含脱敏）
+        Note over Admin,DB: GET /api/admin/config/model — 获取非敏感配置与凭证状态
         Admin->>AdminConfigRouter: GET /api/admin/config/model
         AdminConfigRouter->>ConfigService: getAll()
-        loop 7 keys (llm.apiBase, llm.model, ...)
+        loop non-secret keys (llmApiBase, llmModel, ...)
             ConfigService->>DB: SELECT value FROM model_configs WHERE key = ?
             alt DB 有值
                 DB-->>ConfigService: value
             else DB 无值
                 ConfigService->>ConfigService: getEnvDefault(key)
             end
-            alt key 以 apiKey 结尾
-                ConfigService->>ConfigService: maskApiKey(value)
-                Note over ConfigService: len≤8→全掩, len>8→前4+***+后4
-            end
         end
+        ConfigService->>ConfigService: check environment credential presence
+        Note over ConfigService: API keys never enter SQLite or the response
         ConfigService-->>AdminConfigRouter: ModelConfigResponseDTO
-        AdminConfigRouter-->>Admin: { code: 0, data: { llmApiBase, llmModel, llmApiKey: "sk-a***b123", ... } }
+        AdminConfigRouter-->>Admin: { code: 0, data: { llmApiBase, llmModel, llmApiKeyConfigured, ... } }
     end
 
     %% ── PUT ──
     rect rgb(255, 248, 240)
         Note over Admin,DB: PUT /api/admin/config/model — 更新配置
         Admin->>AdminConfigRouter: PUT /api/admin/config/model { llmApiBase: "https://...", llmModel: "gpt-4" }
-        AdminConfigRouter->>AdminConfigRouter: zod 校验 body + 过滤空值
+        AdminConfigRouter->>AdminConfigRouter: strict zod 校验非敏感字段 + 过滤空值
         AdminConfigRouter->>ConfigService: update({ llmApiBase: "...", llmModel: "gpt-4" })
         loop each key in updates
             ConfigService->>DB: INSERT OR REPLACE INTO model_configs (key, value, updated_at)

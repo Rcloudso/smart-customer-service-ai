@@ -11,17 +11,23 @@ const router = Router();
 router.use(authMiddleware);
 router.use(adminOnlyMiddleware);
 
-/** Zod schema for PUT /model body — all fields optional string, plus resetKeys array. */
+const modelConfigKeySchema = z.enum([
+  'llmApiBase',
+  'llmModel',
+  'embedProvider',
+  'embedApiBase',
+  'embedModel',
+]);
+
+/** Zod schema for PUT /model body — credentials are environment-injected only. */
 const updateModelConfigSchema = z.object({
   llmApiBase: z.string().optional(),
   llmModel: z.string().optional(),
-  llmApiKey: z.string().optional(),
   embedProvider: z.string().optional(),
   embedApiBase: z.string().optional(),
   embedModel: z.string().optional(),
-  embedApiKey: z.string().optional(),
-  resetKeys: z.array(z.string()).optional(),
-});
+  resetKeys: z.array(modelConfigKeySchema).optional(),
+}).strict();
 
 /**
  * GET /api/admin/config/model
@@ -53,19 +59,16 @@ router.put('/model', (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    // Filter out empty strings — these mean "keep current / use env default"
-    const raw = parsed.data as Record<string, string | string[] | undefined>;
+    const { resetKeys = [], ...raw } = parsed.data;
     const validUpdates: Partial<ModelConfigDTO> = {};
     for (const [key, value] of Object.entries(raw)) {
-      if (key === 'resetKeys') continue; // handled separately
       if (value !== undefined && value !== '') {
         (validUpdates as Record<string, string>)[key] = value as string;
       }
     }
 
     // Handle resetKeys — delete the key from DB so env default takes effect
-    const resetKeys = (parsed.data as Record<string, string[] | undefined>).resetKeys;
-    if (resetKeys && resetKeys.length > 0) {
+    if (resetKeys.length > 0) {
       configService.reset(resetKeys);
     }
 

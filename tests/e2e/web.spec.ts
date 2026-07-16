@@ -111,6 +111,22 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByRole('heading', { name: '管理后台' })).toBeVisible();
   });
 
+  test('model configuration shows environment credential status without key inputs', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByText('模型配置').click();
+    await expect(page).toHaveURL(/\/admin\/config$/);
+
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await expect(page.getByTestId('llm-api-key-status')).toContainText('未配置');
+    await expect(page.getByTestId('llm-api-key-status')).toContainText('LLM_API_KEY');
+    await expect(page.getByTestId('embed-api-key-status')).toContainText('未配置');
+    await expect(page.getByTestId('embed-api-key-status')).toContainText('EMBED_API_KEY');
+
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByTestId('llm-api-key-status')).toContainText('Not configured');
+    await expect(page.getByTestId('llm-api-key-status')).toContainText('environment');
+  });
+
   test('an authenticated 401 clears local auth state and returns to login', async ({ page }) => {
     await loginAsAdmin(page);
     await expect.poll(() => page.evaluate(() => ({

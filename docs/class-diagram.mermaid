@@ -28,23 +28,19 @@ classDiagram
     class ModelConfigDTO {
         +string llmApiBase
         +string llmModel
-        +string llmApiKey
         +string embedProvider
         +string embedApiBase
         +string embedModel
-        +string embedApiKey
     }
 
     class ModelConfigResponseDTO {
         +string llmApiBase
         +string llmModel
-        +string llmApiKey
-        +boolean llmApiKeyOverridden
+        +boolean llmApiKeyConfigured
         +string embedProvider
         +string embedApiBase
         +string embedModel
-        +string embedApiKey
-        +boolean embedApiKeyOverridden
+        +boolean embedApiKeyConfigured
     }
 
     %% ── Service ──
@@ -52,8 +48,7 @@ classDiagram
         -Database db
         +getAll() ModelConfigResponseDTO
         +update(updates ModelConfigDTO) void
-        +getEffective(key string) string
-        -maskApiKey(key string) string
+        -getEffective(nonSecretKey string) string
         -getEnvDefault(key string) string
     }
 
