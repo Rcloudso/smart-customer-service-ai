@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { getDatabase } from '../db';
-import { semanticSearch } from '../ai/semantic-search';
+import { PreparedFaqIndex, semanticSearch } from '../ai/semantic-search';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { KnowledgeReviewRepo } from '../db/repos/knowledge-review.repo';
 import { MessageRepo } from '../db/repos/message.repo';
@@ -20,7 +20,7 @@ import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError 
 
 const KNOWLEDGE_GAP_THRESHOLD = 0.55;
 
-type IndexPreparation = (faq: FaqEntry) => Promise<number[] | null | undefined>;
+type IndexPreparation = (faq: FaqEntry) => Promise<PreparedFaqIndex | null | undefined>;
 type IndexCommit = (faq: FaqEntry) => void;
 
 export class KnowledgeReviewService {
@@ -58,6 +58,9 @@ export class KnowledgeReviewService {
       source: match.source,
       keywordScore: match.keywordScore,
       vectorScore: match.vectorScore,
+      fusionScore: match.fusionScore,
+      keywordRank: match.keywordRank,
+      vectorRank: match.vectorRank,
     }));
     const triggerReason = retrievalResults.length === 0
       ? KnowledgeReviewTriggerReason.NO_MATCH
@@ -75,6 +78,9 @@ export class KnowledgeReviewService {
       similarity: result.similarity,
       keywordScore: result.keywordScore,
       vectorScore: result.vectorScore,
+      fusionScore: result.fusionScore,
+      keywordRank: result.keywordRank,
+      vectorRank: result.vectorRank,
       chunkIndex: result.chunkIndex,
       pageStart: result.pageStart,
       pageEnd: result.pageEnd,
@@ -197,16 +203,17 @@ export class KnowledgeReviewService {
       return { review, faq };
     })();
 
-    let embedding: number[] | null | undefined;
+    let preparedIndex: PreparedFaqIndex | null | undefined;
     try {
-      embedding = await this.prepareFaqIndex(linked.faq);
+      preparedIndex = await this.prepareFaqIndex(linked.faq);
     } catch {
       throw new ServiceUnavailableError('FAQ索引同步失败，请稍后重试');
     }
 
     const preparedFaq: FaqEntry = {
       ...linked.faq,
-      embedding: embedding ?? null,
+      embedding: preparedIndex?.embedding ?? null,
+      embeddingProfile: preparedIndex?.embeddingProfile ?? null,
       isActive: 1,
     };
     try {
@@ -224,6 +231,7 @@ export class KnowledgeReviewService {
         }
         const faq = this.faqRepo.update(linked.faq.id, {
           embedding: preparedFaq.embedding,
+          embeddingProfile: preparedFaq.embeddingProfile,
           isActive: 1,
         });
         if (!faq) throw new NotFoundError('已关联的 FAQ 不存在');

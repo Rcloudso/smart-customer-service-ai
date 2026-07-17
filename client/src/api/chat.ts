@@ -14,6 +14,9 @@ export interface FaqMatchDTO {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
 }
 
 /**

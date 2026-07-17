@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { KnowledgeType, RetrievalResult } from '../types/ai';
 import { logger } from '../utils/logger';
 import { VectorStore } from './vector-store';
+import { expandRetrievalQuery } from './query-expansion';
 
 export interface KnowledgeIndexItem {
   id: string;
@@ -9,9 +10,15 @@ export interface KnowledgeIndexItem {
   embedding: number[];
 }
 
+export interface KnowledgeIndexLoad {
+  items: KnowledgeIndexItem[];
+  rollbackPersisted?: () => void;
+}
+
 export interface KnowledgeAdapter {
   readonly knowledgeType: KnowledgeType;
-  loadIndexItems(): Promise<KnowledgeIndexItem[]>;
+  getEmbeddingProfile?(): string;
+  loadIndexItems(): Promise<KnowledgeIndexItem[] | KnowledgeIndexLoad>;
   searchKeyword(query: string, limit: number): RetrievalResult[] | Promise<RetrievalResult[]>;
 }
 
@@ -20,13 +27,23 @@ const SOURCE_PRIORITY: Record<NonNullable<RetrievalResult['source']>, number> = 
   vector: 2,
   keyword: 1,
 };
+const MIN_DIVERSE_FUSION_RATIO = 0.6;
+const MIN_CANDIDATE_POOL = 20;
+const MAX_CANDIDATE_POOL = 100;
+const CANDIDATE_MULTIPLIER = 4;
+const RRF_RANK_CONSTANT = 60;
+const VECTOR_RRF_WEIGHT = 1;
+const KEYWORD_RRF_WEIGHT = 4;
 
 export class KnowledgeRetriever {
   private initialized = false;
   private readonly indexedIds = new Map<KnowledgeType, Set<string>>();
   private readonly indexedItems = new Map<KnowledgeType, Map<string, KnowledgeIndexItem>>();
+  private readonly indexedProfiles = new Map<KnowledgeType, string>();
   private readonly failedSources = new Set<KnowledgeType>();
   private readonly retryAfter = new Map<KnowledgeType, number>();
+  private initializationPromise: Promise<void> | null = null;
+  private readonly refreshPromises = new Map<KnowledgeType, Promise<void>>();
 
   constructor(
     private readonly vectorStore: VectorStore<KnowledgeIndexItem>,
@@ -35,13 +52,30 @@ export class KnowledgeRetriever {
   ) {}
 
   async initialize(): Promise<void> {
+    if (this.initializationPromise) return this.initializationPromise;
+    const promise = this.initializePendingSources();
+    this.initializationPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.initializationPromise === promise) this.initializationPromise = null;
+    }
+  }
+
+  private async initializePendingSources(): Promise<void> {
     const operationId = uuidv4();
     const now = Date.now();
     const pendingAdapters = this.initialized
-      ? this.adapters.filter((adapter) => (
-          this.failedSources.has(adapter.knowledgeType)
-          && (this.retryAfter.get(adapter.knowledgeType) ?? 0) <= now
-        ))
+      ? this.adapters.filter((adapter) => {
+          if (this.failedSources.has(adapter.knowledgeType)) {
+            return (this.retryAfter.get(adapter.knowledgeType) ?? 0) <= now;
+          }
+
+          return (
+            adapter.getEmbeddingProfile !== undefined
+            && adapter.getEmbeddingProfile() !== this.indexedProfiles.get(adapter.knowledgeType)
+          );
+        })
       : this.adapters;
     if (this.initialized && pendingAdapters.length === 0) return;
     for (const adapter of pendingAdapters) {
@@ -63,11 +97,29 @@ export class KnowledgeRetriever {
   }
 
   async refreshSource(knowledgeType: KnowledgeType, operationId: string = uuidv4()): Promise<void> {
+    const pending = this.refreshPromises.get(knowledgeType);
+    if (pending) return pending;
+    const promise = this.applySourceRefresh(knowledgeType, operationId);
+    this.refreshPromises.set(knowledgeType, promise);
+    try {
+      await promise;
+    } finally {
+      if (this.refreshPromises.get(knowledgeType) === promise) {
+        this.refreshPromises.delete(knowledgeType);
+      }
+    }
+  }
+
+  private async applySourceRefresh(
+    knowledgeType: KnowledgeType,
+    operationId: string,
+  ): Promise<void> {
     const adapter = this.adapters.find((candidate) => candidate.knowledgeType === knowledgeType);
     if (!adapter) return;
     const previousItems = this.indexedItems.get(knowledgeType) ?? new Map<string, KnowledgeIndexItem>();
     try {
-      const items = await adapter.loadIndexItems();
+      const loaded = await adapter.loadIndexItems();
+      const items = Array.isArray(loaded) ? loaded : loaded.items;
       const nextItems = new Map<string, KnowledgeIndexItem>();
       for (const item of items) {
         if (!item.id.startsWith(`${knowledgeType}:`)) {
@@ -79,6 +131,17 @@ export class KnowledgeRetriever {
         for (const id of previousItems.keys()) this.vectorStore.delete(id);
         for (const item of nextItems.values()) this.vectorStore.upsert(item, item.embedding);
       } catch (applyError) {
+        if (!Array.isArray(loaded) && loaded.rollbackPersisted) {
+          try {
+            loaded.rollbackPersisted();
+          } catch (rollbackError) {
+            logger.error({
+              operationId,
+              knowledgeType,
+              errorName: rollbackError instanceof Error ? rollbackError.name : 'UnknownError',
+            }, 'Knowledge persisted-vector rollback failed');
+          }
+        }
         try {
           for (const id of nextItems.keys()) this.vectorStore.delete(id);
           for (const item of previousItems.values()) this.vectorStore.upsert(item, item.embedding);
@@ -93,6 +156,9 @@ export class KnowledgeRetriever {
       }
       this.indexedItems.set(knowledgeType, nextItems);
       this.indexedIds.set(knowledgeType, new Set(nextItems.keys()));
+      if (adapter.getEmbeddingProfile) {
+        this.indexedProfiles.set(knowledgeType, adapter.getEmbeddingProfile());
+      }
       this.failedSources.delete(knowledgeType);
       this.retryAfter.delete(knowledgeType);
     } catch (error) {
@@ -114,25 +180,36 @@ export class KnowledgeRetriever {
   ): Promise<RetrievalResult[]> {
     await this.initialize();
     const operationId = uuidv4();
+    const expandedQuery = expandRetrievalQuery(query);
     const allowed = new Set(knowledgeTypes);
     const merged = new Map<string, RetrievalResult>();
+    const candidateLimit = Math.min(
+      MAX_CANDIDATE_POOL,
+      Math.max(MIN_CANDIDATE_POOL, topK * CANDIDATE_MULTIPLIER),
+    );
 
     if (this.vectorStore.stats().indexedCount > 0) {
       try {
-        const embeddings = await this.embedTexts([query]);
+        const embeddings = await this.embedTexts([expandedQuery]);
         const queryEmbedding = embeddings[0];
         if (queryEmbedding) {
-          for (const match of this.vectorStore.search(
-            queryEmbedding,
-            topK,
-            (entry) => allowed.has(entry.result.knowledgeType),
-          )) {
+          const vectorCandidates = [...allowed].flatMap((knowledgeType) => (
+            this.vectorStore.search(
+              queryEmbedding,
+              candidateLimit,
+              (entry) => entry.result.knowledgeType === knowledgeType,
+            )
+          )).sort((left, right) => right.score - left.score);
+          for (const [index, match] of vectorCandidates.entries()) {
             const vectorScore = match.score;
+            const vectorRank = index + 1;
             merged.set(this.resultKey(match.entry.result), {
               ...match.entry.result,
               similarity: vectorScore,
               source: 'vector',
               vectorScore,
+              vectorRank,
+              fusionScore: this.rrfScore(vectorRank, VECTOR_RRF_WEIGHT),
             });
           }
         }
@@ -145,39 +222,57 @@ export class KnowledgeRetriever {
       }
     }
 
-    for (const adapter of this.adapters) {
-      if (!allowed.has(adapter.knowledgeType)) continue;
-      let keywordResults: RetrievalResult[];
-      try {
-        keywordResults = await adapter.searchKeyword(query, topK);
-      } catch (error) {
-        logger.warn({
-          operationId,
-          knowledgeType: adapter.knowledgeType,
-          errorName: error instanceof Error ? error.name : 'UnknownError',
-        }, 'Knowledge keyword source search failed');
-        continue;
-      }
-      for (const result of keywordResults) {
+    const keywordLists = await Promise.all(this.adapters
+      .filter((adapter) => allowed.has(adapter.knowledgeType))
+      .map(async (adapter) => {
+        try {
+          return await adapter.searchKeyword(
+            adapter.knowledgeType === 'document' ? expandedQuery : query,
+            candidateLimit,
+          );
+        } catch (error) {
+          logger.warn({
+            operationId,
+            knowledgeType: adapter.knowledgeType,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }, 'Knowledge keyword source search failed');
+          return [];
+        }
+      }));
+    for (const keywordResults of keywordLists) {
+      for (const [index, result] of keywordResults.entries()) {
         const key = this.resultKey(result);
         const existing = merged.get(key);
         const keywordScore = result.keywordScore ?? result.similarity;
+        const keywordRank = index + 1;
+        const keywordFusionScore = this.rrfScore(
+          keywordRank,
+          KEYWORD_RRF_WEIGHT,
+        );
         if (existing) {
           merged.set(key, {
             ...existing,
             source: 'hybrid',
             keywordScore,
+            keywordRank,
+            fusionScore: (existing.fusionScore ?? 0) + keywordFusionScore,
             similarity: Math.max(existing.vectorScore ?? existing.similarity, keywordScore),
           });
         } else {
-          merged.set(key, { ...result, source: 'keyword', keywordScore, similarity: keywordScore });
+          merged.set(key, {
+            ...result,
+            source: 'keyword',
+            keywordScore,
+            keywordRank,
+            fusionScore: keywordFusionScore,
+            similarity: keywordScore,
+          });
         }
       }
     }
 
-    return [...merged.values()]
-      .sort((a, b) => this.compare(a, b))
-      .slice(0, topK);
+    const ranked = [...merged.values()].sort((a, b) => this.compare(a, b));
+    return this.selectDiverseResults(ranked, topK, knowledgeTypes);
   }
 
   stats(): ReturnType<VectorStore<KnowledgeIndexItem>['stats']> {
@@ -219,14 +314,55 @@ export class KnowledgeRetriever {
   private compare(a: RetrievalResult, b: RetrievalResult): number {
     const directFaqDelta = Number(this.isDirectFaqCandidate(b)) - Number(this.isDirectFaqCandidate(a));
     if (directFaqDelta !== 0) return directFaqDelta;
-    const scoreDelta = b.similarity - a.similarity;
-    if (scoreDelta !== 0) return scoreDelta;
-    return SOURCE_PRIORITY[b.source ?? 'keyword'] - SOURCE_PRIORITY[a.source ?? 'keyword'];
+    const fusionDelta = (b.fusionScore ?? 0) - (a.fusionScore ?? 0);
+    if (fusionDelta !== 0) return fusionDelta;
+    const sourceDelta = SOURCE_PRIORITY[b.source ?? 'keyword'] - SOURCE_PRIORITY[a.source ?? 'keyword'];
+    if (sourceDelta !== 0) return sourceDelta;
+    return this.resultKey(a).localeCompare(this.resultKey(b));
+  }
+
+  private rrfScore(rank: number, weight: number): number {
+    return weight / (RRF_RANK_CONSTANT + rank);
   }
 
   private isDirectFaqCandidate(result: RetrievalResult): boolean {
     return result.knowledgeType === 'faq'
       && (result.source === 'keyword' || result.source === 'hybrid')
       && (result.keywordScore ?? result.similarity) >= 0.65;
+  }
+
+  private selectDiverseResults(
+    ranked: RetrievalResult[],
+    topK: number,
+    knowledgeTypes: KnowledgeType[],
+  ): RetrievalResult[] {
+    if (topK <= 1 || knowledgeTypes.length <= 1 || ranked.length <= 1) {
+      return ranked.slice(0, topK);
+    }
+    const first = ranked[0];
+    const selected = [first];
+    const selectedKeys = new Set([this.resultKey(first)]);
+    const fusionFloor = (first.fusionScore ?? 0) * MIN_DIVERSE_FUSION_RATIO;
+
+    for (const knowledgeType of knowledgeTypes) {
+      if (selected.some((result) => result.knowledgeType === knowledgeType)) continue;
+      const candidate = ranked.find((result) => (
+        result.knowledgeType === knowledgeType
+        && (result.fusionScore ?? 0) >= fusionFloor
+      ));
+      if (!candidate) continue;
+      selected.push(candidate);
+      selectedKeys.add(this.resultKey(candidate));
+      if (selected.length >= topK) return selected;
+    }
+
+    for (const result of ranked) {
+      const key = this.resultKey(result);
+      if (selectedKeys.has(key)) continue;
+      selected.push(result);
+      selectedKeys.add(key);
+      if (selected.length >= topK) break;
+    }
+    return selected;
   }
 }

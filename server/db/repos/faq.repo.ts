@@ -8,6 +8,7 @@ export class FaqRepo {
   private insertStmt: Database.Statement;
   private updateStmt: Database.Statement;
   private updateEmbeddingStmt: Database.Statement;
+  private updateEmbeddingCasStmt: Database.Statement;
   private deleteStmt: Database.Statement;
   private findByIdStmt: Database.Statement;
   private listStmt: Database.Statement;
@@ -21,15 +22,23 @@ export class FaqRepo {
   constructor(db: Database.Database) {
     this.db = db;
     this.insertStmt = db.prepare(
-      `INSERT INTO faq_entries (id, question, answer, category, keywords, embedding, is_active, created_at, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO faq_entries (
+         id, question, answer, category, keywords, embedding, embedding_profile,
+         is_active, created_at, updated_at, updated_by
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.updateStmt = db.prepare(
-      `UPDATE faq_entries SET question = ?, answer = ?, category = ?, keywords = ?, embedding = ?, is_active = ?, updated_at = ?, updated_by = ?
+      `UPDATE faq_entries SET question = ?, answer = ?, category = ?, keywords = ?,
+       embedding = ?, embedding_profile = ?, is_active = ?, updated_at = ?, updated_by = ?
        WHERE id = ?`,
     );
     this.updateEmbeddingStmt = db.prepare(
-      'UPDATE faq_entries SET embedding = ? WHERE id = ?',
+      'UPDATE faq_entries SET embedding = ?, embedding_profile = ? WHERE id = ?',
+    );
+    this.updateEmbeddingCasStmt = db.prepare(
+      `UPDATE faq_entries
+       SET embedding = ?, embedding_profile = ?
+       WHERE id = ? AND updated_at = ?`,
     );
     this.deleteStmt = db.prepare('DELETE FROM faq_entries WHERE id = ?');
     this.findByIdStmt = db.prepare('SELECT * FROM faq_entries WHERE id = ?');
@@ -72,6 +81,7 @@ export class FaqRepo {
     category: IntentCategory;
     keywords: string[];
     embedding?: number[] | null;
+    embeddingProfile?: string | null;
     isActive?: number;
     updatedBy?: string | null;
   }): FaqEntry {
@@ -83,6 +93,7 @@ export class FaqRepo {
       category: params.category,
       keywords: params.keywords,
       embedding: params.embedding ?? null,
+      embeddingProfile: params.embeddingProfile ?? null,
       isActive: params.isActive ?? 1,
       createdAt: now,
       updatedAt: now,
@@ -93,6 +104,7 @@ export class FaqRepo {
       entry.id, entry.question, entry.answer, entry.category,
       JSON.stringify(entry.keywords),
       entry.embedding ? JSON.stringify(entry.embedding) : null,
+      entry.embeddingProfile,
       entry.isActive, entry.createdAt, entry.updatedAt, entry.updatedBy,
     );
     return entry;
@@ -104,6 +116,7 @@ export class FaqRepo {
     category?: IntentCategory;
     keywords?: string[];
     embedding?: number[] | null;
+    embeddingProfile?: string | null;
     isActive?: number;
     updatedBy?: string | null;
   }): FaqEntry | null {
@@ -118,27 +131,64 @@ export class FaqRepo {
     const category = params.category ?? existing.category;
     const keywords = params.keywords ?? existing.keywords;
     const embedding = params.embedding !== undefined ? params.embedding : existing.embedding;
+    const embeddingProfile = params.embeddingProfile !== undefined
+      ? params.embeddingProfile
+      : params.embedding === null
+        ? null
+        : existing.embeddingProfile;
     const isActive = params.isActive !== undefined ? params.isActive : existing.isActive;
     const updatedBy = params.updatedBy !== undefined ? params.updatedBy : existing.updatedBy;
 
     this.updateStmt.run(
       question, answer, category, JSON.stringify(keywords),
       embedding ? JSON.stringify(embedding) : null,
+      embeddingProfile,
       isActive, now, updatedBy, id,
     );
 
     return this.findById(id);
   }
 
-  updateEmbedding(id: string, embedding: number[] | null): FaqEntry | null {
-    const result = this.updateEmbeddingStmt.run(
-      embedding ? JSON.stringify(embedding) : null,
-      id,
-    );
+  updateEmbedding(
+    id: string,
+    embedding: number[] | null,
+    embeddingProfile: string | null = null,
+    expectedUpdatedAt?: string,
+  ): FaqEntry | null {
+    const serialized = embedding ? JSON.stringify(embedding) : null;
+    const result = expectedUpdatedAt
+      ? this.updateEmbeddingCasStmt.run(serialized, embeddingProfile, id, expectedUpdatedAt)
+      : this.updateEmbeddingStmt.run(serialized, embeddingProfile, id);
     if (result.changes === 0) {
       return null;
     }
     return this.findById(id);
+  }
+
+  updateEmbeddings(
+    updates: Array<{
+      id: string;
+      embedding: number[] | null;
+      embeddingProfile: string | null;
+      expectedUpdatedAt?: string;
+    }>,
+  ): void {
+    this.db.transaction(() => {
+      for (const update of updates) {
+        const serialized = update.embedding ? JSON.stringify(update.embedding) : null;
+        const result = update.expectedUpdatedAt
+          ? this.updateEmbeddingCasStmt.run(
+              serialized,
+              update.embeddingProfile,
+              update.id,
+              update.expectedUpdatedAt,
+            )
+          : this.updateEmbeddingStmt.run(serialized, update.embeddingProfile, update.id);
+        if (result.changes !== 1) {
+          throw new Error('FAQ changed while its embedding was being generated');
+        }
+      }
+    })();
   }
 
   delete(id: string): boolean {
@@ -211,6 +261,7 @@ export class FaqRepo {
       category: row.category as IntentCategory,
       keywords: JSON.parse((row.keywords as string) || '[]') as string[],
       embedding: row.embedding ? (JSON.parse(row.embedding as string) as number[]) : null,
+      embeddingProfile: row.embedding_profile as string | null,
       isActive: row.is_active as number,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,

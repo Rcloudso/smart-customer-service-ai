@@ -83,10 +83,11 @@ export interface DocumentChunk {
   pageEnd: number | null;
   characterCount: number;
   embedding: number[];
+  embeddingProfile: string | null;
   createdAt: string;
 }
 
-export type DocumentChunkView = Omit<DocumentChunk, 'embedding'>;
+export type DocumentChunkView = Omit<DocumentChunk, 'embedding' | 'embeddingProfile'>;
 
 export interface KnowledgeRetrievalSnapshot {
   knowledgeType: 'faq' | 'document';
@@ -97,6 +98,9 @@ export interface KnowledgeRetrievalSnapshot {
   similarity: number;
   keywordScore?: number;
   vectorScore?: number;
+  fusionScore?: number;
+  keywordRank?: number;
+  vectorRank?: number;
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
@@ -152,6 +156,7 @@ export interface FaqEntry {
   category: IntentCategory;
   keywords: string[];
   embedding: number[] | null;
+  embeddingProfile: string | null;
   isActive: number;
   createdAt: string;
   updatedAt: string;

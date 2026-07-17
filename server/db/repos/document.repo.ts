@@ -59,15 +59,18 @@ export class DocumentRepo {
 
   replaceChunksAndMarkReady(
     documentId: string,
-    chunks: Array<Omit<DocumentChunk, 'id' | 'documentId' | 'createdAt'>>,
+    chunks: Array<
+      Omit<DocumentChunk, 'id' | 'documentId' | 'createdAt' | 'embeddingProfile'>
+      & { embeddingProfile?: string | null }
+    >,
     characterCount: number,
   ): DocumentRecord {
     this.db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(documentId);
     const insert = this.db.prepare(`
         INSERT INTO document_chunks (
           id, document_id, chunk_index, content, title, page_start, page_end,
-          character_count, embedding, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          character_count, embedding, embedding_profile, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
     const now = new Date().toISOString();
     for (const chunk of chunks) {
@@ -81,6 +84,7 @@ export class DocumentRepo {
         chunk.pageEnd,
         chunk.characterCount,
         JSON.stringify(chunk.embedding),
+        chunk.embeddingProfile ?? null,
         now,
       );
     }
@@ -171,20 +175,52 @@ export class DocumentRepo {
     }));
   }
 
-  searchActiveChunksLike(query: string, limit: number): DocumentKnowledgeChunk[] {
-    const pattern = `%${escapeLikePattern(query)}%`;
+  searchActiveChunksLikeTerms(terms: string[], limit: number): DocumentKnowledgeChunk[] {
+    const uniqueTerms = [...new Set(terms.map((term) => term.trim()).filter(Boolean))].slice(0, 24);
+    if (uniqueTerms.length === 0) return [];
+    const termClause = uniqueTerms.map(() => (
+      "(c.content LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\' OR d.file_name LIKE ? ESCAPE '\\')"
+    )).join(' OR ');
+    const patterns = uniqueTerms.flatMap((term) => {
+      const pattern = `%${escapeLikePattern(term)}%`;
+      return [pattern, pattern, pattern];
+    });
     const rows = this.db.prepare(`
       SELECT c.*, d.file_name AS document_title FROM document_chunks c
       JOIN documents d ON d.id = c.document_id
       WHERE d.status = 'ready' AND d.is_active = 1
-        AND (c.content LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\' OR d.file_name LIKE ? ESCAPE '\\')
+        AND (${termClause})
       ORDER BY d.updated_at DESC, c.chunk_index
       LIMIT ?
-    `).all(pattern, pattern, pattern, limit) as Record<string, unknown>[];
+    `).all(...patterns, limit) as Record<string, unknown>[];
     return rows.map((row) => ({
       ...this.mapChunk(row),
       documentTitle: row.document_title as string,
     }));
+  }
+
+  updateKnowledgeChunkEmbeddings(
+    updates: Array<{
+      id: string;
+      embedding: number[];
+      embeddingProfile: string | null;
+    }>,
+  ): void {
+    const statement = this.db.prepare(`
+      UPDATE document_chunks
+      SET embedding = ?, embedding_profile = ?
+      WHERE id = ?
+    `);
+    this.db.transaction(() => {
+      for (const update of updates) {
+        const result = statement.run(
+          JSON.stringify(update.embedding),
+          update.embeddingProfile,
+          update.id,
+        );
+        if (result.changes !== 1) throw new Error('Document chunk embedding target disappeared');
+      }
+    })();
   }
 
   delete(documentId: string): boolean {
@@ -220,8 +256,8 @@ export class DocumentRepo {
     const insertChunk = this.db.prepare(`
       INSERT INTO document_chunks (
         id, document_id, chunk_index, content, title, page_start, page_end,
-        character_count, embedding, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        character_count, embedding, embedding_profile, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const chunk of chunks) {
       insertChunk.run(
@@ -234,6 +270,7 @@ export class DocumentRepo {
         chunk.pageEnd,
         chunk.characterCount,
         JSON.stringify(chunk.embedding),
+        chunk.embeddingProfile,
         chunk.createdAt,
       );
     }
@@ -287,6 +324,7 @@ export class DocumentRepo {
       pageEnd: row.page_end as number | null,
       characterCount: row.character_count as number,
       embedding,
+      embeddingProfile: row.embedding_profile as string | null,
       createdAt: row.created_at as string,
     };
   }

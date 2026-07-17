@@ -12,6 +12,9 @@ export interface RetrievalResult {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
@@ -31,6 +34,9 @@ export interface FaqMatch {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
 }
 
 export interface FaqDebugMatch extends FaqMatch {

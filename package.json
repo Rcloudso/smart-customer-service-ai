@@ -15,6 +15,7 @@
     "test": "DB_PATH=./data/chat-route-test.db JWT_SECRET=test-secret-123 tsx server/tests/chat-route.test.ts && DB_PATH=./data/regression-test.db JWT_SECRET=test-secret-123 tsx server/tests/knowledge-review.test.ts && tsx server/tests/document-parser.test.ts && tsx server/tests/document-chunker.test.ts && JWT_SECRET=test-secret-123 tsx server/tests/document-rag.test.ts && JWT_SECRET=test-secret-123 tsx server/tests/knowledge-retriever.test.ts && tsx server/tests/prompt-knowledge.test.ts && tsx server/tests/document-api.test.ts && tsx server/tests/model-config-security.test.ts && tsx server/tests/regression.test.ts && tsc -p server/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit",
     "eval:faq": "tsx server/eval/faq-eval.ts",
     "eval:document": "tsx server/eval/document-eval.ts",
+    "eval:mixed": "REPORT_MIXED_EVAL=1 JWT_SECRET=test-secret-123 tsx server/tests/knowledge-retriever.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:dev-server": "tsx tests/e2e/setup-e2e-db.ts && npm run dev"

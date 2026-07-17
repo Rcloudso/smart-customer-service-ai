@@ -64,26 +64,27 @@ Smart Customer Service AI:
 ```text
 Query
   |
-  +-- 通过 VectorStore 做 embedding 相似度检索
+  +-- 通过 VectorStore 按知识来源召回 embedding 候选
   |
-  +-- 通过 SQL LIKE 做关键词 fallback
+  +-- 通过字段感知的 SQL LIKE 和确定性查询扩展召回关键词候选
   |
   +-- 按带命名空间的知识 id 合并去重
   |
-  +-- 排序：hybrid > vector score > keyword score
+  +-- 通过分数感知的倒数排名融合（RRF）排序，并保持来源多样性
   |
   +-- 返回兼容 similarity 字段的匹配结果
 ```
 
-默认泛型 `VectorStore<KnowledgeIndexItem>` 是内存实现。FAQ 与文档切片 embedding 会序列化存入 SQLite，再以 `faq:<id>` 和 `document:<chunkId>` 命名空间加载到共享进程索引。这样本地启动不需要额外向量数据库，同时未来替换向量存储时边界也足够清楚。
+默认泛型 `VectorStore<KnowledgeIndexItem>` 是内存实现。FAQ 与文档切片 embedding 会序列化存入 SQLite，再以 `faq:<id>` 和 `document:<chunkId>` 命名空间加载到共享进程索引。每条向量同时保存由 provider、模型、endpoint 和输入结构版本生成的 embedding profile；发现旧 profile 时先原子重建持久化向量，再替换进程索引，避免不同模型配置的向量被静默混用。
 
-FAQ 仍然只是知识来源适配器，不是永久的 RAG 边界。v0.2.6 新增 TXT、Markdown、含文本层 PDF 与 DOCX 导入，以及 `semantic-v1` 语义切片。聊天会同时检索 FAQ 和文档，最多把前三条不可信知识材料注入 Prompt；精确 FAQ 继续确定性直答，无 LLM Key 时则返回最高分文档名和原文片段，不生成伪摘要。
+FAQ 仍然只是知识来源适配器，不是永久的 RAG 边界。v0.2.6 新增 TXT、Markdown、含文本层 PDF 与 DOCX 导入，以及 `semantic-v1` 语义切片。文档 embedding 包含文档标题和章节标题，GPU 型号清单类问题会在关键词召回前执行确定性词汇扩展。聊天会分别召回 FAQ 与文档候选，避免单一来源挤占全部结果，再最多把前三条不可信知识材料注入 Prompt；精确 FAQ 继续确定性直答。无 LLM Key 时则返回最高分文档名和原文片段，不生成伪摘要。
 
 `FaqMatch` 保留已有的 `similarity` 字段，避免破坏旧响应；同时新增可选调试字段：
 
 - `source`: `vector`、`keyword` 或 `hybrid`
 - `keywordScore`
 - `vectorScore`
+- `fusionScore`、`keywordRank` 和 `vectorRank`
 
 ---
 

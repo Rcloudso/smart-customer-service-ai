@@ -212,17 +212,26 @@ function testEmbeddingRefreshDoesNotTouchFaqBusinessTimestamp(): void {
     path.resolve(process.cwd(), 'server/ai/semantic-search.ts'),
     'utf8',
   );
+  const adapterSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'server/ai/knowledge-adapters.ts'),
+    'utf8',
+  );
 
   assert.match(repoSource, /updateEmbeddingStmt/, 'FAQ repo should have an embedding-only update statement');
   assert.match(
     repoSource,
-    /UPDATE faq_entries SET embedding = \? WHERE id = \?/,
+    /UPDATE faq_entries SET embedding = \?, embedding_profile = \? WHERE id = \?/,
     'embedding refresh should not rewrite FAQ updated_at metadata',
   );
   assert.match(
-    semanticSource,
+    adapterSource,
     /updateEmbedding\(/,
     'semantic index refresh should persist embeddings without touching business fields',
+  );
+  assert.match(
+    semanticSource,
+    /persistCurrentFaqEmbedding\(/,
+    'semantic index refresh should publish only the latest persisted FAQ version',
   );
 }
 

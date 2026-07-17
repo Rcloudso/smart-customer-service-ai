@@ -64,6 +64,7 @@ export function initSchema(database: Database.Database): void {
       category TEXT NOT NULL CHECK(category IN ('refund', 'order', 'technical', 'general')),
       keywords TEXT NOT NULL DEFAULT '[]',
       embedding TEXT,
+      embedding_profile TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -107,6 +108,7 @@ export function initSchema(database: Database.Database): void {
       page_end INTEGER,
       character_count INTEGER NOT NULL,
       embedding TEXT NOT NULL,
+      embedding_profile TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(document_id, chunk_index)
     );
@@ -179,6 +181,8 @@ export function initSchema(database: Database.Database): void {
 
   ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
   ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
 }
 

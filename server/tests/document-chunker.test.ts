@@ -14,7 +14,7 @@ async function testSemanticBreaksAndBatchEmbedding(): Promise<void> {
     { content: `物流时效。${'通常三个工作日送达。'.repeat(18)}`, title: '物流' },
   ];
 
-  const chunks = await semanticChunk(units, embedTexts);
+  const chunks = await semanticChunk(units, embedTexts, '客服政策.md');
 
   assert.equal(chunks.length, 2, 'abrupt topics should form separate natural chunks');
   assert.match(chunks[0].content, /退款规则/);
@@ -23,6 +23,8 @@ async function testSemanticBreaksAndBatchEmbedding(): Promise<void> {
   assert.equal(calls.length, 2, 'unit and final chunk embeddings should each be batched');
   assert.equal(calls[0].length, 4);
   assert.equal(calls[1].length, 2);
+  assert.ok(calls[1].every((text) => text.includes('Document: 客服政策.md')));
+  assert.ok(calls[1].some((text) => text.includes('Section: 退款')));
   assert.ok(chunks.every((chunk) => chunk.content.length <= 1_200));
 }
 

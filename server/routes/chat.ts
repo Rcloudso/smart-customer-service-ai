@@ -52,6 +52,9 @@ function toRetrievalSnapshot(results: RetrievalResult[]): KnowledgeRetrievalSnap
     similarity: result.similarity,
     keywordScore: result.keywordScore,
     vectorScore: result.vectorScore,
+    fusionScore: result.fusionScore,
+    keywordRank: result.keywordRank,
+    vectorRank: result.vectorRank,
     chunkIndex: result.chunkIndex,
     pageStart: result.pageStart,
     pageEnd: result.pageEnd,
@@ -168,6 +171,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           source: m.source,
           vectorScore: m.vectorScore,
           keywordScore: m.keywordScore,
+          fusionScore: m.fusionScore,
+          vectorRank: m.vectorRank,
+          keywordRank: m.keywordRank,
         })),
       });
     }

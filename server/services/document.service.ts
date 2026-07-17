@@ -5,6 +5,10 @@ import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import { ChunkingError, semanticChunk } from '../ai/document-chunker';
 import { DocumentParserError, parseDocument } from '../ai/document-parser';
+import {
+  DOCUMENT_EMBEDDING_INPUT_VERSION,
+  currentEmbeddingProfile,
+} from '../ai/embedding-profile';
 import { DocumentRepo } from '../db/repos/document.repo';
 import {
   Document,
@@ -115,7 +119,11 @@ export class DocumentService {
     this.requireDocument(documentId);
     const result = this.repo.listChunks(documentId, params.pageSize, (params.page - 1) * params.pageSize);
     return {
-      items: result.items.map(({ embedding: _embedding, ...chunk }) => chunk),
+      items: result.items.map(({
+        embedding: _embedding,
+        embeddingProfile: _embeddingProfile,
+        ...chunk
+      }) => chunk),
       total: result.total,
     };
   }
@@ -241,7 +249,21 @@ export class DocumentService {
       if (parsed.characterCount > MAX_EXTRACTED_CHARACTERS) {
         throw new DocumentProcessingError('text_too_large');
       }
-      const chunks = await semanticChunk(parsed.units, this.dependencies.embedTexts) as ReadyChunk[];
+      const chunks = (await semanticChunk(parsed.units, async (texts) => {
+        try {
+          return await this.dependencies.embedTexts(texts);
+        } catch (error) {
+          logger.warn({
+            documentId: record.id,
+            format: record.format,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }, 'Document embedding failed');
+          throw new ChunkingError('embedding_failed');
+        }
+      }, record.fileName)).map((chunk): ReadyChunk => ({
+        ...chunk,
+        embeddingProfile: currentEmbeddingProfile(DOCUMENT_EMBEDDING_INPUT_VERSION),
+      }));
       const updated = this.db.transaction(() => (
         this.repo.replaceChunksAndMarkReady(record.id, chunks, parsed.characterCount)
       ))();

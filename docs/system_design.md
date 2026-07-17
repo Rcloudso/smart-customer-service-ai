@@ -8,6 +8,12 @@
 
 ## Part A：系统设计
 
+### v0.2.6 文档检索补充
+
+聊天检索通过 `KnowledgeRetriever` 分别召回 FAQ 与文档向量候选，再合并字段感知的关键词候选，通过分数感知的倒数排名融合（RRF）统一排序并做来源多样性选择，避免 FAQ 数量较多时挤占全部全局 Top 5。自然语言文档查询会提取有限的中英文关键词用于 SQL `LIKE` 候选；GPU/显卡型号清单类问题执行确定性词汇扩展，查询 embedding 仍只生成一次。最多三条结果作为不可信知识材料进入 Prompt。
+
+FAQ 与文档切片都持久化 `embedding_profile`，其值由 provider、模型、API Base 哈希和 embedding 输入结构版本组成。文档 embedding 输入包含文档标题、章节标题与正文。启动或运行时检测到 profile 变化后，先批量生成全部旧向量，再用 SQLite 事务原子更新；失败时保留旧向量和旧进程索引，并按 30 秒退避重试，避免半新半旧索引。
+
 ### 1. Implementation Approach
 
 #### 核心挑战

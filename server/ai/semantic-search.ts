@@ -3,11 +3,20 @@ import { FaqRepo } from '../db/repos/faq.repo';
 import { FaqDebugMatch, FaqDebugResult, FaqIndexStatus, FaqMatch } from '../types/ai';
 import { FaqEntry } from '../types/domain';
 import { logger } from '../utils/logger';
-import { buildFaqEmbeddingText } from './knowledge-adapters';
+import { buildFaqEmbeddingText, persistCurrentFaqEmbedding } from './knowledge-adapters';
+import {
+  FAQ_EMBEDDING_INPUT_VERSION,
+  currentEmbeddingProfile,
+} from './embedding-profile';
 import { faqKnowledgeAdapter, knowledgeRetriever } from './knowledge-system';
 import { getLLMClient } from './llm-client';
 
 const EMBEDDING_BATCH_SIZE = 100;
+
+export interface PreparedFaqIndex {
+  embedding: number[];
+  embeddingProfile: string;
+}
 
 class SemanticSearch {
   private readonly faqRepo = new FaqRepo(getDatabase());
@@ -44,7 +53,10 @@ class SemanticSearch {
       initialized: knowledgeRetriever.hasInitialized() && !isDegraded,
       activeCount: activeEntries.length,
       indexedCount: knowledgeRetriever.getIndexedCount('faq'),
-      missingEmbeddingCount: activeEntries.filter((entry) => !entry.embedding?.length).length,
+      missingEmbeddingCount: activeEntries.filter((entry) => (
+        !entry.embedding?.length
+        || entry.embeddingProfile !== currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION)
+      )).length,
       embeddingDimensions: stats.embeddingDimensions,
       lastRebuiltAt: this.lastRebuiltAt ?? stats.updatedAt,
       lastError: isDegraded
@@ -63,6 +75,9 @@ class SemanticSearch {
       source: result.source,
       vectorScore: result.vectorScore,
       keywordScore: result.keywordScore,
+      fusionScore: result.fusionScore,
+      vectorRank: result.vectorRank,
+      keywordRank: result.keywordRank,
     }));
   }
 
@@ -77,11 +92,14 @@ class SemanticSearch {
     };
   }
 
-  async prepareIndex(entry: FaqEntry): Promise<number[]> {
+  async prepareIndex(entry: FaqEntry): Promise<PreparedFaqIndex> {
     const result = await getLLMClient().embed([buildFaqEmbeddingText(entry)]);
     const embedding = result[0]?.embedding;
     if (!embedding) throw new Error('Embedding result was empty');
-    return embedding;
+    return {
+      embedding,
+      embeddingProfile: currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION),
+    };
   }
 
   commitPreparedIndex(entry: FaqEntry): void {
@@ -92,15 +110,23 @@ class SemanticSearch {
   }
 
   async updateIndex(entry: FaqEntry): Promise<void> {
-    knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
-    if (!entry.isActive) return;
+    if (!entry.isActive) {
+      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+      return;
+    }
     try {
-      const embedding = entry.embedding?.length ? entry.embedding : await this.prepareIndex(entry);
-      const updated = entry.embedding?.length
-        ? entry
-        : this.faqRepo.updateEmbedding(entry.id, embedding) ?? { ...entry, embedding };
+      const updated = await persistCurrentFaqEmbedding(
+        entry,
+        this.faqRepo,
+        (current) => this.prepareIndex(current),
+      );
+      if (!updated || !updated.isActive) {
+        knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+        return;
+      }
       knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(updated));
     } catch (error) {
+      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
       this.lastError = error instanceof Error ? error.message : String(error);
       logger.warn({ err: error, entryId: entry.id }, 'Failed to update FAQ index entry');
     }
@@ -108,32 +134,47 @@ class SemanticSearch {
 
   async updateIndexBatch(entries: FaqEntry[]): Promise<void> {
     const active = entries.filter((entry) => entry.isActive);
+    const currentProfile = currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION);
     for (const entry of entries) knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+    const updates: Array<{
+      id: string;
+      embedding: number[];
+      embeddingProfile: string;
+      expectedUpdatedAt: string;
+    }> = [];
     for (let i = 0; i < active.length; i += EMBEDDING_BATCH_SIZE) {
       const batch = active.slice(i, i + EMBEDDING_BATCH_SIZE);
-      const missing = batch.filter((entry) => !entry.embedding?.length);
+      const missing = batch.filter((entry) => (
+        !entry.embedding?.length || entry.embeddingProfile !== currentProfile
+      ));
       let generated: number[][] = [];
       if (missing.length > 0) {
         const results = await getLLMClient().embed(missing.map(buildFaqEmbeddingText));
         generated = results.map((result) => result.embedding);
       }
-      let missingIndex = 0;
-      for (const entry of batch) {
-        let indexedEntry = entry;
-        if (!entry.embedding?.length) {
-          const embedding = generated[missingIndex++];
-          if (!embedding) continue;
-          indexedEntry = this.faqRepo.updateEmbedding(entry.id, embedding) ?? { ...entry, embedding };
-        }
-        knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(indexedEntry));
+      for (const [index, entry] of missing.entries()) {
+        const embedding = generated[index];
+        if (!embedding?.length) throw new Error('Embedding result was empty');
+        updates.push({
+          id: entry.id,
+          embedding,
+          embeddingProfile: currentProfile,
+          expectedUpdatedAt: entry.updatedAt,
+        });
       }
+    }
+    if (updates.length > 0) this.faqRepo.updateEmbeddings(updates);
+    const refreshed = new Map(this.faqRepo.listAllActive().map((entry) => [entry.id, entry]));
+    for (const entry of active) {
+      const indexedEntry = refreshed.get(entry.id) ?? entry;
+      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(indexedEntry));
     }
   }
 
   private toDebugMatch(match: FaqMatch, index: number): FaqDebugMatch {
     const vectorScore = match.vectorScore ?? 0;
     const keywordScore = match.keywordScore ?? 0;
-    const bestScore = Math.max(vectorScore, keywordScore, match.similarity);
+    const bestScore = match.fusionScore ?? Math.max(vectorScore, keywordScore, match.similarity);
     const matchedBy: Array<'vector' | 'keyword'> = [];
     if (match.source === 'vector' || match.source === 'hybrid') matchedBy.push('vector');
     if (match.source === 'keyword' || match.source === 'hybrid') matchedBy.push('keyword');
@@ -142,7 +183,10 @@ class SemanticSearch {
       rank: index + 1,
       bestScore,
       matchedBy,
-      rankingReason: `${match.source ?? 'keyword'} match ranked by best score ${bestScore.toFixed(3)}`,
+      rankingReason: match.fusionScore === undefined
+        ? `${match.source ?? 'keyword'} match ranked by best score ${bestScore.toFixed(3)}`
+        : `${match.source ?? 'keyword'} match fused by RRF ${bestScore.toFixed(4)}`
+          + ` (vector rank ${match.vectorRank ?? '-'}, keyword rank ${match.keywordRank ?? '-'})`,
     };
   }
 }

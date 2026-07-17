@@ -66,26 +66,27 @@ The current retrieval flow is intentionally practical:
 ```text
 Query
   |
-  +-- embedding search through VectorStore
+  +-- per-source embedding candidates through VectorStore
   |
-  +-- SQL LIKE keyword fallback
+  +-- field-aware SQL LIKE keyword candidates and deterministic query expansion
   |
   +-- merge by namespaced knowledge id
   |
-  +-- rank hybrid > vector score > keyword score
+  +-- score-aware reciprocal-rank fusion (RRF), with source diversity
   |
   +-- return matches with similarity-compatible fields
 ```
 
-The default generic `VectorStore<KnowledgeIndexItem>` implementation is in-memory. FAQ and document-chunk embeddings are serialized in SQLite, then loaded into the shared process index under `faq:<id>` and `document:<chunkId>` namespaces. This keeps local setup dependency-free while making a future vector-database boundary explicit.
+The default generic `VectorStore<KnowledgeIndexItem>` implementation is in-memory. FAQ and document-chunk embeddings are serialized in SQLite, then loaded into the shared process index under `faq:<id>` and `document:<chunkId>` namespaces. Each stored vector carries an embedding profile derived from provider, model, endpoint, and input-schema version; stale profiles are rebuilt atomically before the process index is replaced. This keeps local setup dependency-free while preventing vectors from different model configurations from being silently mixed.
 
-FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. v0.2.6 adds TXT, Markdown, text-layer PDF, and DOCX ingestion with `semantic-v1` chunking. Chat queries FAQ and documents together, injects at most three untrusted knowledge excerpts into the prompt, preserves exact FAQ direct answers, and returns the highest-ranked document name and original excerpt when no LLM key is configured.
+FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. v0.2.6 adds TXT, Markdown, text-layer PDF, and DOCX ingestion with `semantic-v1` chunking. Document embeddings include document and section titles, and catalogue-style GPU questions receive deterministic vocabulary expansion before lexical recall. Chat recalls FAQ and document candidates separately so one source cannot crowd out the other, then injects at most three untrusted knowledge excerpts into the prompt. Exact FAQ answers remain deterministic; without an LLM key, the system returns the highest-ranked document name and original excerpt.
 
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
 - `source`: `vector`, `keyword`, or `hybrid`
 - `keywordScore`
 - `vectorScore`
+- `fusionScore`, `keywordRank`, and `vectorRank`
 
 ---
 

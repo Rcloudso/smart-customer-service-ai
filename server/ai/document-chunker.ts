@@ -30,6 +30,7 @@ interface Group {
 export async function semanticChunk(
   inputUnits: SemanticUnit[],
   embedTexts: (texts: string[]) => Promise<number[][]>,
+  documentTitle: string = '',
 ): Promise<SemanticChunk[]> {
   const units = inputUnits
     .map((unit) => ({ ...unit, content: normalizeText(unit.content) }))
@@ -61,7 +62,13 @@ export async function semanticChunk(
   });
   if (chunksWithoutEmbeddings.length > MAX_CHUNKS) throw new ChunkingError('too_many_chunks');
 
-  const chunkEmbeddings = await embedTexts(chunksWithoutEmbeddings.map((chunk) => chunk.content));
+  const chunkEmbeddings = await embedTexts(chunksWithoutEmbeddings.map((chunk) => (
+    buildDocumentEmbeddingText({
+      documentTitle,
+      sectionTitle: chunk.title,
+      content: chunk.content,
+    })
+  )));
   assertEmbeddingBatch(chunkEmbeddings, chunksWithoutEmbeddings.length);
   return chunksWithoutEmbeddings.map((chunk, index) => ({
     chunkIndex: index,
@@ -211,3 +218,4 @@ export class ChunkingError extends Error {
     super(failureCode);
   }
 }
+import { buildDocumentEmbeddingText } from './embedding-profile';

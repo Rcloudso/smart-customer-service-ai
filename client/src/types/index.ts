@@ -51,6 +51,9 @@ export interface KnowledgeRetrievalSnapshot {
   similarity: number;
   keywordScore?: number;
   vectorScore?: number;
+  fusionScore?: number;
+  keywordRank?: number;
+  vectorRank?: number;
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
@@ -149,6 +152,9 @@ export interface FaqDebugMatch {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
   rank: number;
   bestScore: number;
   matchedBy: Array<'vector' | 'keyword'>;
