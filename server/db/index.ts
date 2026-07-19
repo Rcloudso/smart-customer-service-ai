@@ -51,6 +51,9 @@ export function initSchema(database: Database.Database): void {
       escalated INTEGER NOT NULL DEFAULT 0,
       reply_to_message_id TEXT REFERENCES messages(id),
       retrieval_snapshot TEXT NOT NULL DEFAULT '[]',
+      answer_mode TEXT CHECK(answer_mode IN ('direct_faq', 'grounded_generation', 'refusal')),
+      grounding_status TEXT CHECK(grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated')),
+      grounding_reason TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -187,6 +190,9 @@ export function initSchema(database: Database.Database): void {
 
   ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
   ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'messages', 'answer_mode', "TEXT CHECK(answer_mode IN ('direct_faq', 'grounded_generation', 'refusal'))");
+  ensureColumn(database, 'messages', 'grounding_status', "TEXT CHECK(grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated'))");
+  ensureColumn(database, 'messages', 'grounding_reason', 'TEXT');
   ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');

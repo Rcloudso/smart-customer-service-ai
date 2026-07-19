@@ -6,6 +6,8 @@ import {
 } from '../db/repos/session.repo';
 import { MessageRepo } from '../db/repos/message.repo';
 import {
+  AnswerMode,
+  GroundingStatus,
   IntentCategory,
   KnowledgeRetrievalSnapshot,
   Session,
@@ -17,6 +19,7 @@ import { ChatHistorySession, ConversationDetail, PaginationResponse } from '../t
 import { ConflictError, NotFoundError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+import { EscalationService } from './escalation.service';
 
 interface ConversationServiceOptions {
   inactivityMinutes?: number;
@@ -36,9 +39,24 @@ export interface AdminConversationQuery {
   timezoneOffsetToMinutes?: number;
 }
 
+export interface SaveMessageParams {
+  sessionId: string;
+  role: MessageRole;
+  content: string;
+  intent?: string | null;
+  intentConf?: number | null;
+  replyToMessageId?: string | null;
+  retrievalSnapshot?: KnowledgeRetrievalSnapshot[];
+  answerMode?: AnswerMode | null;
+  groundingStatus?: GroundingStatus | null;
+  groundingReason?: string | null;
+}
+
 export class ConversationService {
+  private db: Database.Database;
   private sessionRepo: SessionRepo;
   private messageRepo: MessageRepo;
+  private escalationService: EscalationService;
   private readonly inactivityMinutes: number;
   private readonly exportMaxMessages: number;
   private readonly now: () => Date;
@@ -47,8 +65,10 @@ export class ConversationService {
     db: Database.Database = getDatabase(),
     options: ConversationServiceOptions = {},
   ) {
+    this.db = db;
     this.sessionRepo = new SessionRepo(db);
     this.messageRepo = new MessageRepo(db);
+    this.escalationService = new EscalationService(db);
     this.inactivityMinutes = options.inactivityMinutes ?? config.conversations.inactivityMinutes;
     this.exportMaxMessages = options.exportMaxMessages ?? config.conversations.exportMaxMessages;
     this.now = options.now ?? (() => new Date());
@@ -118,15 +138,7 @@ export class ConversationService {
     return this.closeSession(sessionId, 'user_closed') ?? existing;
   }
 
-  saveMessage(params: {
-    sessionId: string;
-    role: MessageRole;
-    content: string;
-    intent?: string | null;
-    intentConf?: number | null;
-    replyToMessageId?: string | null;
-    retrievalSnapshot?: KnowledgeRetrievalSnapshot[];
-  }): Message {
+  saveMessage(params: SaveMessageParams): Message {
     const message = this.messageRepo.create({
       sessionId: params.sessionId,
       role: params.role,
@@ -135,9 +147,21 @@ export class ConversationService {
       intentConf: params.intentConf,
       replyToMessageId: params.replyToMessageId,
       retrievalSnapshot: params.retrievalSnapshot,
+      answerMode: params.answerMode,
+      groundingStatus: params.groundingStatus,
+      groundingReason: params.groundingReason,
     });
     this.sessionRepo.touch(params.sessionId);
     return message;
+  }
+
+  saveMessageAndEscalate(params: SaveMessageParams, escalationReason: string): Message {
+    return this.db.transaction(() => {
+      const message = this.saveMessage(params);
+      this.escalationService.createEscalation(params.sessionId, escalationReason);
+      this.messageRepo.markEscalated(message.id);
+      return { ...message, escalated: 1 };
+    })();
   }
 
   getMessages(sessionId: string): Message[] {
@@ -240,6 +264,10 @@ export class ConversationService {
         content: m.content,
         intent: m.intent,
         intentConf: m.intentConf,
+        retrievalSnapshot: m.retrievalSnapshot,
+        answerMode: m.answerMode,
+        groundingStatus: m.groundingStatus,
+        groundingReason: m.groundingReason,
         satisfaction: m.satisfaction,
         escalated: m.escalated,
         createdAt: m.createdAt,

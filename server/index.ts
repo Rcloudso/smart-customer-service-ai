@@ -4,6 +4,7 @@ import { config } from './config';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { chatRateLimiter, adminRateLimiter, loginRateLimiter } from './middleware/rateLimit';
+import type { Server } from 'node:http';
 
 // Route imports — loaded lazily after DB init
 let authRoutes: express.Router;
@@ -15,6 +16,7 @@ let adminStatsRoutes: express.Router;
 let adminConfigRoutes: express.Router;
 let adminKnowledgeReviewRoutes: express.Router;
 let adminDocumentRoutes: express.Router;
+let ready = false;
 
 function createApp(): express.Application {
   const app = express();
@@ -99,6 +101,17 @@ function createApp(): express.Application {
   app.get('/api/health', (_req, res) => {
     res.json({ code: 0, data: { status: 'ok', uptime: process.uptime() }, message: 'ok' });
   });
+  app.get('/api/ready', (_req, res) => {
+    if (!ready) {
+      res.status(503).json({
+        code: 503,
+        data: { status: 'not_ready' },
+        message: 'Service is not ready',
+      });
+      return;
+    }
+    res.json({ code: 0, data: { status: 'ready' }, message: 'ok' });
+  });
 
   // ---- Error handler (must be last) ----
   app.use(errorHandler);
@@ -126,13 +139,59 @@ async function start(): Promise<void> {
 
     const app = createApp();
 
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
+      ready = true;
       logger.info({ port: config.port, env: config.nodeEnv }, '🚀 Server started');
     });
+    registerGracefulShutdown(server);
   } catch (err) {
     logger.error({ err }, 'Failed to start server');
     process.exit(1);
   }
+}
+
+function registerGracefulShutdown(server: Server): void {
+  let shuttingDown = false;
+  let finalizing = false;
+  const finalize = (code: number): void => {
+    if (finalizing) return;
+    finalizing = true;
+    void closeDatabaseAndExit(code);
+  };
+  const shutdown = (signal: NodeJS.Signals): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    ready = false;
+    logger.info({ signal }, 'Server shutdown started');
+
+    const forceTimer = setTimeout(() => {
+      logger.error({ signal }, 'Server shutdown timed out; closing active connections');
+      server.closeAllConnections();
+      finalize(1);
+    }, 10_000);
+    forceTimer.unref();
+
+    server.close((error) => {
+      clearTimeout(forceTimer);
+      if (error) logger.error({ err: error, signal }, 'HTTP server shutdown failed');
+      finalize(error ? 1 : 0);
+    });
+    server.closeIdleConnections();
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+}
+
+async function closeDatabaseAndExit(code: number): Promise<void> {
+  try {
+    const { closeDatabase } = await import('./db');
+    closeDatabase();
+  } catch (error) {
+    logger.error({ err: error }, 'Database shutdown failed');
+    process.exit(1);
+  }
+  process.exit(code);
 }
 
 start();

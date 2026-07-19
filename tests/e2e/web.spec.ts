@@ -52,6 +52,14 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(page.getByTestId('chat-messages')).toContainText('如何申请退款？');
     await expect(page.getByTestId('chat-messages')).toContainText('登录您的账户', { timeout: 15_000 });
     await expect(page.getByTestId('chat-messages')).toContainText('相关FAQ参考');
+    await expect(page.getByTestId('chat-grounding-status')).toContainText('FAQ 原文');
+    await expect(page.getByTestId('chat-grounding-status')).toContainText('检索阈值已满足');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.2.7-grounding-citations.png',
+        fullPage: true,
+      });
+    }
 
     const historyItem = page.getByTestId('chat-history-item').filter({ hasText: '如何申请退款？' }).first();
     await expect(historyItem).toBeVisible({ timeout: 10_000 });
@@ -63,6 +71,8 @@ test.describe('Web automation: customer chat experience', () => {
     await historyItem.click();
     await expect(page.getByTestId('chat-messages')).toContainText('如何申请退款？');
     await expect(page.getByTestId('chat-messages')).toContainText('登录您的账户');
+    await expect(page.getByTestId('chat-faq-references')).toContainText('如何申请退款？');
+    await expect(page.getByTestId('chat-grounding-status')).toContainText('FAQ 原文');
   });
 
   test('language and theme toggles update fixed copy and document theme', async ({ page }) => {
@@ -90,6 +100,9 @@ test.describe('Web automation: customer chat experience', () => {
             sessionId: 'markdown-session',
             messageId: 'markdown-message',
             intent: 'general',
+            answerMode: 'grounded_generation',
+            groundingStatus: 'sufficient',
+            groundingReason: 'retrieval_supported',
             knowledgeSources: [{
               knowledgeType: 'document',
               knowledgeId: 'compensation-chunk',
@@ -123,6 +136,36 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(page.getByTestId('chat-document-references')).toContainText('公司薪酬制度.pdf');
     await expect(page.getByTestId('chat-document-references')).toContainText('切片 2');
     await expect(page.getByTestId('chat-document-references')).toContainText('第 2 页');
+    const grounding = page.getByTestId('chat-grounding-status');
+    await expect(grounding).toContainText('检索支持生成');
+    await expect(grounding).toContainText('检索阈值已满足');
+    await page.getByTestId('language-toggle').click();
+    await expect(grounding).toContainText('Retrieval-supported');
+    await expect(grounding).toContainText('Evidence threshold met');
+  });
+
+  test('a failed partial stream is not presented as a completed rateable answer', async ({ page }) => {
+    await page.route('**/api/chat', async (route) => {
+      const events = [
+        { type: 'intent', content: 'general', confidence: 0.9 },
+        { type: 'token', content: '这是一段未完成的回答' },
+        { type: 'error', content: 'AI响应生成失败，请稍后重试' },
+      ];
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+      });
+    });
+
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill('触发流式失败');
+    await page.getByTestId('chat-send-button').click();
+
+    const assistantBubble = page.locator('.app-chat-bubble--assistant').last();
+    await expect(assistantBubble).toContainText('AI响应生成失败，请稍后重试');
+    await expect(assistantBubble).not.toContainText('这是一段未完成的回答');
+    await expect(page.locator('.app-chat-rating-row')).toHaveCount(0);
   });
 });
 

@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import * as chatApi from '../api/chat';
 import { usePreferences } from './usePreferences';
 import type { ChatHistoryDetail } from '../api/chat';
-import { KnowledgeRetrievalSnapshot, MessageRole } from '../types';
+import {
+  AnswerMode,
+  GroundingStatus,
+  KnowledgeRetrievalSnapshot,
+  MessageRole,
+} from '../types';
 
 export interface ChatFaqMatch {
   id: string;
@@ -22,7 +27,11 @@ export interface ChatMessage {
   intentConf?: number | null;
   faqMatches?: ChatFaqMatch[];
   knowledgeSources?: KnowledgeRetrievalSnapshot[];
+  answerMode?: AnswerMode | null;
+  groundingStatus?: GroundingStatus | null;
+  groundingReason?: string | null;
   satisfaction?: number | null;
+  failed?: boolean;
   isStreaming?: boolean;
 }
 
@@ -147,7 +156,14 @@ export const useChat = create<ChatState>((set, get) => ({
           set((prev) => ({
             messages: prev.messages.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, knowledgeSources: data.knowledgeSources }
+                ? {
+                    ...m,
+                    knowledgeSources: data.knowledgeSources,
+                    answerMode: data.answerMode,
+                    groundingStatus: data.groundingStatus,
+                    groundingReason: data.groundingReason,
+                    failed: false,
+                  }
                 : m,
             ),
           }));
@@ -158,7 +174,12 @@ export const useChat = create<ChatState>((set, get) => ({
           set((prev) => ({
             messages: prev.messages.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, content: m.content || formatErrorContent(message), isStreaming: false }
+                ? {
+                    ...m,
+                    content: formatErrorContent(message),
+                    failed: true,
+                    isStreaming: false,
+                  }
                 : m,
             ),
           }));
@@ -182,7 +203,12 @@ export const useChat = create<ChatState>((set, get) => ({
         error: errorMsg,
         messages: get().messages.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, content: formatErrorContent(errorMsg), isStreaming: false }
+            ? {
+                ...m,
+                content: formatErrorContent(errorMsg),
+                failed: true,
+                isStreaming: false,
+              }
             : m,
         ),
       });
@@ -218,7 +244,11 @@ export const useChat = create<ChatState>((set, get) => ({
           intent: message.intent,
           intentConf: message.intentConf,
           knowledgeSources: message.retrievalSnapshot,
+          answerMode: message.answerMode,
+          groundingStatus: message.groundingStatus,
+          groundingReason: message.groundingReason,
           satisfaction: message.satisfaction,
+          failed: false,
           isStreaming: false,
         })),
       isStreaming: false,

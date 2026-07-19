@@ -484,7 +484,8 @@ function testLocalFallbackAndDirectFaqAnswerExist(): void {
   assert.match(chatRouteSource, /source: m\.source/, 'FAQ SSE payload should preserve match source metadata');
   assert.match(chatRouteSource, /vectorScore: m\.vectorScore/, 'FAQ SSE payload should preserve vector score metadata');
   assert.match(chatRouteSource, /keywordScore: m\.keywordScore/, 'FAQ SSE payload should preserve keyword score metadata');
-  assert.match(chatRouteSource, /Chat interaction completed with direct FAQ answer/, 'chat route should short-circuit exact FAQ answers');
+  assert.match(chatRouteSource, /evaluateGrounding/, 'chat route should evaluate grounding before answering');
+  assert.match(chatRouteSource, /if \(!grounding\.shouldGenerate\)/, 'chat route should short-circuit direct FAQ and refusal answers');
 }
 
 function testChatHistoryApiIsScopedToAnonymousUser(): void {

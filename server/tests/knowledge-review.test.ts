@@ -57,11 +57,34 @@ function testExistingMessageSchemaMigratesAdditively(): void {
       content TEXT NOT NULL, intent TEXT, intent_conf REAL, satisfaction INTEGER,
       escalated INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
     );
+    INSERT INTO sessions (
+      id, user_ident, status, created_at, updated_at, closed_at
+    ) VALUES (
+      'legacy-session', 'legacy-user', 'active',
+      '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z', NULL
+    );
+    INSERT INTO messages (
+      id, session_id, role, content, intent, intent_conf, satisfaction,
+      escalated, created_at
+    ) VALUES (
+      'legacy-message', 'legacy-session', 'assistant', 'legacy answer',
+      'general', 0.8, NULL, 0, '2026-07-01T00:00:00.000Z'
+    );
   `);
+  initSchema(db);
   initSchema(db);
   const columns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
   assert.ok(columns.some((column) => column.name === 'reply_to_message_id'));
   assert.ok(columns.some((column) => column.name === 'retrieval_snapshot'));
+  assert.ok(columns.some((column) => column.name === 'answer_mode'));
+  assert.ok(columns.some((column) => column.name === 'grounding_status'));
+  assert.ok(columns.some((column) => column.name === 'grounding_reason'));
+  const legacy = new MessageRepo(db).findById('legacy-message');
+  assert.equal(legacy?.content, 'legacy answer');
+  assert.deepEqual(legacy?.retrievalSnapshot, []);
+  assert.equal(legacy?.answerMode, null);
+  assert.equal(legacy?.groundingStatus, null);
+  assert.equal(legacy?.groundingReason, null);
   db.close();
 }
 

@@ -4,7 +4,13 @@
 
 import { ApiError, get, post } from './client';
 import { usePreferences } from '../hooks/usePreferences';
-import type { ChatHistorySession, ConversationDetail, PaginationResponse } from '../types';
+import type {
+  AnswerMode,
+  ChatHistorySession,
+  ConversationDetail,
+  GroundingStatus,
+  PaginationResponse,
+} from '../types';
 import type { KnowledgeRetrievalSnapshot } from '../types';
 
 export interface FaqMatchDTO {
@@ -51,6 +57,9 @@ export interface SSECallbacks {
     messageId: string;
     intent: string;
     knowledgeSources?: KnowledgeRetrievalSnapshot[];
+    answerMode?: AnswerMode;
+    groundingStatus?: GroundingStatus;
+    groundingReason?: string;
   }) => void;
   onError?: (message: string) => void;
 }
@@ -145,55 +154,68 @@ export async function sendMessage(
         const jsonStr = trimmed.slice(6);
         if (jsonStr === '[DONE]') continue;
 
+        let event: {
+          type: string;
+          content: unknown;
+          confidence?: number;
+        };
         try {
-          const event = JSON.parse(jsonStr) as {
-            type: string;
-            content: unknown;
-            confidence?: number;
-          };
-
-          switch (event.type) {
-            case 'token':
-              fullContent += event.content as string;
-              callbacks.onToken?.(event.content as string);
-              break;
-            case 'intent':
-              callbacks.onIntent?.(event.content as string, event.confidence ?? 0);
-              break;
-            case 'faq':
-              callbacks.onFaq?.(
-                (event.content as FaqMatchDTO[]) || [],
-              );
-              break;
-            case 'escalate':
-              callbacks.onEscalate?.(event.content as string);
-              break;
-            case 'done': {
-              const doneData = event.content as {
-                sessionId: string;
-                messageId: string;
-                intent: string;
-                knowledgeSources?: KnowledgeRetrievalSnapshot[];
-              };
-              resultSessionId = doneData.sessionId;
-              resultMessageId = doneData.messageId;
-              resultIntent = doneData.intent;
-              callbacks.onDone?.(doneData);
-              break;
-            }
-            case 'error':
-              callbacks.onError?.(event.content as string);
-              break;
-            default:
-              break;
-          }
+          event = JSON.parse(jsonStr) as typeof event;
         } catch {
           // Skip malformed SSE data
+          continue;
+        }
+
+        switch (event.type) {
+          case 'token':
+            fullContent += event.content as string;
+            callbacks.onToken?.(event.content as string);
+            break;
+          case 'intent':
+            callbacks.onIntent?.(event.content as string, event.confidence ?? 0);
+            break;
+          case 'faq':
+            callbacks.onFaq?.(
+              (event.content as FaqMatchDTO[]) || [],
+            );
+            break;
+          case 'escalate':
+            callbacks.onEscalate?.(event.content as string);
+            break;
+          case 'done': {
+            const doneData = event.content as {
+              sessionId: string;
+              messageId: string;
+              intent: string;
+              knowledgeSources?: KnowledgeRetrievalSnapshot[];
+              answerMode?: AnswerMode;
+              groundingStatus?: GroundingStatus;
+              groundingReason?: string;
+            };
+            resultSessionId = doneData.sessionId;
+            resultMessageId = doneData.messageId;
+            resultIntent = doneData.intent;
+            callbacks.onDone?.(doneData);
+            break;
+          }
+          case 'error': {
+            const errorMessage = event.content as string;
+            callbacks.onError?.(errorMessage);
+            throw new ApiError(502, 502, errorMessage);
+          }
+          default:
+            break;
         }
       }
     }
   } finally {
     reader.releaseLock();
+  }
+
+  if (!resultMessageId) {
+    const errorMessage = t('chat.requestFailed');
+    callbacks.onError?.(errorMessage);
+    throw new ApiError(502, 502, errorMessage);
   }
 
   return {

@@ -48,6 +48,9 @@ export enum KnowledgeReviewStatus {
   DISMISSED = 'dismissed',
 }
 
+export type AnswerMode = 'direct_faq' | 'grounded_generation' | 'refusal';
+export type GroundingStatus = 'sufficient' | 'insufficient' | 'conflicting' | 'high_risk' | 'escalated';
+
 export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
 export type DocumentStatus = 'pending' | 'ready' | 'failed';
 
@@ -147,6 +150,9 @@ export interface Message {
   escalated: number;
   replyToMessageId: string | null;
   retrievalSnapshot: KnowledgeRetrievalSnapshot[];
+  answerMode: AnswerMode | null;
+  groundingStatus: GroundingStatus | null;
+  groundingReason: string | null;
   createdAt: string;
 }
 

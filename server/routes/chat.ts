@@ -12,6 +12,11 @@ import { KnowledgeRetrievalSnapshot, MessageRole, SatisfactionRating } from '../
 import { FaqMatch, LLMMessage, RetrievalResult } from '../types/ai';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import {
+  deterministicGroundingReply,
+  evaluateGrounding,
+  selectDirectFaqCandidates,
+} from '../services/grounding-policy';
 
 const router = Router();
 
@@ -40,11 +45,8 @@ const closeSessionSchema = z.object({
   userIdent: z.string().min(1, 'userIdent不能为空'),
 });
 
-function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
-  return faqMatches.find((match) =>
-    (match.source === 'keyword' || match.source === 'hybrid') &&
-    (match.keywordScore ?? match.similarity) >= 0.65,
-  ) ?? null;
+function findDirectFaqAnswer(message: string, faqMatches: FaqMatch[]): FaqMatch | null {
+  return selectDirectFaqCandidates(message, faqMatches)[0] ?? null;
 }
 
 function faqMatchesForClient(
@@ -128,27 +130,13 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     // Step 4: Process intent
     const intentResult = await intentService.processMessage(message, llmHistory);
-
-    // Step 5: Get context window
-    const contextMessages = await getWindow(llmHistory);
-
-    // Step 6: Build system prompt
-    const systemPrompt = buildSystemPrompt({
+    const grounding = evaluateGrounding({
+      message,
       intent: intentResult.intent.intent,
-      knowledgeResults: intentResult.retrievalResults,
-      userQuestion: message,
-      conversationSummary: null,
-      shouldOfferEscalation: intentResult.needsEscalation,
+      faqMatches: intentResult.faqMatches,
+      retrievalResults: intentResult.retrievalResults,
+      explicitEscalation: intentResult.escalationType === 'explicit',
     });
-
-    // Step 7: Build full messages array for LLM
-    const fullMessages = buildMessages(systemPrompt, {
-      intent: intentResult.intent.intent,
-      knowledgeResults: intentResult.retrievalResults,
-      userQuestion: message,
-      conversationSummary: null,
-      shouldOfferEscalation: intentResult.needsEscalation,
-    }, contextMessages);
 
     // Set up SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
@@ -192,40 +180,52 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       });
     }
 
-    let escalated = 0;
+    let escalationReason: string | null = null;
     if (intentResult.escalationType === 'explicit' && intentResult.escalationReason) {
-      escalated = 1;
-      escalationService.createEscalation(sessionId, intentResult.escalationReason);
-      sseSend({ type: 'escalate', content: intentResult.escalationReason });
+      escalationReason = intentResult.escalationReason;
+    } else if (grounding.shouldEscalate) {
+      escalationReason = grounding.groundingStatus === 'conflicting'
+        ? '知识库存在冲突答案，需要人工核实'
+        : '当前请求涉及尚未授权的业务操作，需要人工处理';
     }
 
-    const directFaq = intentResult.needsEscalation ? null : findDirectFaqAnswer(intentResult.faqMatches);
-    if (directFaq) {
-      const fullContent = directFaq.answer;
-      const directKnowledge = intentResult.retrievalResults.filter((result) => (
-        result.knowledgeType === 'faq' && result.knowledgeId === directFaq.id
-      ));
+    const directFaq = grounding.answerMode === 'direct_faq'
+      ? findDirectFaqAnswer(message, intentResult.faqMatches)
+      : null;
+    if (!grounding.shouldGenerate) {
+      const fullContent = directFaq?.answer ?? deterministicGroundingReply(grounding.groundingReason);
+      const citations = toRetrievalSnapshot(grounding.citations);
       sseSend({ type: 'token', content: fullContent });
 
-      const assistantMessage = conversationService.saveMessage({
+      const messageParams = {
         sessionId,
         role: MessageRole.ASSISTANT,
         content: fullContent,
         intent: intentResult.intent.intent,
         intentConf: intentResult.intent.confidence,
         replyToMessageId: userMessage.id,
-        retrievalSnapshot: toRetrievalSnapshot(directKnowledge),
-      });
+        retrievalSnapshot: citations,
+        answerMode: grounding.answerMode,
+        groundingStatus: grounding.groundingStatus,
+        groundingReason: grounding.groundingReason,
+      };
+      const assistantMessage = escalationReason
+        ? conversationService.saveMessageAndEscalate(messageParams, escalationReason)
+        : conversationService.saveMessage(messageParams);
 
-      captureKnowledgeGapSafely({
-        userMessage,
-        assistantMessage,
-        intent: intentResult.intent.intent,
-        intentConf: intentResult.intent.confidence,
-        faqMatches: intentResult.faqMatches,
-        retrievalResults: intentResult.retrievalResults,
-        escalationType: intentResult.escalationType,
-      });
+      if (grounding.groundingStatus !== 'high_risk') {
+        captureKnowledgeGapSafely({
+          userMessage,
+          assistantMessage,
+          intent: intentResult.intent.intent,
+          intentConf: intentResult.intent.confidence,
+          faqMatches: intentResult.faqMatches,
+          retrievalResults: intentResult.retrievalResults,
+          escalationType: intentResult.escalationType,
+        });
+      }
+
+      if (escalationReason) sseSend({ type: 'escalate', content: escalationReason });
 
       sseSend({
         type: 'done',
@@ -234,16 +234,41 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           messageId: assistantMessage.id,
           intent: intentResult.intent.intent,
           knowledgeSources: assistantMessage.retrievalSnapshot,
+          answerMode: assistantMessage.answerMode,
+          groundingStatus: assistantMessage.groundingStatus,
+          groundingReason: assistantMessage.groundingReason,
         },
       });
 
       logger.info(
-        { sessionId, messageId: assistantMessage.id, faqId: directFaq.id },
-        'Chat interaction completed with direct FAQ answer',
+        {
+          sessionId,
+          messageId: assistantMessage.id,
+          answerMode: grounding.answerMode,
+          groundingStatus: grounding.groundingStatus,
+        },
+        'Chat interaction completed without generation',
       );
       res.end();
       return;
     }
+
+    // Step 5: Build the bounded context and prompt only when generation is allowed.
+    const contextMessages = await getWindow(llmHistory);
+    const systemPrompt = buildSystemPrompt({
+      intent: intentResult.intent.intent,
+      knowledgeResults: grounding.citations,
+      userQuestion: message,
+      conversationSummary: null,
+      shouldOfferEscalation: intentResult.needsEscalation,
+    });
+    const fullMessages = buildMessages(systemPrompt, {
+      intent: intentResult.intent.intent,
+      knowledgeResults: grounding.citations,
+      userQuestion: message,
+      conversationSummary: null,
+      shouldOfferEscalation: intentResult.needsEscalation,
+    }, contextMessages);
 
     // Step 8: Stream LLM response
     let fullContent = '';
@@ -270,36 +295,47 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const escalateMatch = fullContent.match(/ESCALATE:\s*(.+?)(?:\n|$)/);
     if (escalateMatch) {
       const reason = escalateMatch[1].trim();
-      if (!escalated) {
-        escalated = 1;
-        escalationService.createEscalation(sessionId, reason);
-        sseSend({ type: 'escalate', content: reason });
-      }
+      if (!escalationReason) escalationReason = reason;
 
       // Clean content by removing the ESCALATE marker
       fullContent = fullContent.replace(/ESCALATE:\s*.+?(?:\n|$)/g, '').trim();
     }
 
     // Also check content for frustration triggers via escalation service
-    if (!escalated) {
+    if (!escalationReason) {
       const checkResult = escalationService.checkEscalation(message);
       if (checkResult.shouldEscalate && checkResult.reason) {
-        escalated = 1;
-        escalationService.createEscalation(sessionId, checkResult.reason);
-        sseSend({ type: 'escalate', content: checkResult.reason });
+        escalationReason = checkResult.reason;
       }
     }
 
+    if (!fullContent.trim()) {
+      if (escalationReason) {
+        escalationService.createEscalation(sessionId, escalationReason);
+        sseSend({ type: 'escalate', content: escalationReason });
+      }
+      logger.error({ sessionId }, 'LLM stream completed without answer content');
+      sseSend({ type: 'error', content: 'AI响应生成失败，请稍后重试' });
+      res.end();
+      return;
+    }
+
     // Step 10: Save assistant message
-    const assistantMessage = conversationService.saveMessage({
+    const messageParams = {
       sessionId,
       role: MessageRole.ASSISTANT,
       content: fullContent,
       intent: intentResult.intent.intent,
       intentConf: intentResult.intent.confidence,
       replyToMessageId: userMessage.id,
-      retrievalSnapshot: toRetrievalSnapshot(intentResult.retrievalResults),
-    });
+      retrievalSnapshot: toRetrievalSnapshot(grounding.citations),
+      answerMode: grounding.answerMode,
+      groundingStatus: grounding.groundingStatus,
+      groundingReason: grounding.groundingReason,
+    };
+    const assistantMessage = escalationReason
+      ? conversationService.saveMessageAndEscalate(messageParams, escalationReason)
+      : conversationService.saveMessage(messageParams);
     assistantMessageId = assistantMessage.id;
 
     captureKnowledgeGapSafely({
@@ -312,13 +348,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       escalationType: intentResult.escalationType,
     });
 
-    // Mark escalated if needed
-    if (escalated) {
-      const { getDatabase } = await import('../db');
-      const db = getDatabase();
-      const markStmt = db.prepare('UPDATE messages SET escalated = 1 WHERE id = ?');
-      markStmt.run(assistantMessageId);
-    }
+    if (escalationReason) sseSend({ type: 'escalate', content: escalationReason });
 
     // Step 11: Send done event
     sseSend({
@@ -328,6 +358,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         messageId: assistantMessageId,
         intent: intentResult.intent.intent,
         knowledgeSources: assistantMessage.retrievalSnapshot,
+        answerMode: assistantMessage.answerMode,
+        groundingStatus: assistantMessage.groundingStatus,
+        groundingReason: assistantMessage.groundingReason,
       },
     });
 

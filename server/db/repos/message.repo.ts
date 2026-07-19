@@ -1,6 +1,14 @@
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { Message, MessageRole, IntentCategory, KnowledgeRetrievalSnapshot, SatisfactionRating } from '../../types/domain';
+import {
+  AnswerMode,
+  GroundingStatus,
+  IntentCategory,
+  KnowledgeRetrievalSnapshot,
+  Message,
+  MessageRole,
+  SatisfactionRating,
+} from '../../types/domain';
 import { parseKnowledgeSnapshot } from '../../utils/knowledge-snapshot';
 
 export class MessageRepo {
@@ -23,8 +31,9 @@ export class MessageRepo {
     this.insertStmt = db.prepare(
       `INSERT INTO messages (
         id, session_id, role, content, intent, intent_conf, satisfaction, escalated,
-        reply_to_message_id, retrieval_snapshot, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        reply_to_message_id, retrieval_snapshot, answer_mode, grounding_status,
+        grounding_reason, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.findBySessionStmt = db.prepare(
       'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC',
@@ -79,6 +88,9 @@ export class MessageRepo {
     intentConf?: number | null;
     replyToMessageId?: string | null;
     retrievalSnapshot?: KnowledgeRetrievalSnapshot[];
+    answerMode?: AnswerMode | null;
+    groundingStatus?: GroundingStatus | null;
+    groundingReason?: string | null;
   }): Message {
     const now = new Date().toISOString();
     const message: Message = {
@@ -92,6 +104,9 @@ export class MessageRepo {
       escalated: 0,
       replyToMessageId: params.replyToMessageId ?? null,
       retrievalSnapshot: params.retrievalSnapshot ?? [],
+      answerMode: params.answerMode ?? null,
+      groundingStatus: params.groundingStatus ?? null,
+      groundingReason: params.groundingReason ?? null,
       createdAt: now,
     };
 
@@ -99,7 +114,8 @@ export class MessageRepo {
       message.id, message.sessionId, message.role, message.content,
       message.intent, message.intentConf, message.satisfaction,
       message.escalated, message.replyToMessageId,
-      JSON.stringify(message.retrievalSnapshot), message.createdAt,
+      JSON.stringify(message.retrievalSnapshot), message.answerMode,
+      message.groundingStatus, message.groundingReason, message.createdAt,
     );
     return message;
   }
@@ -198,6 +214,9 @@ export class MessageRepo {
       escalated: row.escalated as number,
       replyToMessageId: row.reply_to_message_id as string | null,
       retrievalSnapshot: parseKnowledgeSnapshot(row.retrieval_snapshot),
+      answerMode: row.answer_mode as AnswerMode | null,
+      groundingStatus: row.grounding_status as GroundingStatus | null,
+      groundingReason: row.grounding_reason as string | null,
       createdAt: row.created_at as string,
     };
   }

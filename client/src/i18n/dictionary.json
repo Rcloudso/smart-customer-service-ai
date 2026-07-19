@@ -127,6 +127,38 @@
     "zh": "第 {pages} 页",
     "en": "Page {pages}"
   },
+  "chat.answerMode.direct_faq": {
+    "zh": "FAQ 原文",
+    "en": "Direct FAQ"
+  },
+  "chat.answerMode.grounded_generation": {
+    "zh": "检索支持生成",
+    "en": "Retrieval-supported"
+  },
+  "chat.answerMode.refusal": {
+    "zh": "安全拒答",
+    "en": "Safe refusal"
+  },
+  "chat.groundingStatus.sufficient": {
+    "zh": "检索阈值已满足",
+    "en": "Evidence threshold met"
+  },
+  "chat.groundingStatus.insufficient": {
+    "zh": "依据不足",
+    "en": "Insufficient evidence"
+  },
+  "chat.groundingStatus.conflicting": {
+    "zh": "知识冲突",
+    "en": "Conflicting knowledge"
+  },
+  "chat.groundingStatus.high_risk": {
+    "zh": "高风险操作",
+    "en": "High-risk action"
+  },
+  "chat.groundingStatus.escalated": {
+    "zh": "已转人工",
+    "en": "Escalated to human"
+  },
   "chat.inputPlaceholder": {
     "zh": "输入您的问题，Enter 发送，Shift+Enter 换行",
     "en": "Type your question. Enter to send, Shift+Enter for a new line"

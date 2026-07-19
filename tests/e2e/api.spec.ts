@@ -332,6 +332,9 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(events.find((event) => event.type === 'done').content).toMatchObject({
       sessionId: expect.any(String),
       messageId: expect.any(String),
+      answerMode: 'grounded_generation',
+      groundingStatus: 'sufficient',
+      groundingReason: 'retrieval_supported',
       knowledgeSources: expect.arrayContaining([
         expect.objectContaining({
           knowledgeType: 'document',
@@ -415,7 +418,18 @@ test.describe('API automation: boundaries and exception flows', () => {
       .join('');
     expect(tokenText).toContain('登录您的账户');
     const doneEvent = events.find((event) => event.type === 'done');
-    expect(doneEvent.content.sessionId).toEqual(expect.any(String));
+    expect(doneEvent.content).toMatchObject({
+      sessionId: expect.any(String),
+      answerMode: 'direct_faq',
+      groundingStatus: 'sufficient',
+      groundingReason: 'direct_faq_match',
+      knowledgeSources: [
+        expect.objectContaining({
+          knowledgeType: 'faq',
+          title: question,
+        }),
+      ],
+    });
 
     const badRatingLow = await request.post('/api/chat/satisfaction', {
       data: { sessionId: doneEvent.content.sessionId, userIdent, rating: 0 },
@@ -460,12 +474,21 @@ test.describe('API automation: boundaries and exception flows', () => {
       params: { userIdent },
     });
     expect(detailResponse.status()).toBe(200);
-    expect((await readJson(detailResponse)).data.messages.map((message: any) => message.role)).toEqual([
+    const detail = (await readJson(detailResponse)).data;
+    expect(detail.messages.map((message: any) => message.role)).toEqual([
       'user',
       'assistant',
       'user',
       'assistant',
     ]);
+    expect(detail.messages[1]).toMatchObject({
+      answerMode: 'direct_faq',
+      groundingStatus: 'sufficient',
+      groundingReason: 'direct_faq_match',
+      retrievalSnapshot: [
+        expect.objectContaining({ knowledgeType: 'faq', title: question }),
+      ],
+    });
 
     const wrongOwnerResponse = await request.get(`/api/chat/sessions/${doneEvent.content.sessionId}`, {
       params: { userIdent: 'somebody-else' },
