@@ -133,6 +133,7 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closeReason: string | null;
 }
 
 export interface Message {

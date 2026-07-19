@@ -97,6 +97,8 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(initial.status()).toBe(200);
     const initialData = (await readJson(initial)).data;
     expect(initialData).toMatchObject({
+      llmProvider: expect.stringMatching(/openai|openai-compatible|other/),
+      embedProvider: expect.stringMatching(/openai|openai-compatible|other/),
       llmApiKeyConfigured: false,
       embedApiKeyConfigured: false,
     });
@@ -109,15 +111,31 @@ test.describe('API automation: boundaries and exception flows', () => {
     });
     expect(rejected.status()).toBe(400);
 
+    const invalidProvider = await request.put('/api/admin/config/model', {
+      headers,
+      data: { llmProvider: 'unsupported-provider' },
+    });
+    expect(invalidProvider.status()).toBe(400);
+
     const update = await request.put('/api/admin/config/model', {
       headers,
-      data: { llmModel: 'safe-model-name' },
+      data: {
+        llmProvider: 'openai-compatible',
+        llmApiBase: 'https://compatible.example/v1',
+        llmModel: 'safe-model-name',
+        embedProvider: 'other',
+        embedApiBase: 'http://localhost:11434/v1',
+      },
     });
     expect(update.status()).toBe(200);
 
     const refreshed = await request.get('/api/admin/config/model', { headers });
     expect((await readJson(refreshed)).data).toMatchObject({
+      llmProvider: 'openai-compatible',
+      llmApiBase: 'https://compatible.example/v1',
       llmModel: 'safe-model-name',
+      embedProvider: 'other',
+      embedApiBase: 'http://localhost:11434/v1',
       llmApiKeyConfigured: false,
       embedApiKeyConfigured: false,
     });
@@ -296,16 +314,15 @@ test.describe('API automation: boundaries and exception flows', () => {
     });
     expect(invalidUpdate.status()).toBe(400);
 
+    const documentUserIdent = `document-user-${Date.now()}`;
     const chat = await request.post('/api/chat', {
       headers: { Accept: 'text/event-stream' },
-      data: { message: '银杏计划退款将在审核通过后的三个工作日内到账。', userIdent: `document-user-${Date.now()}` },
+      data: { message: '银杏计划退款将在审核通过后的三个工作日内到账。', userIdent: documentUserIdent },
     });
     expect(chat.status()).toBe(200);
     const events = await parseSse(chat);
     const faqEvent = events.find((event) => event.type === 'faq');
-    expect(faqEvent?.content ?? []).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ question: expect.stringContaining(fileName) }),
-    ]));
+    expect(faqEvent).toBeUndefined();
     const tokenText = events
       .filter((event) => event.type === 'token')
       .map((event) => event.content)
@@ -315,10 +332,22 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(events.find((event) => event.type === 'done').content).toMatchObject({
       sessionId: expect.any(String),
       messageId: expect.any(String),
+      knowledgeSources: expect.arrayContaining([
+        expect.objectContaining({
+          knowledgeType: 'document',
+          documentId: document.id,
+          title: fileName,
+        }),
+      ]),
     });
     const done = events.find((event) => event.type === 'done').content;
     const rating = await request.post('/api/chat/satisfaction', {
-      data: { messageId: done.messageId, sessionId: done.sessionId, rating: 1 },
+      data: {
+        messageId: done.messageId,
+        sessionId: done.sessionId,
+        userIdent: documentUserIdent,
+        rating: 1,
+      },
     });
     expect(rating.status()).toBe(200);
     const reviews = await request.get('/api/admin/knowledge-reviews', {
@@ -389,19 +418,32 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(doneEvent.content.sessionId).toEqual(expect.any(String));
 
     const badRatingLow = await request.post('/api/chat/satisfaction', {
-      data: { sessionId: doneEvent.content.sessionId, rating: 0 },
+      data: { sessionId: doneEvent.content.sessionId, userIdent, rating: 0 },
     });
     expect(badRatingLow.status()).toBe(400);
 
     const badRatingHigh = await request.post('/api/chat/satisfaction', {
-      data: { sessionId: doneEvent.content.sessionId, rating: 6 },
+      data: { sessionId: doneEvent.content.sessionId, userIdent, rating: 6 },
     });
     expect(badRatingHigh.status()).toBe(400);
 
     const ratingResponse = await request.post('/api/chat/satisfaction', {
-      data: { sessionId: doneEvent.content.sessionId, rating: 5 },
+      data: { sessionId: doneEvent.content.sessionId, userIdent, rating: 5 },
     });
     expect(ratingResponse.status()).toBe(200);
+
+    const continuedChat = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: {
+        message: '退款进度在哪里查询？',
+        sessionId: doneEvent.content.sessionId,
+        userIdent,
+      },
+    });
+    expect(continuedChat.status()).toBe(200);
+    const continuedDone = (await parseSse(continuedChat))
+      .find((event) => event.type === 'done');
+    expect(continuedDone.content.sessionId).toBe(doneEvent.content.sessionId);
 
     const historyResponse = await request.get('/api/chat/sessions', {
       params: { userIdent, page: 1, pageSize: 5 },
@@ -411,14 +453,19 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(history.items[0]).toMatchObject({
       id: doneEvent.content.sessionId,
       preview: question,
-      messageCount: 2,
+      messageCount: 4,
     });
 
     const detailResponse = await request.get(`/api/chat/sessions/${doneEvent.content.sessionId}`, {
       params: { userIdent },
     });
     expect(detailResponse.status()).toBe(200);
-    expect((await readJson(detailResponse)).data.messages.map((message: any) => message.role)).toEqual(['user', 'assistant']);
+    expect((await readJson(detailResponse)).data.messages.map((message: any) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
 
     const wrongOwnerResponse = await request.get(`/api/chat/sessions/${doneEvent.content.sessionId}`, {
       params: { userIdent: 'somebody-else' },
@@ -431,6 +478,91 @@ test.describe('API automation: boundaries and exception flows', () => {
       params: { keyword: question },
     });
     expect((await readJson(positiveReviewList)).data.total).toBe(0);
+  });
+
+  test('conversation day filters, lifecycle close, and filtered complete CSV export stay aligned', async ({ request }) => {
+    const token = await login(request);
+    const headers = authHeaders(token);
+    const unique = `export-full-${Date.now()}`;
+    const fullContent = `${unique}-${'完整消息内容'.repeat(60)}-TAIL`;
+    const chatResponse = await request.post('/api/chat', {
+      data: {
+        message: fullContent,
+        userIdent: `${unique}-user`,
+      },
+    });
+    expect(chatResponse.status()).toBe(200);
+    const done = (await parseSse(chatResponse)).find((event) => event.type === 'done')?.content;
+    expect(done?.sessionId).toEqual(expect.any(String));
+
+    const today = new Date().toISOString().slice(0, 10);
+    const filtered = await request.get('/api/admin/conversations', {
+      headers,
+      params: {
+        from: today,
+        to: today,
+        keyword: unique,
+        status: 'active',
+      },
+    });
+    expect(filtered.status()).toBe(200);
+    const filteredData = (await readJson(filtered)).data;
+    expect(filteredData.total).toBe(1);
+    expect(filteredData.items[0].id).toBe(done.sessionId);
+
+    const invalidDate = await request.get('/api/admin/conversations', {
+      headers,
+      params: { from: '2026-02-31' },
+    });
+    expect(invalidDate.status()).toBe(400);
+
+    const exported = await request.get('/api/admin/conversations/export', {
+      headers,
+      params: {
+        from: today,
+        to: today,
+        keyword: unique,
+        status: 'active',
+      },
+    });
+    expect(exported.status()).toBe(200);
+    expect(Number(exported.headers()['x-export-message-count'])).toBeGreaterThanOrEqual(2);
+    const csv = await exported.text();
+    expect(csv).toContain(`${'完整消息内容'.repeat(60)}-TAIL`);
+    expect(csv).not.toContain('FAQ question');
+
+    const wrongOwnerClose = await request.post(`/api/chat/sessions/${done.sessionId}/close`, {
+      data: { userIdent: 'another-user' },
+    });
+    expect(wrongOwnerClose.status()).toBe(404);
+
+    const close = await request.post(`/api/chat/sessions/${done.sessionId}/close`, {
+      data: { userIdent: `${unique}-user` },
+    });
+    expect(close.status()).toBe(200);
+    expect((await readJson(close)).data).toMatchObject({
+      status: 'closed',
+      closeReason: 'user_closed',
+    });
+
+    const detail = await request.get(`/api/admin/conversations/${done.sessionId}`, { headers });
+    const detailData = (await readJson(detail)).data;
+    expect(detailData.session.status).toBe('closed');
+    expect(detailData.session.closeReason).toBe('user_closed');
+    expect(detailData.messages.some((message: any) => message.content === fullContent)).toBe(true);
+
+    const closedFiltered = await request.get('/api/admin/conversations', {
+      headers,
+      params: { keyword: unique, status: 'closed' },
+    });
+    expect(closedFiltered.status()).toBe(200);
+    expect((await readJson(closedFiltered)).data.total).toBe(1);
+
+    const invalidStatus = await request.get('/api/admin/conversations', {
+      headers,
+      params: { status: 'unknown' },
+    });
+    expect(invalidStatus.status()).toBe(400);
   });
 
   test('knowledge review closes the low-confidence feedback loop without duplicate FAQs', async ({ request }) => {
@@ -454,13 +586,14 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(invalidPageSize.status()).toBe(400);
 
     const matchedQuestion = '订单发货后多久能收到？';
+    const matchedUserIdent = `negative-match-${Date.now()}`;
     const matchedChat = await request.post('/api/chat', {
       headers: { Accept: 'text/event-stream' },
-      data: { message: matchedQuestion, userIdent: `negative-match-${Date.now()}` },
+      data: { message: matchedQuestion, userIdent: matchedUserIdent },
     });
     const matchedDone = (await parseSse(matchedChat)).find((event) => event.type === 'done').content;
     const messageOnlyRating = await request.post('/api/chat/satisfaction', {
-      data: { messageId: matchedDone.messageId, rating: 1 },
+      data: { messageId: matchedDone.messageId, userIdent: matchedUserIdent, rating: 1 },
     });
     expect(messageOnlyRating.status()).toBe(200);
     expect((await readJson(messageOnlyRating)).data).toMatchObject({
@@ -469,7 +602,12 @@ test.describe('API automation: boundaries and exception flows', () => {
       rating: 1,
     });
     const matchedRating = await request.post('/api/chat/satisfaction', {
-      data: { messageId: matchedDone.messageId, sessionId: matchedDone.sessionId, rating: 1 },
+      data: {
+        messageId: matchedDone.messageId,
+        sessionId: matchedDone.sessionId,
+        userIdent: matchedUserIdent,
+        rating: 1,
+      },
     });
     expect(matchedRating.status()).toBe(200);
     const matchedReview = await request.get('/api/admin/knowledge-reviews', {
@@ -484,9 +622,10 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(matchedReviewItem.retrievalSnapshot.length).toBeGreaterThan(0);
 
     const question = `qqqqqqqqqqqqqqqq-api-${Date.now()}`;
+    const knowledgeUserIdent = `knowledge-user-${Date.now()}`;
     const chatResponse = await request.post('/api/chat', {
       headers: { Accept: 'text/event-stream' },
-      data: { message: question, userIdent: `knowledge-user-${Date.now()}` },
+      data: { message: question, userIdent: knowledgeUserIdent },
     });
     const events = await parseSse(chatResponse);
     const done = events.find((event) => event.type === 'done').content;
@@ -506,14 +645,34 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(pendingData.items[0].retrievalSnapshot.length).toBeLessThanOrEqual(3);
 
     const mismatchRating = await request.post('/api/chat/satisfaction', {
-      data: { messageId: done.messageId, sessionId: 'not-the-message-session', rating: 1 },
+      data: {
+        messageId: done.messageId,
+        sessionId: 'not-the-message-session',
+        userIdent: knowledgeUserIdent,
+        rating: 1,
+      },
     });
     expect(mismatchRating.status()).toBe(400);
 
     const lowRating = await request.post('/api/chat/satisfaction', {
-      data: { messageId: done.messageId, sessionId: done.sessionId, rating: 1 },
+      data: {
+        messageId: done.messageId,
+        sessionId: done.sessionId,
+        userIdent: 'wrong-rating-owner',
+        rating: 1,
+      },
     });
-    expect(lowRating.status()).toBe(200);
+    expect(lowRating.status()).toBe(404);
+
+    const ownedLowRating = await request.post('/api/chat/satisfaction', {
+      data: {
+        messageId: done.messageId,
+        sessionId: done.sessionId,
+        userIdent: knowledgeUserIdent,
+        rating: 1,
+      },
+    });
+    expect(ownedLowRating.status()).toBe(200);
     const ratedList = await request.get('/api/admin/knowledge-reviews', {
       headers,
       params: { keyword: question },
@@ -562,13 +721,19 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(dismissConverted.status()).toBe(409);
 
     const specialQuestion = '%_%%%%____';
+    const specialUserIdent = `special-filter-${Date.now()}`;
     const specialChat = await request.post('/api/chat', {
       headers: { Accept: 'text/event-stream' },
-      data: { message: specialQuestion, userIdent: `special-filter-${Date.now()}` },
+      data: { message: specialQuestion, userIdent: specialUserIdent },
     });
     const specialDone = (await parseSse(specialChat)).find((event) => event.type === 'done').content;
     await request.post('/api/chat/satisfaction', {
-      data: { messageId: specialDone.messageId, sessionId: specialDone.sessionId, rating: 1 },
+      data: {
+        messageId: specialDone.messageId,
+        sessionId: specialDone.sessionId,
+        userIdent: specialUserIdent,
+        rating: 1,
+      },
     });
     const specialFilter = await request.get('/api/admin/knowledge-reviews', {
       headers,

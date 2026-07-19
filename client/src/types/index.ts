@@ -171,10 +171,13 @@ export interface FaqDebugResult {
 
 // ── Model Config Types ─────────────────────────────
 
+export type ModelProvider = 'openai' | 'openai-compatible' | 'other';
+
 export interface ModelConfigDTO {
+  llmProvider: ModelProvider;
   llmApiBase: string;
   llmModel: string;
-  embedProvider: string;
+  embedProvider: ModelProvider;
   embedApiBase: string;
   embedModel: string;
 }
@@ -219,6 +222,7 @@ export interface AdminOverview {
   avgSatisfaction: number;
   escalationRate: number;
   activeSessions: number;
+  activeWindowMinutes: number;
 }
 
 export interface SatisfactionTrend {
@@ -240,6 +244,8 @@ export interface ConversationDetail {
     status: SessionStatus;
     createdAt: string;
     updatedAt: string;
+    closedAt: string | null;
+    closeReason: string | null;
   };
   messages: Array<{
     id: string;
@@ -247,6 +253,7 @@ export interface ConversationDetail {
     content: string;
     intent: IntentCategory | null;
     intentConf: number | null;
+    retrievalSnapshot: KnowledgeRetrievalSnapshot[];
     satisfaction: SatisfactionRating | null;
     escalated: number;
     createdAt: string;
@@ -266,6 +273,7 @@ export interface ChatHistorySession {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closeReason: string | null;
   messageCount: number;
   preview: string | null;
 }

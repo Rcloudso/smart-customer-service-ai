@@ -43,11 +43,12 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 
 ## Features
 
-- **Customer chat experience** - streaming-style support UI with conversation context, references, feedback, and history.
+- **Customer chat experience** - streaming-style support UI with safe Markdown rendering, conversation context, compact document references, feedback, and history.
 - **Admin console** - FAQ management, conversation list, dashboard analytics, and runtime model configuration.
 - **Knowledge gap feedback loop** - no-match, low-score, and negatively rated answers become review items that admins can edit, dismiss, or convert into indexed FAQs.
 - **Document RAG foundation** - upload TXT, Markdown, text-layer PDF, and DOCX files; parse, semantically chunk, embed, index, retry, enable/disable, preview, and delete them from the admin console.
-- **Hybrid multi-source retrieval** - FAQ and document candidates share one in-memory vector index plus SQL keyword fallback, then merge and rank through a single retriever.
+- **Hybrid multi-source retrieval** - FAQ and document candidates use per-source vector recall plus field-aware keyword recall, then merge with score-aware reciprocal-rank fusion (RRF), deduplicate, and apply source-aware diversity.
+- **Compatible intent classification** - structured intent output negotiates `json_schema`, then `json_object`, then validated plain-text JSON before the deterministic keyword fallback.
 - **Open vector-store interface** - `VectorStore` keeps the default deployment simple while leaving room for Qdrant or pgvector later.
 - **Richer FAQ embeddings** - FAQ vectors are generated from question, answer, and keywords, not only the question.
 - **Index operations** - admin users can inspect indexed entries, active entries, missing embeddings, dimensions, rebuild time, and index errors.
@@ -79,7 +80,7 @@ Query
 
 The default generic `VectorStore<KnowledgeIndexItem>` implementation is in-memory. FAQ and document-chunk embeddings are serialized in SQLite, then loaded into the shared process index under `faq:<id>` and `document:<chunkId>` namespaces. Each stored vector carries an embedding profile derived from provider, model, endpoint, and input-schema version; stale profiles are rebuilt atomically before the process index is replaced. This keeps local setup dependency-free while preventing vectors from different model configurations from being silently mixed.
 
-FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. v0.2.6 adds TXT, Markdown, text-layer PDF, and DOCX ingestion with `semantic-v1` chunking. Document embeddings include document and section titles, and catalogue-style GPU questions receive deterministic vocabulary expansion before lexical recall. Chat recalls FAQ and document candidates separately so one source cannot crowd out the other, then injects at most three untrusted knowledge excerpts into the prompt. Exact FAQ answers remain deterministic; without an LLM key, the system returns the highest-ranked document name and original excerpt.
+FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. v0.2.6 adds TXT, Markdown, text-layer PDF, and DOCX ingestion with `semantic-v1` chunking. Document embeddings include document and section titles, and catalogue-style GPU questions receive deterministic vocabulary expansion before lexical recall. Chat recalls FAQ and document candidates separately so one source cannot crowd out the other, then injects at most three untrusted knowledge excerpts into the prompt. Exact FAQ answers remain deterministic; generated assistant messages render safe Markdown and can show compact document/chunk/page provenance. Without an LLM key, the system returns the highest-ranked document name and original excerpt.
 
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
@@ -141,13 +142,15 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | --- | --- |
 | `JWT_SECRET` | Token signing secret |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Local admin account |
-| `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI-compatible chat model |
-| `EMBED_PROVIDER` | Embedding mode, use `other` for local fallback |
+| `LLM_PROVIDER` / `EMBED_PROVIDER` | `openai`, `openai-compatible`, or `other` |
+| `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | Chat model endpoint, environment-only credential, and model |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI-compatible embedding model |
 | `DOCUMENT_UPLOAD_DIR` | Private document file directory; defaults to `./data/uploads` |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API rate limits |
+| `SESSION_INACTIVITY_MINUTES` | Minutes without activity before an active conversation is closed; defaults to `30` |
+| `CONVERSATION_EXPORT_MAX_MESSAGES` | Maximum complete message rows in one synchronous filtered CSV export; defaults to `5000` |
 
-Non-secret runtime model settings such as endpoint, provider and model name can also be overridden from the admin model configuration page and persisted in SQLite. API keys are never stored in SQLite; inject them through environment variables or deployment secrets.
+The environment is the source of truth for model configuration. The admin model page reads provider, endpoint, and model name from the environment and atomically writes non-secret edits back to the local `.env` file so they take effect immediately. Legacy `model_configs` rows in SQLite no longer override these values. The `openai` provider always uses `https://api.openai.com/v1`; custom API Base URLs are used only by `openai-compatible` and `other`. The admin API exposes only whether a key is configured and never accepts, returns, or rewrites key material; inject keys through environment variables or deployment secrets. In container or managed deployments where environment variables are externally injected or the filesystem is read-only, update the deployment secret/configuration and redeploy instead.
 
 ---
 
@@ -217,7 +220,7 @@ data/          Local SQLite database files
 
 - The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
-- Document parsing is synchronous inside the Express process. Encrypted, damaged, and scanned PDFs fail with a stable failure code; OCR, image knowledge, web ingestion, citations, and page jumps are not included.
+- Document parsing is synchronous inside the Express process. Encrypted, damaged, and scanned PDFs fail with a stable failure code; OCR, image knowledge, web ingestion, formal citations, and page jumps are not included.
 - Document files are global to the deployment; v0.2.6 does not add tenant-separated knowledge bases, background workers, document versioning, or external vector storage.
 - `VectorStore` is ready for future Qdrant or pgvector implementations, but the default deployment stays dependency-light.
 - Intent classification falls back to keyword rules when the LLM call fails.

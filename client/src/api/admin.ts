@@ -3,7 +3,7 @@
  */
 
 import { get, post, put, del, uploadFile, downloadBlob } from './client';
-import { IntentCategory } from '../types';
+import { IntentCategory, SessionStatus } from '../types';
 import type {
   LoginResponse,
   PaginationResponse,
@@ -26,7 +26,7 @@ import type {
 } from '../types';
 
 // Re-export types
-export { IntentCategory };
+export { IntentCategory, SessionStatus };
 export type {
   LoginResponse,
   PaginationResponse,
@@ -60,17 +60,23 @@ export async function getConversations(params: {
   page?: number;
   limit?: number;
   intent?: string;
+  status?: SessionStatus;
   from?: string;
   to?: string;
   keyword?: string;
+  timezoneOffset?: number;
+  timezoneOffsetTo?: number;
 }): Promise<PaginationResponse<unknown>> {
   return get<PaginationResponse<unknown>>('/admin/conversations', {
     page: params.page,
     limit: params.limit,
     intent: params.intent,
+    status: params.status,
     from: params.from,
     to: params.to,
     keyword: params.keyword,
+    timezoneOffset: params.timezoneOffset,
+    timezoneOffsetTo: params.timezoneOffsetTo,
   });
 }
 
@@ -78,10 +84,27 @@ export async function getConversationDetail(sessionId: string): Promise<Conversa
   return get<ConversationDetail>(`/admin/conversations/${sessionId}`);
 }
 
-export async function exportConversations(from?: string, to?: string): Promise<void> {
+export async function exportConversations(filters?: {
+  from?: string;
+  to?: string;
+  intent?: string;
+  status?: SessionStatus;
+  keyword?: string;
+  timezoneOffset?: number;
+  timezoneOffsetTo?: number;
+}): Promise<void> {
   const params = new URLSearchParams();
-  if (from) params.set('from', from);
-  if (to) params.set('to', to);
+  if (filters?.from) params.set('from', filters.from);
+  if (filters?.to) params.set('to', filters.to);
+  if (filters?.intent) params.set('intent', filters.intent);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.keyword) params.set('keyword', filters.keyword);
+  if (filters?.timezoneOffset !== undefined) {
+    params.set('timezoneOffset', String(filters.timezoneOffset));
+  }
+  if (filters?.timezoneOffsetTo !== undefined) {
+    params.set('timezoneOffsetTo', String(filters.timezoneOffsetTo));
+  }
   const queryStr = params.toString();
   const path = queryStr ? `/admin/conversations/export?${queryStr}` : '/admin/conversations/export';
   await downloadBlob(path, `conversations-${new Date().toISOString().slice(0, 10)}.csv`);

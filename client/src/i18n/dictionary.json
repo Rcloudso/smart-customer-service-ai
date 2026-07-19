@@ -51,14 +51,6 @@
     "zh": "随时为您解答问题",
     "en": "Ready to answer your questions"
   },
-  "chat.clear": {
-    "zh": "清空对话",
-    "en": "Clear chat"
-  },
-  "chat.cleared": {
-    "zh": "对话已清空",
-    "en": "Chat cleared"
-  },
   "chat.history": {
     "zh": "历史记录",
     "en": "History"
@@ -74,6 +66,10 @@
   "chat.historyLoadFailed": {
     "zh": "历史记录加载失败",
     "en": "Failed to load chat history"
+  },
+  "chat.closeFailed": {
+    "zh": "结束当前对话失败，请重试",
+    "en": "Failed to close the current chat. Please try again."
   },
   "chat.historyLoaded": {
     "zh": "历史对话已加载",
@@ -118,6 +114,18 @@
   "chat.faqAnswerPrefix": {
     "zh": "答：",
     "en": "A: "
+  },
+  "chat.documentReferences": {
+    "zh": "文档知识参考：",
+    "en": "Document knowledge references:"
+  },
+  "chat.documentChunkLabel": {
+    "zh": "切片 {index}",
+    "en": "Chunk {index}"
+  },
+  "chat.documentPageLabel": {
+    "zh": "第 {pages} 页",
+    "en": "Page {pages}"
   },
   "chat.inputPlaceholder": {
     "zh": "输入您的问题，Enter 发送，Shift+Enter 换行",
@@ -267,6 +275,10 @@
     "zh": "正在活跃",
     "en": "Active sessions"
   },
+  "dashboard.activeSessionsWindow": {
+    "zh": "近 {minutes} 分钟活跃",
+    "en": "Active in last {minutes} min"
+  },
   "dashboard.intentDistribution": {
     "zh": "意图分布",
     "en": "Intent distribution"
@@ -326,6 +338,10 @@
   "common.search": {
     "zh": "查询",
     "en": "Search"
+  },
+  "common.reset": {
+    "zh": "重置",
+    "en": "Reset"
   },
   "common.exportCsv": {
     "zh": "导出CSV",
@@ -427,6 +443,10 @@
     "zh": "已转人工",
     "en": "Escalated"
   },
+  "status.all": {
+    "zh": "全部状态",
+    "en": "All statuses"
+  },
   "conversations.title": {
     "zh": "对话管理",
     "en": "Conversations"
@@ -450,6 +470,22 @@
   "conversations.createdAt": {
     "zh": "创建时间",
     "en": "Created at"
+  },
+  "conversations.createdDateFilter": {
+    "zh": "创建日期",
+    "en": "Created date"
+  },
+  "conversations.statusFilter": {
+    "zh": "会话状态",
+    "en": "Conversation status"
+  },
+  "conversations.exportFilteredHint": {
+    "zh": "导出当前筛选结果中的全部消息",
+    "en": "Export every message from the current filtered conversations"
+  },
+  "conversations.exportFiltered": {
+    "zh": "导出筛选对话",
+    "en": "Export filtered chats"
   },
   "conversations.viewDetail": {
     "zh": "查看详情",
@@ -635,6 +671,14 @@
     "zh": "加载FAQ列表失败",
     "en": "Failed to load FAQ list"
   },
+  "faq.listTab": {
+    "zh": "FAQ列表",
+    "en": "FAQ list"
+  },
+  "faq.debugTab": {
+    "zh": "检索调试",
+    "en": "Retrieval debug"
+  },
   "faq.deleted": {
     "zh": "FAQ已删除",
     "en": "FAQ deleted"
@@ -724,8 +768,8 @@
     "en": "Embedding Model"
   },
   "config.providerHelp": {
-    "zh": "当前仅支持 OpenAI 兼容接口",
-    "en": "OpenAI-compatible APIs are currently supported"
+    "zh": "OpenAI 使用官方 API 地址；OpenAI Compatible 和其他服务商使用下方自定义地址。",
+    "en": "OpenAI uses the official API endpoint. OpenAI Compatible and Other providers use the custom endpoint below."
   },
   "config.provider": {
     "zh": "服务商",
@@ -1047,6 +1091,26 @@
     "zh": "失败原因",
     "en": "Failure reason"
   },
+  "documents.failureCodeValue": {
+    "zh": "错误代码",
+    "en": "Error code"
+  },
+  "documents.failureAdviceLabel": {
+    "zh": "排查建议",
+    "en": "Suggested action"
+  },
+  "documents.failureAdvice.default": {
+    "zh": "请根据失败原因修正文档后重新上传或重试；若仍失败，请将错误代码提供给维护者。",
+    "en": "Correct the document based on the failure reason, then upload or retry. If it still fails, provide the error code to the maintainer."
+  },
+  "documents.failureAdvice.embedding_failed": {
+    "zh": "请检查模型配置中的 Embedding 地址、模型和 API Key，确认服务可用后重试。",
+    "en": "Check the Embedding endpoint, model, and API key in Model Configuration, then retry."
+  },
+  "documents.failureAdvice.processing_failed": {
+    "zh": "请检查服务日志和模型配置，确认解析与 Embedding 服务可用后重试；若仍失败，请将错误代码提供给维护者。",
+    "en": "Check the service logs and Model Configuration, confirm parsing and Embedding services are available, then retry. If it still fails, provide the error code to the maintainer."
+  },
   "documents.chunkIndex": {
     "zh": "序号",
     "en": "Index"
@@ -1058,6 +1122,14 @@
   "documents.chunkContent": {
     "zh": "原文片段",
     "en": "Source excerpt"
+  },
+  "documents.viewFullChunk": {
+    "zh": "查看全文",
+    "en": "View full text"
+  },
+  "documents.chunkContentTitle": {
+    "zh": "切片原文",
+    "en": "Chunk source text"
   },
   "documents.pages": {
     "zh": "页码",

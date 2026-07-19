@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Tag } from 'tdesign-react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { intentLabel } from '../../i18n';
@@ -23,6 +24,9 @@ const INTENT_COLORS: Record<string, string> = {
 export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.ReactElement {
   const isUser = message.role === 'user';
   const { language, t } = useTranslation();
+  const documentSources = message.knowledgeSources?.filter((source) => (
+    source.knowledgeType === 'document'
+  )) ?? [];
 
   return (
     <div
@@ -37,7 +41,11 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
       <div
         className={`app-chat-bubble ${isUser ? 'app-chat-bubble--user' : 'app-chat-bubble--assistant'}`}
       >
-        {message.content || (message.isStreaming ? (
+        {message.content ? (
+          isUser
+            ? message.content
+            : <ReactMarkdown className="app-chat-markdown" skipHtml>{message.content}</ReactMarkdown>
+        ) : (message.isStreaming ? (
           <span style={{ opacity: 0.6 }}>{t('chat.thinking')}</span>
         ) : '')}
 
@@ -92,6 +100,36 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {!isUser && documentSources.length > 0 && (
+        <div className="app-chat-document-reference" data-testid="chat-document-references">
+          <div className="app-chat-document-reference__title">{t('chat.documentReferences')}</div>
+          {documentSources.map((source) => {
+            const pages = source.pageStart
+              ? `${source.pageStart}${source.pageEnd && source.pageEnd !== source.pageStart ? `–${source.pageEnd}` : ''}`
+              : null;
+            return (
+              <div
+                key={`${source.knowledgeType}:${source.knowledgeId}`}
+                className="app-chat-document-reference__item"
+              >
+                <div className="app-chat-document-reference__name">{source.title}</div>
+                <div className="app-chat-document-reference__location">
+                  {source.chunkIndex !== undefined && t('chat.documentChunkLabel', {
+                    index: source.chunkIndex + 1,
+                  })}
+                  {pages && (
+                    <>
+                      {source.chunkIndex !== undefined && ' · '}
+                      {t('chat.documentPageLabel', { pages })}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

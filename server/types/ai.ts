@@ -81,7 +81,13 @@ export interface ChatCompletionOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  responseFormat?: 'text' | 'json_object';
+  responseFormat?: 'text' | 'json_object' | 'json_schema';
+  responseSchema?: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
+  maxRetries?: number;
 }
 
 export interface EmbeddingResult {

@@ -34,6 +34,7 @@ async function main(): Promise<void> {
   process.env.JWT_SECRET = 'test-secret-123';
   process.env.DB_PATH = dbPath;
   process.env.LLM_API_KEY = '';
+  process.env.OPENAI_API_KEY = '';
   process.env.LLM_API_BASE = '';
   process.env.EMBED_PROVIDER = 'other';
   process.env.EMBED_API_KEY = '';

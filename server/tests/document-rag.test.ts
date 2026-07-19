@@ -76,7 +76,7 @@ async function testFailureRetryLifecycleAndDuplicateProtection(): Promise<void> 
       uploadedBy: 'admin-1',
     });
     assert.equal(failed.status, 'failed');
-    assert.equal(failed.failureCode, 'processing_failed');
+    assert.equal(failed.failureCode, 'embedding_failed');
     assert.equal(service.listChunks(failed.id, { page: 1, pageSize: 20 }).total, 0);
     assert.equal(fs.readdirSync(uploadDir).length, 1, 'accepted failed uploads remain available for retry');
     await assert.rejects(service.setActive(failed.id, false), /Only ready documents/);

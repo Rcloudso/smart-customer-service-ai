@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as chatApi from '../api/chat';
 import { usePreferences } from './usePreferences';
 import type { ChatHistoryDetail } from '../api/chat';
-import { MessageRole } from '../types';
+import { KnowledgeRetrievalSnapshot, MessageRole } from '../types';
 
 export interface ChatFaqMatch {
   id: string;
@@ -21,6 +21,7 @@ export interface ChatMessage {
   intent?: string | null;
   intentConf?: number | null;
   faqMatches?: ChatFaqMatch[];
+  knowledgeSources?: KnowledgeRetrievalSnapshot[];
   satisfaction?: number | null;
   isStreaming?: boolean;
 }
@@ -37,7 +38,7 @@ interface ChatState {
   sendMessage: (text: string) => Promise<void>;
   submitRating: (messageId: string, rating: number) => Promise<void>;
   loadHistory: (detail: ChatHistoryDetail) => void;
-  clearChat: () => void;
+  clearChat: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -143,6 +144,13 @@ export const useChat = create<ChatState>((set, get) => ({
         onDone: (data) => {
           // Update session ID
           set({ sessionId: data.sessionId });
+          set((prev) => ({
+            messages: prev.messages.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, knowledgeSources: data.knowledgeSources }
+                : m,
+            ),
+          }));
         },
         onError: (message: string) => {
           set({ error: message });
@@ -209,6 +217,7 @@ export const useChat = create<ChatState>((set, get) => ({
           content: message.content,
           intent: message.intent,
           intentConf: message.intentConf,
+          knowledgeSources: message.retrievalSnapshot,
           satisfaction: message.satisfaction,
           isStreaming: false,
         })),
@@ -221,7 +230,17 @@ export const useChat = create<ChatState>((set, get) => ({
     });
   },
 
-  clearChat: () => {
+  clearChat: async () => {
+    const sessionId = get().sessionId;
+    if (sessionId) {
+      try {
+        await chatApi.closeSession(sessionId);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : t('chat.closeFailed');
+        set({ error: errorMsg });
+        return;
+      }
+    }
     set({
       sessionId: null,
       messages: [],

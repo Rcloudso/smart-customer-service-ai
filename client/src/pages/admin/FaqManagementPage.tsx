@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   Card,
@@ -13,12 +13,14 @@ import {
   Textarea,
   Popconfirm,
   Upload,
+  Tabs,
 } from 'tdesign-react';
-import type { SelectValue } from 'tdesign-react';
+import type { SelectValue, TooltipProps } from 'tdesign-react';
 import type { UploadFile } from 'tdesign-react';
 import {
   AddIcon,
   DownloadIcon,
+  FilterClearIcon,
   RefreshIcon,
   SearchIcon,
   UploadIcon,
@@ -32,7 +34,7 @@ interface SimpleColumn {
   colKey: string;
   title: string;
   width?: number;
-  ellipsis?: boolean;
+  ellipsis?: boolean | TooltipProps;
   cell?: (params: { row: FaqEntry }) => React.ReactNode;
 }
 
@@ -58,6 +60,15 @@ const DEBUG_SOURCE_THEMES: Record<string, 'success' | 'primary' | 'warning' | 'd
   vector: 'primary',
   keyword: 'warning',
 };
+
+const TABLE_ELLIPSIS_TOOLTIP_PROPS: TooltipProps = {
+  theme: 'default',
+  placement: 'top-left',
+  overlayInnerClassName: 'app-table-ellipsis-tooltip',
+};
+
+const FAQ_TAB_VALUES = ['list', 'debug'] as const;
+type FaqTabValue = typeof FAQ_TAB_VALUES[number];
 
 interface FaqFormValues {
   question: string;
@@ -86,12 +97,15 @@ export function FaqManagementPage(): React.ReactElement {
   const [pageSize, setPageSize] = useState(20);
   const [category, setCategory] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [appliedCategory, setAppliedCategory] = useState('');
+  const [appliedKeyword, setAppliedKeyword] = useState('');
   const [indexStatus, setIndexStatus] = useState<FaqIndexStatus | null>(null);
   const [indexLoading, setIndexLoading] = useState(false);
   const [rebuildingIndex, setRebuildingIndex] = useState(false);
   const [debugQuery, setDebugQuery] = useState('');
   const [debugLoading, setDebugLoading] = useState(false);
   const [debugResult, setDebugResult] = useState<FaqDebugResult | null>(null);
+  const [activeTab, setActiveTab] = useState<FaqTabValue>('list');
 
   // Dialog state
   const [dialogVisible, setDialogVisible] = useState(false);
@@ -100,29 +114,34 @@ export function FaqManagementPage(): React.ReactElement {
   const [dialogFormValues, setDialogFormValues] = useState<FaqFormValues>(EMPTY_FAQ_FORM);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const requestIdRef = useRef(0);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const categoryOptions = CATEGORY_OPTION_KEYS.map((option) => ({
     label: option.value === '' ? `${t('common.all')} ${t('faq.category')}` : t(option.labelKey),
     value: option.value,
   }));
 
   const fetchFaqs = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
       const result = await adminApi.listFaq({
-        category: category || undefined,
-        keyword: keyword || undefined,
+        category: appliedCategory || undefined,
+        keyword: appliedKeyword || undefined,
         page,
         pageSize,
       });
+      if (requestId !== requestIdRef.current) return;
       setData(result.items ?? []);
       setTotal(result.total ?? 0);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       const message = err instanceof Error ? err.message : t('faq.listLoadFailed');
       MessagePlugin.error(message);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [page, pageSize, category, keyword, language]);
+  }, [page, pageSize, appliedCategory, appliedKeyword, language]);
 
   useEffect(() => {
     fetchFaqs();
@@ -145,9 +164,79 @@ export function FaqManagementPage(): React.ReactElement {
     fetchIndexStatus();
   }, [fetchIndexStatus]);
 
+  useEffect(() => {
+    const root = tabsRef.current;
+    if (!root) return;
+
+    const tabList = root.querySelector<HTMLElement>('.t-tabs__nav-wrap');
+    const tabs = Array.from(root.querySelectorAll<HTMLElement>('.t-tabs__nav-item'));
+    const panel = root.querySelector<HTMLElement>('.t-tab-panel');
+    if (!tabList || tabs.length !== FAQ_TAB_VALUES.length || !panel) return;
+
+    tabList.setAttribute('role', 'tablist');
+    panel.id = `faq-panel-${activeTab}`;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `faq-tab-${activeTab}`);
+    panel.tabIndex = 0;
+
+    const cleanups = tabs.map((tab, index) => {
+      const value = FAQ_TAB_VALUES[index];
+      const isActive = value === activeTab;
+      tab.id = `faq-tab-${value}`;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(isActive));
+      tab.setAttribute('aria-controls', `faq-panel-${value}`);
+      tab.tabIndex = isActive ? 0 : -1;
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        let nextIndex: number | null = null;
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = tabs.length - 1;
+
+        if (nextIndex !== null) {
+          event.preventDefault();
+          const nextValue = FAQ_TAB_VALUES[nextIndex];
+          setActiveTab(nextValue);
+          window.setTimeout(() => {
+            tabsRef.current
+              ?.querySelector<HTMLElement>(`#faq-tab-${nextValue}`)
+              ?.focus();
+          }, 0);
+          return;
+        }
+
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          setActiveTab(value);
+        }
+      };
+
+      tab.addEventListener('keydown', handleKeyDown);
+      return () => tab.removeEventListener('keydown', handleKeyDown);
+    });
+
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [activeTab, language]);
+
   const handleSearch = () => {
+    const nextKeyword = keyword.trim();
+    const shouldRefresh = page === 1
+      && nextKeyword === appliedKeyword
+      && category === appliedCategory;
+    setAppliedKeyword(nextKeyword);
+    setAppliedCategory(category);
     setPage(1);
-    fetchFaqs();
+    if (shouldRefresh) void fetchFaqs();
+  };
+
+  const handleReset = () => {
+    setKeyword('');
+    setCategory('');
+    setAppliedKeyword('');
+    setAppliedCategory('');
+    setPage(1);
   };
 
   const handleCreate = () => {
@@ -291,7 +380,7 @@ export function FaqManagementPage(): React.ReactElement {
       colKey: 'question',
       title: t('faq.question'),
       width: 220,
-      ellipsis: true,
+      ellipsis: TABLE_ELLIPSIS_TOOLTIP_PROPS,
       cell: ({ row }: { row: FaqEntry }) => (
         <span style={{ fontWeight: 500 }}>{row.question}</span>
       ),
@@ -299,12 +388,10 @@ export function FaqManagementPage(): React.ReactElement {
     {
       colKey: 'answer',
       title: t('faq.answer'),
-      ellipsis: true,
+      ellipsis: TABLE_ELLIPSIS_TOOLTIP_PROPS,
       cell: ({ row }: { row: FaqEntry }) => (
         <span style={{ color: 'var(--app-text-secondary)', fontSize: '13px' }}>
-          {row.answer.length > 80
-            ? row.answer.slice(0, 80) + '...'
-            : row.answer}
+          {row.answer}
         </span>
       ),
     },
@@ -380,6 +467,28 @@ export function FaqManagementPage(): React.ReactElement {
     },
   ];
 
+  const faqTable = (
+    <Card bordered className="app-table-card">
+      <Table
+        data={data}
+        columns={columns}
+        rowKey="id"
+        loading={loading}
+        size="medium"
+        stripe
+        hover
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showJumper: true,
+          pageSizeOptions: [10, 20, 50],
+          onChange: (pageInfo) => handlePageChange(pageInfo),
+        }}
+      />
+    </Card>
+  );
+
   return (
     <div className="app-page-container">
       <div className="app-page-header">
@@ -388,14 +497,27 @@ export function FaqManagementPage(): React.ReactElement {
         </h2>
       </div>
 
-      {/* Filters & actions */}
-      <Card bordered className="app-toolbar-card">
+      <Tabs
+        ref={tabsRef}
+        value={activeTab}
+        onChange={(value) => {
+          const nextValue = String(value);
+          if (FAQ_TAB_VALUES.includes(nextValue as FaqTabValue)) {
+            setActiveTab(nextValue as FaqTabValue);
+          }
+        }}
+        className="app-faq-tabs"
+        data-testid="faq-tabs"
+      >
+        <Tabs.TabPanel value="list" label={t('faq.listTab')}>
+
+          {/* Filters & actions */}
+          <Card bordered className="app-toolbar-card">
         <div className="app-toolbar-row">
           <Input
             placeholder={t('faq.searchPlaceholder')}
             value={keyword}
             onChange={(val: string) => setKeyword(val)}
-            onEnter={handleSearch}
             prefixIcon={<SearchIcon />}
             className="app-filter-input"
             clearable
@@ -408,6 +530,9 @@ export function FaqManagementPage(): React.ReactElement {
           />
           <Button theme="primary" onClick={handleSearch} icon={<SearchIcon />}>
             {t('common.search')}
+          </Button>
+          <Button variant="outline" onClick={handleReset} icon={<FilterClearIcon />} data-testid="faq-filter-reset">
+            {t('common.reset')}
           </Button>
           <div className="app-toolbar-spacer" />
           <div className="app-toolbar-actions">
@@ -484,10 +609,13 @@ export function FaqManagementPage(): React.ReactElement {
             </Button>
           </div>
         </div>
-      </Card>
+          </Card>
+          {faqTable}
+        </Tabs.TabPanel>
 
-      <div data-testid="faq-debug-panel">
-        <Card bordered className="app-debug-card">
+        <Tabs.TabPanel value="debug" label={t('faq.debugTab')}>
+          <div data-testid="faq-debug-panel">
+            <Card bordered className="app-debug-card">
           <div className="app-debug-header">
             <h3>{t('faq.debugTitle')}</h3>
             <span>{t('faq.debugSubtitle')}</span>
@@ -548,29 +676,10 @@ export function FaqManagementPage(): React.ReactElement {
               )}
             </div>
           ) : null}
-        </Card>
-      </div>
-
-      {/* Table */}
-      <Card bordered className="app-table-card">
-        <Table
-          data={data}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          size="medium"
-          stripe
-          hover
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showJumper: true,
-            pageSizeOptions: [10, 20, 50],
-            onChange: (pageInfo) => handlePageChange(pageInfo),
-          }}
-        />
-      </Card>
+            </Card>
+          </div>
+        </Tabs.TabPanel>
+      </Tabs>
 
       {/* Create/Edit Dialog */}
       <Dialog

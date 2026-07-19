@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -17,6 +17,7 @@ import type { SelectValue, UploadFile } from 'tdesign-react';
 import {
   CloseIcon,
   DeleteIcon,
+  FilterClearIcon,
   SearchIcon,
   UploadIcon,
 } from 'tdesign-icons-react';
@@ -41,13 +42,19 @@ export function DocumentManagementPage(): React.ReactElement {
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState<DocumentStatus | ''>('');
   const [activeFilter, setActiveFilter] = useState<'' | 'true' | 'false'>('');
+  const [appliedKeyword, setAppliedKeyword] = useState('');
+  const [appliedStatus, setAppliedStatus] = useState<DocumentStatus | ''>('');
+  const [appliedActiveFilter, setAppliedActiveFilter] = useState<'' | 'true' | 'false'>('');
+  const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [selected, setSelected] = useState<DocumentItem | null>(null);
+  const [selectedChunk, setSelectedChunk] = useState<DocumentChunk | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
   const [chunkPage, setChunkPage] = useState(1);
   const [chunkPageSize, setChunkPageSize] = useState(10);
   const [chunkTotal, setChunkTotal] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const statusOptions = useMemo(() => [
     { label: t('common.all'), value: '' },
@@ -62,23 +69,26 @@ export function DocumentManagementPage(): React.ReactElement {
   ], [language]);
 
   const fetchDocuments = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
       const result = await adminApi.listDocuments({
-        status: status || undefined,
-        isActive: activeFilter === '' ? undefined : activeFilter === 'true',
-        keyword: keyword.trim() || undefined,
+        status: appliedStatus || undefined,
+        isActive: appliedActiveFilter === '' ? undefined : appliedActiveFilter === 'true',
+        keyword: appliedKeyword || undefined,
         page,
         pageSize,
       });
+      if (requestId !== requestIdRef.current) return;
       setDocuments(result.items ?? []);
       setTotal(result.total ?? 0);
     } catch {
+      if (requestId !== requestIdRef.current) return;
       MessagePlugin.error(t('documents.loadFailed'));
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [status, activeFilter, keyword, page, pageSize, language]);
+  }, [appliedStatus, appliedActiveFilter, appliedKeyword, page, pageSize, language]);
 
   const fetchChunks = useCallback(async (documentId: string, targetPage: number, targetPageSize: number) => {
     setChunksLoading(true);
@@ -108,6 +118,7 @@ export function DocumentManagementPage(): React.ReactElement {
       MessagePlugin[document.status === 'ready' ? 'success' : 'warning'](
         document.status === 'ready' ? t('documents.uploaded') : t('documents.uploadFailedAccepted'),
       );
+      setUploadFiles([]);
       setPage(1);
       await fetchDocuments();
     } catch {
@@ -115,6 +126,29 @@ export function DocumentManagementPage(): React.ReactElement {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleSearch = () => {
+    const nextKeyword = keyword.trim();
+    const shouldRefresh = page === 1
+      && nextKeyword === appliedKeyword
+      && status === appliedStatus
+      && activeFilter === appliedActiveFilter;
+    setAppliedKeyword(nextKeyword);
+    setAppliedStatus(status);
+    setAppliedActiveFilter(activeFilter);
+    setPage(1);
+    if (shouldRefresh) void fetchDocuments();
+  };
+
+  const handleReset = () => {
+    setKeyword('');
+    setStatus('');
+    setActiveFilter('');
+    setAppliedKeyword('');
+    setAppliedStatus('');
+    setAppliedActiveFilter('');
+    setPage(1);
   };
 
   const handleRetry = async (document: DocumentItem) => {
@@ -173,11 +207,16 @@ export function DocumentManagementPage(): React.ReactElement {
       cell: ({ row }: { row: DocumentItem }) => formatBytes(row.sizeBytes),
     },
     {
-      colKey: 'status', title: t('common.status'), width: 100,
+      colKey: 'status', title: t('common.status'), width: 150,
       cell: ({ row }: { row: DocumentItem }) => (
-        <Tag theme={STATUS_THEMES[row.status]} variant="light">
-          {t(`documents.status.${row.status}`)}
-        </Tag>
+        <div className="app-document-status">
+          <Tag theme={STATUS_THEMES[row.status]} variant="light">
+            {t(`documents.status.${row.status}`)}
+          </Tag>
+          {row.failureCode && (
+            <span>{t(`documents.failure.${row.failureCode}`)}</span>
+          )}
+        </div>
       ),
     },
     { colKey: 'chunkCount', title: t('documents.chunkCount'), width: 90 },
@@ -200,16 +239,16 @@ export function DocumentManagementPage(): React.ReactElement {
       colKey: 'actions', title: t('common.actions'), width: 220, fixed: 'right' as const,
       cell: ({ row }: { row: DocumentItem }) => (
         <Space size="small">
-          <Button variant="text" size="small" onClick={() => openDetails(row)} data-testid="document-view">
+          <Button theme="primary" variant="text" size="small" className="app-table-action-button" onClick={() => openDetails(row)} data-testid="document-view">
             {t('documents.view')}
           </Button>
           {row.status === 'failed' && (
-            <Button variant="text" theme="primary" size="small" loading={busyId === row.id} onClick={() => handleRetry(row)} data-testid="document-retry">
+            <Button variant="text" theme="primary" size="small" className="app-table-action-button" loading={busyId === row.id} onClick={() => handleRetry(row)} data-testid="document-retry">
               {t('documents.retry')}
             </Button>
           )}
           <Popconfirm content={t('documents.deleteConfirm')} onConfirm={() => handleDelete(row)}>
-            <Button variant="text" theme="danger" size="small" icon={<DeleteIcon />} loading={busyId === row.id} aria-label={t('common.delete')} />
+            <Button variant="text" theme="danger" size="small" className="app-table-action-button" icon={<DeleteIcon />} loading={busyId === row.id} aria-label={t('common.delete')} />
           </Popconfirm>
         </Space>
       ),
@@ -219,7 +258,17 @@ export function DocumentManagementPage(): React.ReactElement {
   const chunkColumns = [
     { colKey: 'chunkIndex', title: t('documents.chunkIndex'), width: 80 },
     { colKey: 'title', title: t('documents.chunkTitle'), width: 140, ellipsis: true, cell: ({ row }: { row: DocumentChunk }) => row.title ?? '—' },
-    { colKey: 'content', title: t('documents.chunkContent'), ellipsis: true },
+    {
+      colKey: 'content', title: t('documents.chunkContent'),
+      cell: ({ row }: { row: DocumentChunk }) => (
+        <div className="app-document-chunk-preview">
+          <span data-testid="document-chunk-preview-text">{row.content}</span>
+          <Button theme="primary" variant="text" size="small" className="app-table-action-button" onClick={() => setSelectedChunk(row)} data-testid="document-chunk-view">
+            {t('documents.viewFullChunk')}
+          </Button>
+        </div>
+      ),
+    },
     { colKey: 'pages', title: t('documents.pages'), width: 100, cell: ({ row }: { row: DocumentChunk }) => formatPages(row) },
     { colKey: 'characterCount', title: t('documents.characters'), width: 90 },
   ];
@@ -236,9 +285,10 @@ export function DocumentManagementPage(): React.ReactElement {
       <Card bordered className="app-toolbar-card">
         <div className="app-toolbar-row">
           <Input value={keyword} onChange={(value: string) => setKeyword(value)} placeholder={t('documents.searchPlaceholder')} prefixIcon={<SearchIcon />} clearable className="app-filter-input" />
-          <Select value={status} onChange={(value: SelectValue) => { setStatus(String(value ?? '') as DocumentStatus | ''); setPage(1); }} options={statusOptions} className="app-filter-select" />
-          <Select value={activeFilter} onChange={(value: SelectValue) => { setActiveFilter(String(value ?? '') as '' | 'true' | 'false'); setPage(1); }} options={activeOptions} className="app-filter-select" />
-          <Button theme="primary" icon={<SearchIcon />} onClick={() => { setPage(1); fetchDocuments(); }}>{t('common.search')}</Button>
+          <Select value={status} onChange={(value: SelectValue) => setStatus(String(value ?? '') as DocumentStatus | '')} options={statusOptions} className="app-filter-select" />
+          <Select value={activeFilter} onChange={(value: SelectValue) => setActiveFilter(String(value ?? '') as '' | 'true' | 'false')} options={activeOptions} className="app-filter-select" />
+          <Button theme="primary" icon={<SearchIcon />} onClick={handleSearch}>{t('common.search')}</Button>
+          <Button variant="outline" icon={<FilterClearIcon />} onClick={handleReset} data-testid="document-filter-reset">{t('common.reset')}</Button>
           <div className="app-toolbar-spacer" />
           <div className="app-toolbar-actions">
             <Upload
@@ -247,8 +297,11 @@ export function DocumentManagementPage(): React.ReactElement {
               accept=".txt,.md,.pdf,.docx"
               autoUpload={false}
               disabled={uploading}
+              files={uploadFiles}
               onChange={(files: UploadFile | UploadFile[]) => {
-                const file = (Array.isArray(files) ? files[0] : files) as UploadFile;
+                const nextFiles = Array.isArray(files) ? files : [files];
+                setUploadFiles(nextFiles);
+                const file = nextFiles[0];
                 if (file?.raw) handleUpload(file.raw as File);
               }}
             >
@@ -276,10 +329,10 @@ export function DocumentManagementPage(): React.ReactElement {
       <Dialog
         visible={Boolean(selected)}
         header={t('documents.detailTitle')}
-        closeBtn={<Button variant="text" shape="square" aria-label={t('common.close')} icon={<CloseIcon />} />}
+        closeBtn={<Button data-testid="document-detail-close" variant="text" shape="square" aria-label={t('common.close')} icon={<CloseIcon />} />}
         footer={false}
-        width="840px"
-        onClose={() => setSelected(null)}
+        width="min(840px, calc(100vw - 32px))"
+        onClose={() => { setSelected(null); setSelectedChunk(null); }}
       >
         {selected && (
           <div className="app-document-detail" data-testid="document-detail">
@@ -290,7 +343,25 @@ export function DocumentManagementPage(): React.ReactElement {
               <span><strong>{t('common.status')}</strong>{t(`documents.status.${selected.status}`)}</span>
               <span><strong>{t('documents.characters')}</strong>{selected.characterCount}</span>
               <span><strong>{t('documents.chunkCount')}</strong>{selected.chunkCount}</span>
-              {selected.failureCode && <span className="app-document-failure"><strong>{t('documents.failureCode')}</strong>{t(`documents.failure.${selected.failureCode}`)}</span>}
+              {selected.failureCode && (
+                <div className="app-document-failure" role="status">
+                  <strong>{t('documents.failureCode')}</strong>
+                  <span className="app-document-failure__reason">
+                    {t(`documents.failure.${selected.failureCode}`)}
+                  </span>
+                  <span className="app-document-failure__code">
+                    {t('documents.failureCodeValue')}: <code>{selected.failureCode}</code>
+                  </span>
+                  <span className="app-document-failure__advice">
+                    <b>{t('documents.failureAdviceLabel')}</b>
+                    {t(selected.failureCode === 'embedding_failed'
+                      ? 'documents.failureAdvice.embedding_failed'
+                      : selected.failureCode === 'processing_failed'
+                        ? 'documents.failureAdvice.processing_failed'
+                        : 'documents.failureAdvice.default')}
+                  </span>
+                </div>
+              )}
             </div>
             <Table
               rowKey="id"
@@ -306,6 +377,22 @@ export function DocumentManagementPage(): React.ReactElement {
                 fetchChunks(selected.id, info.current, info.pageSize);
               }}
             />
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        visible={Boolean(selectedChunk)}
+        header={t('documents.chunkContentTitle')}
+        className="app-document-chunk-dialog"
+        closeBtn={<Button data-testid="document-chunk-content-close" variant="text" shape="square" aria-label={t('common.close')} icon={<CloseIcon />} />}
+        footer={false}
+        width="min(680px, calc(100vw - 32px))"
+        onClose={() => setSelectedChunk(null)}
+      >
+        {selectedChunk && (
+          <div className="app-document-chunk-content" data-testid="document-chunk-content">
+            {selectedChunk.content}
           </div>
         )}
       </Dialog>

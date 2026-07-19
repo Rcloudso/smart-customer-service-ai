@@ -21,6 +21,12 @@ async function main(): Promise<void> {
     fs.rmSync(`${dbPath}${suffix}`, { force: true });
   }
 
+  const modelConfigEnvPath = path.resolve(
+    process.cwd(),
+    process.env.MODEL_CONFIG_ENV_PATH ?? './data/e2e-model-config.env',
+  );
+  fs.rmSync(modelConfigEnvPath, { force: true });
+
   const uploadDir = path.isAbsolute(process.env.DOCUMENT_UPLOAD_DIR)
     ? process.env.DOCUMENT_UPLOAD_DIR
     : path.resolve(process.cwd(), process.env.DOCUMENT_UPLOAD_DIR);

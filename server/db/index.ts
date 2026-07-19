@@ -56,6 +56,12 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_status_created ON sessions(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_ident, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_status_created ON sessions(user_ident, status, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS faq_entries (
       id TEXT PRIMARY KEY,
@@ -181,6 +187,7 @@ export function initSchema(database: Database.Database): void {
 
   ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
   ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');

@@ -64,7 +64,7 @@ class OpenAIClientImpl implements LLMClient {
 
   /**
    * Ensure the internal clients are fresh by comparing config hash.
-   * If any config value changed (e.g. via DB override), rebuild the affected client(s).
+   * If any environment-backed config value changed, rebuild the affected client(s).
    */
   private ensureFresh(): void {
     const newHash = this.computeHash();
@@ -79,14 +79,17 @@ class OpenAIClientImpl implements LLMClient {
   async chat(messages: LLMMessage[], options?: ChatCompletionOptions): Promise<string> {
     this.ensureFresh();
     return this.withRetry(async () => {
+      const responseFormat = options?.responseFormat === 'json_schema' && options.responseSchema
+        ? { type: 'json_schema' as const, json_schema: options.responseSchema }
+        : options?.responseFormat === 'json_object'
+          ? { type: 'json_object' as const }
+          : undefined;
       const response = await this.chatClient.chat.completions.create({
         model: options?.model ?? config.llm.model,
         messages: messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
         temperature: options?.temperature ?? 0.7,
         max_tokens: options?.maxTokens ?? 2000,
-        response_format: options?.responseFormat === 'json_object'
-          ? { type: 'json_object' }
-          : undefined,
+        response_format: responseFormat,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -94,7 +97,7 @@ class OpenAIClientImpl implements LLMClient {
         throw new Error('Empty response from LLM');
       }
       return content;
-    });
+    }, options?.maxRetries);
   }
 
   async chatStream(

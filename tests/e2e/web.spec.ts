@@ -39,6 +39,7 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(page.getByTestId('chat-layout')).toBeVisible();
     await expect(page.getByTestId('chat-sidebar')).toBeVisible();
     await expect(page.getByTestId('new-chat-button')).toContainText('新对话');
+    await expect(page.getByRole('button', { name: '清空对话' })).toHaveCount(0);
 
     const input = page.getByTestId('chat-input');
     const sendButton = page.getByTestId('chat-send-button');
@@ -77,6 +78,52 @@ test.describe('Web automation: customer chat experience', () => {
     await page.getByTestId('theme-toggle').click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
+
+  test('assistant messages render safe Markdown without executing raw HTML', async ({ page }) => {
+    await page.route('**/api/chat', async (route) => {
+      const events = [
+        { type: 'intent', content: 'general', confidence: 0.9 },
+        { type: 'token', content: '1. **薪酬制度**\\n2. <script>window.__unsafe = true</script>' },
+        {
+          type: 'done',
+          content: {
+            sessionId: 'markdown-session',
+            messageId: 'markdown-message',
+            intent: 'general',
+            knowledgeSources: [{
+              knowledgeType: 'document',
+              knowledgeId: 'compensation-chunk',
+              documentId: 'compensation-document',
+              title: '公司薪酬制度.pdf',
+              similarity: 0.63,
+              source: 'vector',
+              chunkIndex: 1,
+              pageStart: 2,
+              pageEnd: 2,
+            }],
+          },
+        },
+      ];
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+      });
+    });
+
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill('介绍薪酬制度');
+    await page.getByTestId('chat-send-button').click();
+
+    const assistantBubble = page.locator('.app-chat-bubble--assistant').last();
+    await expect(assistantBubble.locator('strong')).toHaveText('薪酬制度');
+    await expect(assistantBubble).not.toContainText('**薪酬制度**');
+    await expect(assistantBubble.locator('script')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as typeof window & { __unsafe?: boolean }).__unsafe)).not.toBe(true);
+    await expect(page.getByTestId('chat-document-references')).toContainText('公司薪酬制度.pdf');
+    await expect(page.getByTestId('chat-document-references')).toContainText('切片 2');
+    await expect(page.getByTestId('chat-document-references')).toContainText('第 2 页');
+  });
 });
 
 test.describe('Web automation: admin boundaries and FAQ index operation', () => {
@@ -111,6 +158,20 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByRole('heading', { name: '管理后台' })).toBeVisible();
   });
 
+  test('dashboard date picker opens without crashing the page', async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+
+    await loginAsAdmin(page);
+    await page.getByPlaceholder('开始日期').click();
+    await page.waitForTimeout(50);
+
+    expect(consoleErrors.filter((message) => message.includes('DatePicker'))).toEqual([]);
+    await expect(page.getByRole('heading', { name: '数据概览' })).toBeVisible();
+  });
+
   test('model configuration shows environment credential status without key inputs', async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByText('模型配置').click();
@@ -125,6 +186,156 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await page.getByTestId('language-toggle').click();
     await expect(page.getByTestId('llm-api-key-status')).toContainText('Not configured');
     await expect(page.getByTestId('llm-api-key-status')).toContainText('environment');
+  });
+
+  test('model provider selection echoes configured values and controls custom base URL fields', async ({ page }) => {
+    let useOfficialProviders = false;
+    await page.route('**/api/admin/config/model', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            llmProvider: useOfficialProviders ? 'openai' : 'openai-compatible',
+            llmApiBase: 'https://compatible.example/v1',
+            llmModel: 'compatible-chat',
+            embedProvider: useOfficialProviders ? 'openai' : 'other',
+            embedApiBase: 'http://localhost:11434/v1',
+            embedModel: 'local-embedding',
+            llmApiKeyConfigured: false,
+            embedApiKeyConfigured: false,
+          },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    await page.getByText('模型配置').click();
+    await expect(page.getByTestId('llm-provider-select').locator('input')).toHaveValue('OpenAI Compatible');
+    await expect(page.getByTestId('embed-provider-select').locator('input')).toHaveValue('其他');
+    await expect(page.getByTestId('llm-api-base-field')).toBeVisible();
+    await expect(page.getByTestId('embed-api-base-field')).toBeVisible();
+
+    useOfficialProviders = true;
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByTestId('llm-provider-select').locator('input')).toHaveValue('OpenAI');
+    await expect(page.getByTestId('embed-provider-select').locator('input')).toHaveValue('OpenAI');
+    await expect(page.getByTestId('llm-api-base-field')).toHaveCount(0);
+    await expect(page.getByTestId('embed-api-base-field')).toHaveCount(0);
+  });
+
+  test('dashboard date filter resets to the unfiltered range', async ({ page }) => {
+    const overviewRequests: string[] = [];
+    const trendRequests: string[] = [];
+    await page.route('**/api/admin/stats/overview**', async (route) => {
+      overviewRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            totalConversations: 0,
+            totalMessages: 0,
+            avgSatisfaction: 0,
+            escalationRate: 0,
+            activeSessions: 0,
+            intentDistribution: [],
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/stats/satisfaction-trend**', async (route) => {
+      trendRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, data: [], message: 'ok' }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    const startDateInput = page.getByPlaceholder('开始日期');
+    const endDateInput = page.getByPlaceholder('结束日期');
+    await expect.poll(() => overviewRequests.length).toBeGreaterThan(0);
+    await expect.poll(() => trendRequests.length).toBeGreaterThan(0);
+    await page.waitForTimeout(50);
+    const initialOverviewCount = overviewRequests.length;
+    const initialTrendCount = trendRequests.length;
+    await startDateInput.fill('2026-07-01');
+    await endDateInput.fill('2026-07-15');
+    await endDateInput.press('Enter');
+    await page.waitForTimeout(250);
+    expect(overviewRequests).toHaveLength(initialOverviewCount);
+    expect(trendRequests).toHaveLength(initialTrendCount);
+
+    await page.getByTestId('dashboard-filter-search').click();
+    await expect.poll(() => overviewRequests.some((requestUrl) => {
+      const url = new URL(requestUrl);
+      return url.searchParams.get('from') === '2026-07-01'
+        && url.searchParams.get('to') === '2026-07-15';
+    })).toBe(true);
+
+    const overviewCount = overviewRequests.length;
+    const trendCount = trendRequests.length;
+    await page.getByTestId('dashboard-filter-reset').click();
+    await expect.poll(() => overviewRequests.length).toBe(overviewCount + 1);
+    await expect.poll(() => trendRequests.length).toBe(trendCount + 1);
+    for (const requestUrl of [overviewRequests.at(-1)!, trendRequests.at(-1)!]) {
+      const url = new URL(requestUrl);
+      expect(url.searchParams.get('from')).toBeNull();
+      expect(url.searchParams.get('to')).toBeNull();
+    }
+    await expect(startDateInput).toHaveValue('');
+    await expect(endDateInput).toHaveValue('');
+  });
+
+  test('dashboard trend pagination reports rendered dates and explains the active window', async ({ page }) => {
+    const trend = Array.from({ length: 20 }, (_, index) => ({
+      date: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      avgRating: index === 0 ? 5 : 0,
+      count: index === 0 ? 2 : 0,
+    }));
+    await page.route('**/api/admin/stats/overview**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            totalConversations: 20,
+            totalMessages: 40,
+            avgSatisfaction: 5,
+            escalationRate: 0,
+            activeSessions: 2,
+            activeWindowMinutes: 30,
+            intentDistribution: [],
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/stats/satisfaction-trend**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, data: trend, message: 'ok' }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    await expect(page.getByText('近 30 分钟活跃')).toBeVisible();
+    await expect(page.getByText(/共\s*20\s*条数据/)).toBeVisible();
+    const trendRows = page.getByRole('row').filter({ has: page.getByRole('cell') });
+    await expect(trendRows).toHaveCount(14);
+    await expect(trendRows.first()).toContainText('2026-06-20');
   });
 
   test('an authenticated 401 clears local auth state and returns to login', async ({ page }) => {
@@ -198,7 +409,7 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       });
     });
 
-    await page.getByRole('button', { name: '导出CSV' }).click();
+    await page.getByRole('button', { name: '导出筛选对话' }).click();
 
     await expect(page).toHaveURL(/\/login$/);
     expect(requestAuthorization).toMatch(/^Bearer\s+\S+$/);
@@ -206,6 +417,214 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       token: localStorage.getItem('auth_token'),
       user: localStorage.getItem('auth_user'),
     }))).toEqual({ token: null, user: null });
+  });
+
+  test('conversation filters reset to their defaults', async ({ page }) => {
+    await loginAsAdmin(page);
+    const listRequests: string[] = [];
+    await page.route('**/api/admin/conversations?**', async (route) => {
+      listRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.getByText('对话管理').click();
+    await expect(page).toHaveURL(/\/admin\/conversations$/);
+    await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+    const initialRequestCount = listRequests.length;
+
+    const keywordInput = page.getByPlaceholder('搜索关键词...');
+    const statusInput = page.getByRole('textbox', { name: '会话状态' });
+    const createdDateInput = page.getByPlaceholder('创建日期');
+    await keywordInput.fill('refund-user');
+    await statusInput.click();
+    await page.getByText('已关闭', { exact: true }).last().click();
+    await createdDateInput.click();
+    await page
+      .locator('.t-date-picker__panel .t-date-picker__cell:not(.t-date-picker__cell--additional) .t-date-picker__cell-inner')
+      .filter({ hasText: /^17$/ })
+      .click();
+    await page.waitForTimeout(250);
+    expect(listRequests).toHaveLength(initialRequestCount);
+
+    await page.getByRole('button', { name: '查询' }).click();
+    await expect.poll(() => listRequests.length).toBe(initialRequestCount + 1);
+    const submittedUrl = new URL(listRequests.at(-1)!);
+    expect(submittedUrl.searchParams.get('keyword')).toBe('refund-user');
+    expect(submittedUrl.searchParams.get('status')).toBe('closed');
+    expect(submittedUrl.searchParams.get('from')).toBe('2026-07-17');
+    expect(submittedUrl.searchParams.get('to')).toBe('2026-07-17');
+    expect(submittedUrl.searchParams.get('timezoneOffset')).not.toBeNull();
+    expect(submittedUrl.searchParams.get('timezoneOffsetTo')).not.toBeNull();
+
+    let exportUrl = '';
+    await page.route('**/api/admin/conversations/export**', async (route) => {
+      exportUrl = route.request().url();
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/csv; charset=utf-8',
+        body: 'SessionID,Content\nsession,filtered',
+      });
+    });
+    await page.getByRole('button', { name: '导出筛选对话' }).click();
+    await expect.poll(() => exportUrl).not.toBe('');
+    const exported = new URL(exportUrl);
+    expect(exported.searchParams.get('keyword')).toBe('refund-user');
+    expect(exported.searchParams.get('status')).toBe('closed');
+    expect(exported.searchParams.get('from')).toBe('2026-07-17');
+    expect(exported.searchParams.get('to')).toBe('2026-07-17');
+    expect(exported.searchParams.get('timezoneOffset')).toBe(
+      submittedUrl.searchParams.get('timezoneOffset'),
+    );
+    expect(exported.searchParams.get('timezoneOffsetTo')).toBe(
+      submittedUrl.searchParams.get('timezoneOffsetTo'),
+    );
+
+    const resetRequestPromise = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/api/admin/conversations')
+        && !url.searchParams.has('keyword')
+        && !url.searchParams.has('status')
+        && !url.searchParams.has('from')
+        && !url.searchParams.has('to');
+    });
+    await page.getByTestId('conversation-filter-reset').click();
+    await resetRequestPromise;
+    await expect(keywordInput).toHaveValue('');
+    await expect(statusInput).toHaveValue('全部状态');
+    await expect(createdDateInput).toHaveValue('');
+  });
+
+  test('admin conversation echoes render safe Markdown and knowledge actions share table styling', async ({ page }) => {
+    const timestamp = '2026-07-18T12:00:00.000Z';
+    const markdownAnswer = '**粗体回答**\n\n1. 第一项\n2. 第二项\n\n<script>window.__adminUnsafe = true</script>';
+    await loginAsAdmin(page);
+
+    await page.route('**/api/admin/conversations?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            items: [{
+              id: 'markdown-session',
+              userIdent: 'markdown-user',
+              status: 'active',
+              messageCount: 1,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            }],
+            total: 1,
+            page: 1,
+            pageSize: 20,
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/conversations/markdown-session', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            session: {
+              id: 'markdown-session',
+              userIdent: 'markdown-user',
+              status: 'active',
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              closedAt: null,
+              closeReason: null,
+            },
+            messages: [{
+              id: 'markdown-message',
+              role: 'assistant',
+              content: markdownAnswer,
+              intent: 'general',
+              intentConf: 0.9,
+              satisfaction: null,
+              escalated: 0,
+              createdAt: timestamp,
+            }],
+            escalation: null,
+          },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await page.getByText('对话管理').click();
+    await page.getByRole('button', { name: '查看详情' }).click();
+    const conversationDetail = page.locator('.app-conversation-detail');
+    await expect(conversationDetail.locator('strong')).toHaveText('粗体回答');
+    await expect(conversationDetail.locator('ol li')).toHaveCount(2);
+    await expect(conversationDetail.locator('script')).toHaveCount(0);
+    await page.locator('.t-dialog:visible .t-dialog__close').click();
+    await expect(conversationDetail).toBeHidden();
+
+    const reviewItem = {
+      id: 'markdown-review',
+      sessionId: 'markdown-session',
+      userMessageId: 'markdown-user-message',
+      assistantMessageId: 'markdown-message',
+      question: '**用户问题**',
+      answer: markdownAnswer,
+      intent: 'general',
+      intentConf: 0.9,
+      retrievalSnapshot: [],
+      triggerReason: 'low_retrieval_score',
+      rating: 2,
+      status: 'pending',
+      linkedFaqId: null,
+      dismissReason: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await page.route('**/api/admin/knowledge-reviews/stats', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { pending: 1, converted: 0, dismissed: 0, total: 1 },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/knowledge-reviews?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [reviewItem], total: 1, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await page.getByText('知识审核').click();
+    const reviewRow = knowledgeReviewRow(page, '用户问题');
+    await expect(reviewRow.getByTestId('knowledge-review-view')).toHaveClass(/app-table-action-button/);
+    await expect(reviewRow.getByTestId('knowledge-review-convert')).toHaveClass(/app-table-action-button/);
+    await expect(reviewRow.getByTestId('knowledge-review-dismiss')).toHaveClass(/app-table-action-button/);
+    await reviewRow.getByTestId('knowledge-review-view').click();
+    const reviewDetail = page.getByTestId('knowledge-review-detail');
+    await expect(reviewDetail.locator('strong')).toContainText(['用户问题', '粗体回答']);
+    await expect(reviewDetail.locator('ol li')).toHaveCount(2);
+    await expect(reviewDetail.locator('script')).toHaveCount(0);
+    expect(await page.evaluate(() => (
+      window as typeof window & { __adminUnsafe?: boolean }
+    ).__adminUnsafe)).not.toBe(true);
   });
 
   test('a delayed 401 from an old token does not clear a newer login', async ({ page }) => {
@@ -299,7 +718,11 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByRole('heading', { name: /FAQ\s*管理/ })).toBeVisible();
     await expect(page.getByTestId('faq-index-status')).toContainText('索引状态');
     await expect(page.getByTestId('faq-index-status')).toContainText(/已索引|加载中/);
-    await expect(page.getByTestId('faq-debug-panel')).toBeVisible();
+    const listTab = page.getByRole('tab', { name: 'FAQ列表' });
+    const debugTab = page.getByRole('tab', { name: '检索调试' });
+    await expect(listTab).toHaveAttribute('aria-selected', 'true');
+    await expect(debugTab).toHaveAttribute('aria-selected', 'false');
+    await expect(page.getByTestId('faq-debug-panel')).toHaveCount(0);
 
     const rebuildButton = page.getByTestId('faq-rebuild-index-button');
     await expect(rebuildButton).toBeVisible();
@@ -307,6 +730,10 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByText('FAQ索引已重建')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('faq-index-status')).toContainText('已索引');
 
+    await listTab.focus();
+    await listTab.press('ArrowRight');
+    await expect(debugTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('faq-debug-panel')).toBeVisible();
     await page.getByTestId('faq-debug-query').locator('input').fill('如何申请退款？');
     const [debugResponse] = await Promise.all([
       page.waitForResponse((res) => res.url().includes('/api/admin/faq/search/debug')),
@@ -316,6 +743,129 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByTestId('faq-debug-results')).toContainText('如何申请退款？');
     await expect(page.getByTestId('faq-debug-results')).toContainText('最佳分');
     await expect(page.getByTestId('faq-debug-results')).toContainText(/keyword|vector|hybrid/);
+  });
+
+  test('FAQ filters reset to their defaults', async ({ page }) => {
+    await loginAsAdmin(page);
+    const listRequests: string[] = [];
+    await page.route('**/api/admin/faq?**', async (route) => {
+      listRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.getByText('FAQ管理').click();
+    await expect(page).toHaveURL(/\/admin\/faq$/);
+    await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+    const initialRequestCount = listRequests.length;
+
+    const keywordInput = page.getByPlaceholder('搜索问题关键词...');
+    const categoryInput = page.locator('.app-toolbar-row .t-select input');
+    await keywordInput.fill('退款');
+    await categoryInput.click();
+    await page.getByText('退款', { exact: true }).last().click();
+    await page.waitForTimeout(250);
+    expect(listRequests).toHaveLength(initialRequestCount);
+
+    await page.getByRole('button', { name: '查询' }).click();
+    await expect.poll(() => listRequests.length).toBe(initialRequestCount + 1);
+    const submittedUrl = new URL(listRequests.at(-1)!);
+    expect(submittedUrl.searchParams.get('keyword')).toBe('退款');
+    expect(submittedUrl.searchParams.get('category')).toBe('refund');
+
+    const resetRequestPromise = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/api/admin/faq')
+        && !url.searchParams.has('keyword')
+        && !url.searchParams.has('category');
+    });
+    await page.getByTestId('faq-filter-reset').click();
+    await resetRequestPromise;
+    await expect(keywordInput).toHaveValue('');
+    await expect(categoryInput).toHaveValue('全部 类别');
+  });
+
+  test('FAQ answer focus ring belongs to the textarea, not its counter row', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByText('FAQ管理').click();
+    await page.getByRole('button', { name: '新增FAQ' }).click();
+
+    const textarea = page.locator('.t-dialog .t-textarea__inner');
+    const wrapper = page.locator('.t-dialog .t-textarea');
+    const counter = page.locator('.t-dialog .t-textarea__info_wrapper');
+    await textarea.fill('边框测试');
+    await textarea.focus();
+
+    const styles = await Promise.all([
+      textarea.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { borderWidth: style.borderTopWidth, boxShadow: style.boxShadow };
+      }),
+      wrapper.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { borderWidth: style.borderTopWidth, boxShadow: style.boxShadow };
+      }),
+      counter.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { borderWidth: style.borderTopWidth, boxShadow: style.boxShadow };
+      }),
+    ]);
+
+    expect(styles[0].borderWidth).toBe('1px');
+    expect(styles[0].boxShadow).not.toBe('none');
+    expect(styles[1]).toEqual({ borderWidth: '0px', boxShadow: 'none' });
+    expect(styles[2]).toEqual({ borderWidth: '0px', boxShadow: 'none' });
+  });
+
+  test('table action buttons keep fixed colors without hover effects', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByText('FAQ管理').click();
+    await expect(page).toHaveURL(/\/admin\/faq$/);
+
+    const actionButtons = page.locator('.app-table-action-button');
+    await expect(actionButtons.first()).toBeVisible();
+    const readStyles = () => actionButtons.evaluateAll((elements) => elements.map((element) => {
+      const style = getComputedStyle(element);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderColor: style.borderColor,
+        boxShadow: style.boxShadow,
+        color: style.color,
+        transitionDuration: style.transitionDuration,
+      };
+    }));
+
+    const lightStyles = await readStyles();
+    expect(lightStyles.length).toBeGreaterThan(1);
+    expect(lightStyles).toEqual(lightStyles.map(() => ({
+      backgroundColor: 'rgb(255, 255, 255)',
+      borderColor: 'rgb(235, 235, 235)',
+      boxShadow: 'none',
+      color: 'rgb(23, 23, 23)',
+      transitionDuration: '0s',
+    })));
+    await actionButtons.first().hover();
+    expect(await readStyles()).toEqual(lightStyles);
+
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    const expectedDarkStyles = lightStyles.map(() => ({
+      backgroundColor: 'rgb(10, 10, 10)',
+      borderColor: 'rgb(38, 38, 38)',
+      boxShadow: 'none',
+      color: 'rgb(255, 255, 255)',
+      transitionDuration: '0s',
+    }));
+    await expect.poll(readStyles).toEqual(expectedDarkStyles);
+    const darkStyles = await readStyles();
+    await actionButtons.first().hover();
+    expect(await readStyles()).toEqual(darkStyles);
   });
 
   test('admin uploads a document, previews chunks, and customers retrieve its source text', async ({ page }) => {
@@ -338,6 +888,7 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       await expect(row).toBeVisible({ timeout: 15_000 });
       await expect(row).toContainText('可检索');
       await expect(row).toContainText('MD');
+      await expect(page.locator('.t-upload')).not.toContainText(fileName);
       await expect.poll(() => page.evaluate(() => (
         document.documentElement.scrollWidth - document.documentElement.clientWidth
       ))).toBeLessThanOrEqual(0);
@@ -354,14 +905,21 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       await row.getByTestId('document-view').click();
       await expect(page.getByTestId('document-detail')).toBeVisible();
       await expect(page.getByTestId('document-detail')).toContainText('三个工作日');
+      await expect.poll(() => page.getByTestId('document-chunk-preview-text').first().evaluate((element) => (
+        element.scrollWidth > element.clientWidth
+      ))).toBe(true);
+      await page.getByTestId('document-chunk-view').first().click();
+      await expect(page.getByTestId('document-chunk-content')).toContainText('请联系人工客服处理');
+      await page.getByTestId('document-chunk-content-close').click();
       if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
         await page.waitForTimeout(350);
         await page.screenshot({ path: 'docs/releases/assets/v0.2.6-document-detail.png', fullPage: true });
       }
-      await page.getByRole('button', { name: '关闭' }).click();
+      await page.getByTestId('document-detail-close').click();
 
       await page.getByTestId('language-toggle').click();
       await expect(page.getByRole('heading', { name: 'Document Knowledge' })).toBeVisible();
+      await expect(page.getByTestId('document-filter-reset')).toContainText('Reset');
       await expect(documentRow(page, fileName)).toContainText('Ready');
       await page.getByTestId('theme-toggle').click();
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -372,6 +930,16 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       await expect(page.getByRole('button', { name: 'admin' })).toBeVisible();
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(page.getByTestId('documents-page')).toBeVisible();
+      await row.getByTestId('document-view').click();
+      await page.getByTestId('document-chunk-view').first().click();
+      await expect(page.getByText('Chunk source text', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('document-chunk-content')).toContainText('请联系人工客服处理');
+      await expect.poll(() => page.locator('.app-document-chunk-dialog').evaluate((element) => (
+        element.scrollWidth <= element.clientWidth && element.getBoundingClientRect().width <= window.innerWidth
+      ))).toBe(true);
+      await expect(page.getByTestId('document-chunk-content-close')).toBeVisible();
+      await page.getByTestId('document-chunk-content-close').click();
+      await page.getByTestId('document-detail-close').click();
       await expect.poll(() => page.evaluate(() => (
         document.documentElement.scrollWidth - document.documentElement.clientWidth
       ))).toBeLessThanOrEqual(0);
@@ -384,6 +952,7 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       await page.getByTestId('chat-send-button').click();
       await expect(page.getByTestId('chat-messages')).toContainText(fileName, { timeout: 15_000 });
       await expect(page.getByTestId('chat-messages')).toContainText('三个工作日');
+      await expect(page.getByTestId('chat-document-references')).toContainText(fileName);
     } finally {
       if (documentId) {
         const deleted = await page.request.delete(`/api/admin/documents/${documentId}`, {
@@ -392,6 +961,240 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
         expect(deleted.status()).toBe(200);
       }
     }
+  });
+
+  test('document filters apply only after search is submitted', async ({ page }) => {
+    await loginAsAdmin(page);
+    const listRequests: string[] = [];
+    await page.route('**/api/admin/documents?**', async (route) => {
+      listRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await page.getByText('文档知识').click();
+    await expect(page).toHaveURL(/\/admin\/documents$/);
+    await page.waitForTimeout(250);
+    const initialRequestCount = listRequests.length;
+    expect(initialRequestCount).toBeGreaterThan(0);
+
+    await page.getByPlaceholder('搜索文件名').fill('catalog');
+    const filters = page.locator('.app-toolbar-row .t-select input');
+    await filters.nth(0).click();
+    await page.getByText('可检索', { exact: true }).last().click();
+    await filters.nth(1).click();
+    await page.getByText('已停用', { exact: true }).last().click();
+    await page.waitForTimeout(250);
+    expect(listRequests).toHaveLength(initialRequestCount);
+
+    await page.getByRole('button', { name: '查询' }).click();
+    await expect.poll(() => listRequests.length).toBe(initialRequestCount + 1);
+    const submittedUrl = new URL(listRequests.at(-1)!);
+    expect(submittedUrl.searchParams.get('keyword')).toBe('catalog');
+    expect(submittedUrl.searchParams.get('status')).toBe('ready');
+    expect(submittedUrl.searchParams.get('isActive')).toBe('false');
+
+    await page.getByTestId('document-filter-reset').click();
+    await expect.poll(() => listRequests.length).toBe(initialRequestCount + 2);
+    const resetUrl = new URL(listRequests.at(-1)!);
+    expect(resetUrl.searchParams.get('keyword')).toBeNull();
+    expect(resetUrl.searchParams.get('status')).toBeNull();
+    expect(resetUrl.searchParams.get('isActive')).toBeNull();
+    await expect(page.getByPlaceholder('搜索文件名')).toHaveValue('');
+    await expect(filters.nth(0)).toHaveValue('全部');
+    await expect(filters.nth(1)).toHaveValue('全部');
+  });
+
+  test('document reset keeps the newest response when an old filter request finishes late', async ({ page }) => {
+    await loginAsAdmin(page);
+    let releaseFilteredRequest: (() => void) | undefined;
+    const filteredRequestRelease = new Promise<void>((resolve) => {
+      releaseFilteredRequest = resolve;
+    });
+    let markFilteredRequestSeen: (() => void) | undefined;
+    const filteredRequestSeen = new Promise<void>((resolve) => {
+      markFilteredRequestSeen = resolve;
+    });
+
+    const documentItem = (id: string, fileName: string) => ({
+      id,
+      fileName,
+      format: 'txt',
+      mimeType: 'text/plain',
+      sizeBytes: 100,
+      status: 'ready',
+      isActive: 1,
+      parserVersion: 'text-v1',
+      chunkerVersion: 'semantic-v1',
+      failureCode: null,
+      characterCount: 50,
+      chunkCount: 1,
+      uploadedBy: 'admin-1',
+      createdAt: '2026-07-15T10:00:00.000Z',
+      updatedAt: '2026-07-15T10:00:00.000Z',
+    });
+
+    await page.route('**/api/admin/documents?**', async (route) => {
+      const url = new URL(route.request().url());
+      const filtered = url.searchParams.get('keyword') === 'catalog';
+      if (filtered) {
+        markFilteredRequestSeen?.();
+        await filteredRequestRelease;
+      }
+      const item = filtered
+        ? documentItem('filtered', 'filtered-result.txt')
+        : documentItem('default', 'default-result.txt');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [item], total: 1, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await page.getByText('文档知识').click();
+    await expect(documentRow(page, 'default-result.txt')).toBeVisible();
+    await page.getByPlaceholder('搜索文件名').fill('catalog');
+    await page.getByRole('button', { name: '查询' }).click();
+    await filteredRequestSeen;
+    await page.getByTestId('document-filter-reset').click();
+    await expect(documentRow(page, 'default-result.txt')).toBeVisible();
+    const oldFilteredResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith('/api/admin/documents')
+        && url.searchParams.get('keyword') === 'catalog';
+    });
+    releaseFilteredRequest?.();
+    await (await oldFilteredResponse).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    await expect(documentRow(page, 'filtered-result.txt')).toHaveCount(0);
+    await expect(documentRow(page, 'default-result.txt')).toBeVisible();
+  });
+
+  test('failed documents explain the cause and recovery action', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.route('**/api/admin/documents?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            items: [{
+              id: 'failed-document',
+              fileName: 'embedding-failure.txt',
+              format: 'txt',
+              mimeType: 'text/plain',
+              sizeBytes: 1024,
+              status: 'failed',
+              isActive: 1,
+              parserVersion: 'text-v1',
+              chunkerVersion: 'semantic-v1',
+              failureCode: 'embedding_failed',
+              characterCount: 0,
+              chunkCount: 0,
+              uploadedBy: 'admin-1',
+              createdAt: '2026-07-15T10:00:00.000Z',
+              updatedAt: '2026-07-15T10:00:00.000Z',
+            }],
+            total: 1,
+            page: 1,
+            pageSize: 20,
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/documents/failed-document/chunks?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 10 },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await page.getByText('文档知识').click();
+    await expect(page).toHaveURL(/\/admin\/documents$/);
+    const row = documentRow(page, 'embedding-failure.txt');
+    await expect(row).toContainText('向量生成失败');
+    await row.getByTestId('document-view').click();
+    const detail = page.getByTestId('document-detail');
+    await expect(detail).toContainText('embedding_failed');
+    await expect(detail).toContainText('请检查模型配置中的 Embedding 地址、模型和 API Key，确认服务可用后重试');
+
+    await page.getByTestId('document-detail-close').click();
+    await page.getByTestId('language-toggle').click();
+    await expect(row).toContainText('Embedding generation failed');
+    await row.getByTestId('document-view').click();
+    await expect(detail).toContainText('Embedding generation failed');
+    await expect(detail).toContainText('Check the Embedding endpoint, model, and API key in Model Configuration, then retry');
+  });
+
+  test('knowledge review filters reset to their defaults', async ({ page }) => {
+    await loginAsAdmin(page);
+    const listRequests: string[] = [];
+    await page.route('**/api/admin/knowledge-reviews?**', async (route) => {
+      listRequests.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.getByText('知识审核').click();
+    await expect(page).toHaveURL(/\/admin\/knowledge-review$/);
+    await expect.poll(() => listRequests.length).toBeGreaterThan(0);
+    const initialRequestCount = listRequests.length;
+
+    const keywordInput = page.getByPlaceholder('搜索问题或回答');
+    const filters = page.locator('.app-toolbar-row .t-select input');
+    await keywordInput.fill('退款');
+    await filters.nth(0).click();
+    await page.getByText('已转换', { exact: true }).last().click();
+    await filters.nth(1).click();
+    await page.getByText('用户负反馈', { exact: true }).last().click();
+    await page.waitForTimeout(250);
+    expect(listRequests).toHaveLength(initialRequestCount);
+
+    await page.getByRole('button', { name: '查询' }).click();
+    await expect.poll(() => listRequests.length).toBe(initialRequestCount + 1);
+    const submittedUrl = new URL(listRequests.at(-1)!);
+    expect(submittedUrl.searchParams.get('keyword')).toBe('退款');
+    expect(submittedUrl.searchParams.get('status')).toBe('converted');
+    expect(submittedUrl.searchParams.get('triggerReason')).toBe('negative_feedback');
+
+    const resetRequestPromise = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/api/admin/knowledge-reviews')
+        && url.searchParams.get('status') === 'pending'
+        && !url.searchParams.has('keyword')
+        && !url.searchParams.has('triggerReason');
+    });
+    await page.getByTestId('knowledge-review-filter-reset').click();
+    await resetRequestPromise;
+    await expect(keywordInput).toHaveValue('');
+    await expect(filters.nth(0)).toHaveValue('待审核');
+    await expect(filters.nth(1)).toHaveValue('全部');
   });
 
   test('admin reviews a knowledge gap, inspects evidence, and converts it to a searchable FAQ', async ({ page }) => {

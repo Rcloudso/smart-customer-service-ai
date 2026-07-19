@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { adminOnlyMiddleware } from '../../middleware/adminOnly';
 import { configService, ModelConfigDTO } from '../../services/config.service';
+import { MODEL_PROVIDERS } from '../../config';
 import { logger } from '../../utils/logger';
 
 const router = Router();
@@ -12,18 +13,21 @@ router.use(authMiddleware);
 router.use(adminOnlyMiddleware);
 
 const modelConfigKeySchema = z.enum([
+  'llmProvider',
   'llmApiBase',
   'llmModel',
   'embedProvider',
   'embedApiBase',
   'embedModel',
 ]);
+const modelProviderSchema = z.enum(MODEL_PROVIDERS);
 
 /** Zod schema for PUT /model body — credentials are environment-injected only. */
 const updateModelConfigSchema = z.object({
+  llmProvider: modelProviderSchema.optional(),
   llmApiBase: z.string().optional(),
   llmModel: z.string().optional(),
-  embedProvider: z.string().optional(),
+  embedProvider: modelProviderSchema.optional(),
   embedApiBase: z.string().optional(),
   embedModel: z.string().optional(),
   resetKeys: z.array(modelConfigKeySchema).optional(),
@@ -31,7 +35,7 @@ const updateModelConfigSchema = z.object({
 
 /**
  * GET /api/admin/config/model
- * Return current effective model config with masked API keys.
+ * Return current effective non-secret model config with credential status.
  */
 router.get('/model', (_req: Request, res: Response, next: NextFunction) => {
   try {
@@ -44,7 +48,7 @@ router.get('/model', (_req: Request, res: Response, next: NextFunction) => {
 
 /**
  * PUT /api/admin/config/model
- * Update model config. Only non-empty fields are persisted.
+ * Update non-secret model config in the environment file.
  */
 router.put('/model', (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -67,13 +71,11 @@ router.put('/model', (req: Request, res: Response, next: NextFunction) => {
       }
     }
 
-    // Handle resetKeys — delete the key from DB so env default takes effect
-    if (resetKeys.length > 0) {
-      configService.reset(resetKeys);
-    }
-
-    configService.update(validUpdates);
-    logger.info({ updates: Object.keys(validUpdates) }, 'Model config updated');
+    configService.save(validUpdates, resetKeys);
+    logger.info(
+      { updates: Object.keys(validUpdates), resets: resetKeys },
+      'Model environment config updated',
+    );
 
     res.json({ code: 0, data: null, message: 'ok' });
   } catch (err) {

@@ -10,6 +10,7 @@ import {
 } from 'tdesign-react';
 import * as adminApi from '../../api/admin';
 import type { ModelConfigResponseDTO, ModelConfigDTO } from '../../api/admin';
+import type { ModelProvider } from '../../types';
 import { useTranslation } from '../../hooks/usePreferences';
 
 const { FormItem } = Form;
@@ -28,6 +29,7 @@ export function ModelConfigPage(): React.ReactElement {
 
   // Form state — mirrors the editable fields
   const [form, setForm] = useState<ModelConfigDTO>({
+    llmProvider: 'openai',
     llmApiBase: '',
     llmModel: '',
     embedProvider: 'openai',
@@ -42,6 +44,7 @@ export function ModelConfigPage(): React.ReactElement {
       setConfig(data);
       setModifiedFields(new Set()); // reset dirty tracking on fresh load
       setForm({
+        llmProvider: data.llmProvider,
         llmApiBase: data.llmApiBase,
         llmModel: data.llmModel,
         embedProvider: data.embedProvider,
@@ -64,6 +67,12 @@ export function ModelConfigPage(): React.ReactElement {
     setModifiedFields((prev) => new Set(prev).add(field));
     setForm((prev) => ({ ...prev, [field]: value }));
   };
+
+  const providerOptions = [
+    { label: 'OpenAI', value: 'openai' },
+    { label: 'OpenAI Compatible', value: 'openai-compatible' },
+    { label: t('config.otherProvider'), value: 'other' },
+  ];
 
   const handleSave = async (): Promise<void> => {
     setSaving(true);
@@ -117,22 +126,29 @@ export function ModelConfigPage(): React.ReactElement {
       >
         <Form layout="vertical" labelWidth={120}>
           <FormItem label={t('config.provider')} help={t('config.providerHelp')}>
-            <Select
-              value="openai"
-              disabled
-              options={[{ label: 'OpenAI', value: 'openai' }]}
-              style={{ width: '100%' }}
-            />
+            <div data-testid="llm-provider-select">
+              <Select
+                value={form.llmProvider}
+                onChange={(val) => handleFieldChange('llmProvider', val as ModelProvider)}
+                options={providerOptions}
+                style={{ width: '100%' }}
+                disabled={loading}
+              />
+            </div>
           </FormItem>
 
-          <FormItem label={t('config.apiBaseUrl')}>
-            <Input
-              value={form.llmApiBase}
-              placeholder={config?.llmApiBase || 'https://api.openai.com/v1'}
-              onChange={(val) => handleFieldChange('llmApiBase', val as string)}
-              disabled={loading}
-            />
-          </FormItem>
+          {form.llmProvider !== 'openai' && (
+            <FormItem label={t('config.apiBaseUrl')}>
+              <div data-testid="llm-api-base-field">
+                <Input
+                  value={form.llmApiBase}
+                  placeholder={config?.llmApiBase || ''}
+                  onChange={(val) => handleFieldChange('llmApiBase', val as string)}
+                  disabled={loading}
+                />
+              </div>
+            </FormItem>
+          )}
 
           <FormItem label={t('config.model')}>
             <Input
@@ -165,27 +181,30 @@ export function ModelConfigPage(): React.ReactElement {
         bodyStyle={{ padding: '24px' }}
       >
         <Form layout="vertical" labelWidth={120}>
-          <FormItem label={t('config.provider')}>
-            <Select
-              value={form.embedProvider}
-              onChange={(val) => handleFieldChange('embedProvider', val as string)}
-              options={[
-                { label: 'OpenAI', value: 'openai' },
-                { label: t('config.otherProvider'), value: 'other' },
-              ]}
-              style={{ width: '100%' }}
-              disabled={loading}
-            />
+          <FormItem label={t('config.provider')} help={t('config.providerHelp')}>
+            <div data-testid="embed-provider-select">
+              <Select
+                value={form.embedProvider}
+                onChange={(val) => handleFieldChange('embedProvider', val as ModelProvider)}
+                options={providerOptions}
+                style={{ width: '100%' }}
+                disabled={loading}
+              />
+            </div>
           </FormItem>
 
-          <FormItem label={t('config.apiBaseUrl')}>
-            <Input
-              value={form.embedApiBase}
-              placeholder={config?.embedApiBase || ''}
-              onChange={(val) => handleFieldChange('embedApiBase', val as string)}
-              disabled={loading}
-            />
-          </FormItem>
+          {form.embedProvider !== 'openai' && (
+            <FormItem label={t('config.apiBaseUrl')}>
+              <div data-testid="embed-api-base-field">
+                <Input
+                  value={form.embedApiBase}
+                  placeholder={config?.embedApiBase || ''}
+                  onChange={(val) => handleFieldChange('embedApiBase', val as string)}
+                  disabled={loading}
+                />
+              </div>
+            </FormItem>
+          )}
 
           <FormItem label={t('config.model')}>
             <Input

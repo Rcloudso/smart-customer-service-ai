@@ -26,6 +26,7 @@ async function main(): Promise<void> {
   process.env.DB_PATH = dbPath;
   process.env.DOCUMENT_UPLOAD_DIR = uploadDir;
   process.env.LLM_API_KEY = '';
+  process.env.OPENAI_API_KEY = '';
   process.env.EMBED_PROVIDER = 'other';
   process.env.EMBED_API_KEY = '';
 

@@ -198,8 +198,7 @@ export async function downloadBlob(path: string, filename: string): Promise<void
   const response = await fetch(`${BASE_URL}${path}`, { headers });
 
   if (!response.ok) {
-    handleUnauthorized(response, token);
-    throw new ApiError(response.status, response.status, t('common.exportFailed'));
+    await handleResponse<never>(response, token);
   }
 
   const blob = await response.blob();

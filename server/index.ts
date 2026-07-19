@@ -114,10 +114,10 @@ async function start(): Promise<void> {
     getDatabase();
     logger.info('Database initialized');
 
-    // Hydrate runtime config from DB overrides (restore persisted model_configs)
+    // Hydrate runtime config from environment-owned model settings.
     const { configService } = await import('./services/config.service');
     configService.hydrate();
-    logger.info('Runtime config hydrated from DB overrides');
+    logger.info('Runtime config hydrated from environment');
 
     // Initialize semantic search index
     const { semanticSearch } = await import('./ai/semantic-search');

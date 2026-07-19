@@ -29,17 +29,7 @@ async function testExplicitEmbedApiKeySurvivesHydrate(): Promise<void> {
     import('../config'),
   ]);
 
-  const db = {
-    prepare() {
-      return {
-        get() {
-          return undefined;
-        },
-      };
-    },
-  };
-
-  const service = new ConfigService(db as never);
+  const service = new ConfigService();
   service.hydrate();
 
   assert.equal(config.embed.apiKey, 'embed-env-key');
@@ -100,7 +90,6 @@ function testFaqImportUsesBatchEmbedding(): void {
     path.resolve(process.cwd(), 'server/ai/semantic-search.ts'),
     'utf8',
   );
-
   assert.match(serviceSource, /updateIndexBatch/, 'FAQ import should update embeddings in a batch');
   assert.match(semanticSource, /updateIndexBatch/, 'semantic search should expose a batch index update');
   assert.match(semanticSource, /EMBEDDING_BATCH_SIZE/, 'FAQ embedding updates should use bounded API batches');
