@@ -4,6 +4,7 @@ import { MessageRepo } from '../db/repos/message.repo';
 import { AdminOverview, IntentDistribution, SatisfactionTrend } from '../types/api';
 import { IntentCategory } from '../types/domain';
 import { logger } from '../utils/logger';
+import { conversationService } from './conversation.service';
 
 export class AnalyticsService {
   private sessionRepo: SessionRepo;
@@ -45,7 +46,7 @@ export class AnalyticsService {
       ? this.messageRepo.avgSatisfactionForSessions(filteredSessionIds)
       : this.messageRepo.avgSatisfaction();
 
-    const activeSessions = this.sessionRepo.activeCount();
+    const activeSessions = conversationService.getActiveSessionCount();
 
     // Calculate escalation rate — use the same date range
     const escalationCountStmt = db.prepare(
@@ -69,6 +70,7 @@ export class AnalyticsService {
       avgSatisfaction: Math.round(avgSatisfaction * 100) / 100,
       escalationRate,
       activeSessions,
+      activeWindowMinutes: conversationService.getInactivityMinutes(),
     };
   }
 

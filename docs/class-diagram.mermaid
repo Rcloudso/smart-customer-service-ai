@@ -28,33 +28,28 @@ classDiagram
     class ModelConfigDTO {
         +string llmApiBase
         +string llmModel
-        +string llmApiKey
         +string embedProvider
         +string embedApiBase
         +string embedModel
-        +string embedApiKey
     }
 
     class ModelConfigResponseDTO {
         +string llmApiBase
         +string llmModel
-        +string llmApiKey
-        +boolean llmApiKeyOverridden
+        +boolean llmApiKeyConfigured
         +string embedProvider
         +string embedApiBase
         +string embedModel
-        +string embedApiKey
-        +boolean embedApiKeyOverridden
+        +boolean embedApiKeyConfigured
     }
 
     %% ── Service ──
     class ConfigService {
-        -Database db
+        -string envFilePath
         +getAll() ModelConfigResponseDTO
-        +update(updates ModelConfigDTO) void
-        +getEffective(key string) string
-        -maskApiKey(key string) string
-        -getEnvDefault(key string) string
+        +save(updates ModelConfigDTO, resetKeys string[]) void
+        +hydrate() void
+        -syncRuntimeConfig() void
     }
 
     %% ── LLM Client ──
@@ -89,7 +84,7 @@ classDiagram
     AppConfig *-- EmbedConfig
     ConfigService ..> ModelConfigDTO : reads/writes
     ConfigService ..> ModelConfigResponseDTO : returns
-    ConfigService ..> AppConfig : reads env defaults
+    ConfigService ..> AppConfig : syncs runtime
     OpenAIClientImpl ..|> LLMClient
-    OpenAIClientImpl ..> ConfigService : getEffective()
+    OpenAIClientImpl ..> AppConfig : ensureFresh()
     AdminConfigRouter ..> ConfigService : uses

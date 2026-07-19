@@ -45,7 +45,9 @@ export class EscalationService {
 
     // Update session status
     const sessionStmt = this.db.prepare(
-      "UPDATE sessions SET status = 'escalated', updated_at = ? WHERE id = ?",
+      `UPDATE sessions
+       SET status = 'escalated', updated_at = ?, closed_at = NULL, close_reason = NULL
+       WHERE id = ?`,
     );
     sessionStmt.run(now, sessionId);
 

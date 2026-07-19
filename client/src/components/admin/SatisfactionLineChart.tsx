@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Table } from 'tdesign-react';
 import type { SatisfactionTrend } from '../../api/admin';
 import { useTranslation } from '../../hooks/usePreferences';
@@ -25,6 +25,17 @@ export function SatisfactionLineChart({
   height = 300,
 }: SatisfactionLineChartProps): React.ReactElement {
   const { t } = useTranslation();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(14);
+  const sortedData = useMemo(
+    () => [...data].sort((left, right) => right.date.localeCompare(left.date)),
+    [data],
+  );
+
+  useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(sortedData.length / pageSize));
+    setPage((current) => Math.min(current, lastPage));
+  }, [sortedData.length, pageSize]);
   const ratingColor = (rating: number) => {
     if (rating >= 4) return '#0070f3';
     if (rating >= 3) return '#f5a623';
@@ -116,16 +127,22 @@ export function SatisfactionLineChart({
   return (
     <div style={{ maxHeight: height, overflowY: 'auto' }}>
       <Table
-        data={data}
+        data={sortedData}
         columns={columns}
         rowKey="date"
         size="small"
         bordered
         stripe
         pagination={{
-          defaultPageSize: 14,
+          current: page,
+          pageSize,
+          total: sortedData.length,
           pageSizeOptions: [7, 14, 30],
           showJumper: true,
+          onChange: (pageInfo) => {
+            setPage(pageInfo.current);
+            setPageSize(pageInfo.pageSize);
+          },
         }}
       />
     </div>

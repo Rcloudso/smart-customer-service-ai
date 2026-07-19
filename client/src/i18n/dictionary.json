@@ -51,14 +51,6 @@
     "zh": "随时为您解答问题",
     "en": "Ready to answer your questions"
   },
-  "chat.clear": {
-    "zh": "清空对话",
-    "en": "Clear chat"
-  },
-  "chat.cleared": {
-    "zh": "对话已清空",
-    "en": "Chat cleared"
-  },
   "chat.history": {
     "zh": "历史记录",
     "en": "History"
@@ -74,6 +66,10 @@
   "chat.historyLoadFailed": {
     "zh": "历史记录加载失败",
     "en": "Failed to load chat history"
+  },
+  "chat.closeFailed": {
+    "zh": "结束当前对话失败，请重试",
+    "en": "Failed to close the current chat. Please try again."
   },
   "chat.historyLoaded": {
     "zh": "历史对话已加载",
@@ -118,6 +114,18 @@
   "chat.faqAnswerPrefix": {
     "zh": "答：",
     "en": "A: "
+  },
+  "chat.documentReferences": {
+    "zh": "文档知识参考：",
+    "en": "Document knowledge references:"
+  },
+  "chat.documentChunkLabel": {
+    "zh": "切片 {index}",
+    "en": "Chunk {index}"
+  },
+  "chat.documentPageLabel": {
+    "zh": "第 {pages} 页",
+    "en": "Page {pages}"
   },
   "chat.inputPlaceholder": {
     "zh": "输入您的问题，Enter 发送，Shift+Enter 换行",
@@ -267,6 +275,10 @@
     "zh": "正在活跃",
     "en": "Active sessions"
   },
+  "dashboard.activeSessionsWindow": {
+    "zh": "近 {minutes} 分钟活跃",
+    "en": "Active in last {minutes} min"
+  },
   "dashboard.intentDistribution": {
     "zh": "意图分布",
     "en": "Intent distribution"
@@ -326,6 +338,10 @@
   "common.search": {
     "zh": "查询",
     "en": "Search"
+  },
+  "common.reset": {
+    "zh": "重置",
+    "en": "Reset"
   },
   "common.exportCsv": {
     "zh": "导出CSV",
@@ -427,6 +443,10 @@
     "zh": "已转人工",
     "en": "Escalated"
   },
+  "status.all": {
+    "zh": "全部状态",
+    "en": "All statuses"
+  },
   "conversations.title": {
     "zh": "对话管理",
     "en": "Conversations"
@@ -450,6 +470,22 @@
   "conversations.createdAt": {
     "zh": "创建时间",
     "en": "Created at"
+  },
+  "conversations.createdDateFilter": {
+    "zh": "创建日期",
+    "en": "Created date"
+  },
+  "conversations.statusFilter": {
+    "zh": "会话状态",
+    "en": "Conversation status"
+  },
+  "conversations.exportFilteredHint": {
+    "zh": "导出当前筛选结果中的全部消息",
+    "en": "Export every message from the current filtered conversations"
+  },
+  "conversations.exportFiltered": {
+    "zh": "导出筛选对话",
+    "en": "Export filtered chats"
   },
   "conversations.viewDetail": {
     "zh": "查看详情",
@@ -635,6 +671,14 @@
     "zh": "加载FAQ列表失败",
     "en": "Failed to load FAQ list"
   },
+  "faq.listTab": {
+    "zh": "FAQ列表",
+    "en": "FAQ list"
+  },
+  "faq.debugTab": {
+    "zh": "检索调试",
+    "en": "Retrieval debug"
+  },
   "faq.deleted": {
     "zh": "FAQ已删除",
     "en": "FAQ deleted"
@@ -724,8 +768,8 @@
     "en": "Embedding Model"
   },
   "config.providerHelp": {
-    "zh": "当前仅支持 OpenAI 兼容接口",
-    "en": "OpenAI-compatible APIs are currently supported"
+    "zh": "OpenAI 使用官方 API 地址；OpenAI Compatible 和其他服务商使用下方自定义地址。",
+    "en": "OpenAI uses the official API endpoint. OpenAI Compatible and Other providers use the custom endpoint below."
   },
   "config.provider": {
     "zh": "服务商",
@@ -742,6 +786,18 @@
   "config.apiKey": {
     "zh": "API Key",
     "en": "API Key"
+  },
+  "config.apiKeyConfigured": {
+    "zh": "已通过环境变量配置",
+    "en": "Configured by environment"
+  },
+  "config.apiKeyNotConfigured": {
+    "zh": "未配置",
+    "en": "Not configured"
+  },
+  "config.apiKeyEnvironmentHelp": {
+    "zh": "请通过 {variable} 或部署 Secret 安全注入；系统不会将密钥保存到数据库。",
+    "en": "Inject {variable} through the environment or a deployment secret. The key is never stored in the database."
   },
   "config.otherProvider": {
     "zh": "其他",
@@ -910,5 +966,233 @@
   "knowledgeReview.dismissFailed": {
     "zh": "忽略审核记录失败",
     "en": "Failed to dismiss review item"
+  },
+  "nav.documents": {
+    "zh": "文档知识",
+    "en": "Documents"
+  },
+  "documents.title": {
+    "zh": "文档知识",
+    "en": "Document Knowledge"
+  },
+  "documents.description": {
+    "zh": "上传 TXT、Markdown、PDF 或 DOCX，让客服基于企业文档回答问题。",
+    "en": "Upload TXT, Markdown, PDF, or DOCX files for document-grounded answers."
+  },
+  "documents.searchPlaceholder": {
+    "zh": "搜索文件名",
+    "en": "Search file names"
+  },
+  "documents.upload": {
+    "zh": "上传文档",
+    "en": "Upload document"
+  },
+  "documents.fileName": {
+    "zh": "文件名",
+    "en": "File name"
+  },
+  "documents.format": {
+    "zh": "格式",
+    "en": "Format"
+  },
+  "documents.size": {
+    "zh": "大小",
+    "en": "Size"
+  },
+  "documents.chunkCount": {
+    "zh": "切片数",
+    "en": "Chunks"
+  },
+  "documents.enabled": {
+    "zh": "启用",
+    "en": "Enabled"
+  },
+  "documents.active": {
+    "zh": "已启用",
+    "en": "Active"
+  },
+  "documents.inactive": {
+    "zh": "已停用",
+    "en": "Inactive"
+  },
+  "documents.updatedAt": {
+    "zh": "更新时间",
+    "en": "Updated"
+  },
+  "documents.status.pending": {
+    "zh": "处理中",
+    "en": "Processing"
+  },
+  "documents.status.ready": {
+    "zh": "可检索",
+    "en": "Ready"
+  },
+  "documents.status.failed": {
+    "zh": "处理失败",
+    "en": "Failed"
+  },
+  "documents.view": {
+    "zh": "查看",
+    "en": "View"
+  },
+  "documents.retry": {
+    "zh": "重试",
+    "en": "Retry"
+  },
+  "documents.deleteConfirm": {
+    "zh": "确认删除该文档及全部切片？",
+    "en": "Delete this document and all of its chunks?"
+  },
+  "documents.empty": {
+    "zh": "暂无文档，上传第一份知识文档开始使用",
+    "en": "No documents yet. Upload the first knowledge document."
+  },
+  "documents.loadFailed": {
+    "zh": "文档列表加载失败",
+    "en": "Failed to load documents"
+  },
+  "documents.uploaded": {
+    "zh": "文档已解析并加入检索",
+    "en": "Document parsed and indexed"
+  },
+  "documents.uploadFailedAccepted": {
+    "zh": "文档已保存但处理失败，可在列表中重试",
+    "en": "Document saved but processing failed; retry it from the list"
+  },
+  "documents.uploadFailed": {
+    "zh": "文档上传失败",
+    "en": "Document upload failed"
+  },
+  "documents.retrySucceeded": {
+    "zh": "文档重试成功并已加入检索",
+    "en": "Document retry succeeded and was indexed"
+  },
+  "documents.retryFailed": {
+    "zh": "文档仍未能处理，请检查失败原因",
+    "en": "Document processing still failed; check the failure reason"
+  },
+  "documents.updated": {
+    "zh": "文档状态已更新",
+    "en": "Document state updated"
+  },
+  "documents.deleted": {
+    "zh": "文档已删除",
+    "en": "Document deleted"
+  },
+  "documents.detailTitle": {
+    "zh": "文档详情与切片",
+    "en": "Document details and chunks"
+  },
+  "documents.characters": {
+    "zh": "字符数",
+    "en": "Characters"
+  },
+  "documents.failureCode": {
+    "zh": "失败原因",
+    "en": "Failure reason"
+  },
+  "documents.failureCodeValue": {
+    "zh": "错误代码",
+    "en": "Error code"
+  },
+  "documents.failureAdviceLabel": {
+    "zh": "排查建议",
+    "en": "Suggested action"
+  },
+  "documents.failureAdvice.default": {
+    "zh": "请根据失败原因修正文档后重新上传或重试；若仍失败，请将错误代码提供给维护者。",
+    "en": "Correct the document based on the failure reason, then upload or retry. If it still fails, provide the error code to the maintainer."
+  },
+  "documents.failureAdvice.embedding_failed": {
+    "zh": "请检查模型配置中的 Embedding 地址、模型和 API Key，确认服务可用后重试。",
+    "en": "Check the Embedding endpoint, model, and API key in Model Configuration, then retry."
+  },
+  "documents.failureAdvice.processing_failed": {
+    "zh": "请检查服务日志和模型配置，确认解析与 Embedding 服务可用后重试；若仍失败，请将错误代码提供给维护者。",
+    "en": "Check the service logs and Model Configuration, confirm parsing and Embedding services are available, then retry. If it still fails, provide the error code to the maintainer."
+  },
+  "documents.chunkIndex": {
+    "zh": "序号",
+    "en": "Index"
+  },
+  "documents.chunkTitle": {
+    "zh": "标题",
+    "en": "Heading"
+  },
+  "documents.chunkContent": {
+    "zh": "原文片段",
+    "en": "Source excerpt"
+  },
+  "documents.viewFullChunk": {
+    "zh": "查看全文",
+    "en": "View full text"
+  },
+  "documents.chunkContentTitle": {
+    "zh": "切片原文",
+    "en": "Chunk source text"
+  },
+  "documents.pages": {
+    "zh": "页码",
+    "en": "Pages"
+  },
+  "documents.chunksEmpty": {
+    "zh": "暂无可预览切片",
+    "en": "No chunks available"
+  },
+  "documents.chunksLoadFailed": {
+    "zh": "文档切片加载失败",
+    "en": "Failed to load document chunks"
+  },
+  "documents.failure.invalid_pdf": {
+    "zh": "PDF 文件损坏或无法解析",
+    "en": "The PDF is damaged or cannot be parsed"
+  },
+  "documents.failure.pdf_encrypted": {
+    "zh": "PDF 已加密",
+    "en": "The PDF is encrypted"
+  },
+  "documents.failure.pdf_no_text": {
+    "zh": "PDF 没有可提取文本，扫描件暂不支持",
+    "en": "No text layer found; scanned PDFs are not supported yet"
+  },
+  "documents.failure.pdf_too_many_pages": {
+    "zh": "PDF 页数超过处理上限",
+    "en": "The PDF exceeds the page limit"
+  },
+  "documents.failure.invalid_docx": {
+    "zh": "DOCX 文件损坏或无法解析",
+    "en": "The DOCX is damaged or cannot be parsed"
+  },
+  "documents.failure.docx_resource_limit": {
+    "zh": "DOCX 解压后的资源规模超过处理上限",
+    "en": "The expanded DOCX exceeds processing limits"
+  },
+  "documents.failure.empty_content": {
+    "zh": "未提取到有效文本",
+    "en": "No usable text was extracted"
+  },
+  "documents.failure.text_too_large": {
+    "zh": "提取文本超过 200,000 字符",
+    "en": "Extracted text exceeds 200,000 characters"
+  },
+  "documents.failure.too_many_units": {
+    "zh": "文档结构单元超过 2,000 个",
+    "en": "Document exceeds 2,000 semantic units"
+  },
+  "documents.failure.too_many_chunks": {
+    "zh": "最终切片超过 300 个",
+    "en": "Document exceeds 300 final chunks"
+  },
+  "documents.failure.embedding_failed": {
+    "zh": "向量生成失败",
+    "en": "Embedding generation failed"
+  },
+  "documents.failure.processing_failed": {
+    "zh": "处理过程失败",
+    "en": "Document processing failed"
+  },
+  "documents.failure.source_file_missing": {
+    "zh": "原文件缺失，无法重试",
+    "en": "Source file is missing and cannot be retried"
   }
 }

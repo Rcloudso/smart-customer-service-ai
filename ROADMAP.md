@@ -8,7 +8,7 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | --- | --- | --- | --- |
 | v0.2.4 | Released | Retrieval Evaluation & Debugging | FAQ 检索可评测、可解释，并在 CI 中执行浏览器回归。 |
 | v0.2.5 | Released | Knowledge Gap Feedback Loop | 低质量回答进入知识审核，管理员可将其沉淀为已索引 FAQ。 |
-| v0.2.6 | Planned | Document RAG Foundation | 支持文本、Markdown、PDF 和 Word 的解析、切片、索引和状态管理。 |
+| v0.2.6 | Released | Document RAG Foundation | 支持文本、Markdown、含文本层 PDF 和 DOCX 的上传、语义切片、索引、检索与无 Key 原文回退。 |
 | v0.2.7 | Planned | Grounding & Citations | 回答展示来源与引用，无可靠依据时拒答或转人工。 |
 | v0.2.8 | Planned | RAG Quality Lab | 增加重排、阈值调优、评测集版本和效果对比。 |
 | v0.2.9 | Planned | OCR & Image Knowledge | 支持扫描件、截图 OCR，并为需要视觉理解的图片建立独立处理路径。 |

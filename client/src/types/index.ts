@@ -43,13 +43,53 @@ export type KnowledgeReviewStatus = 'pending' | 'converted' | 'dismissed';
 export type KnowledgeReviewTriggerReason = 'no_match' | 'low_retrieval_score' | 'negative_feedback';
 
 export interface KnowledgeRetrievalSnapshot {
-  knowledgeType: 'faq';
+  knowledgeType: 'faq' | 'document';
   knowledgeId: string;
+  documentId?: string;
   title: string;
   source?: 'vector' | 'keyword' | 'hybrid';
   similarity: number;
   keywordScore?: number;
   vectorScore?: number;
+  fusionScore?: number;
+  keywordRank?: number;
+  vectorRank?: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
+}
+
+export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type DocumentStatus = 'pending' | 'ready' | 'failed';
+
+export interface DocumentItem {
+  id: string;
+  fileName: string;
+  format: DocumentFormat;
+  mimeType: string;
+  sizeBytes: number;
+  status: DocumentStatus;
+  isActive: number;
+  parserVersion: string;
+  chunkerVersion: string;
+  failureCode: string | null;
+  characterCount: number;
+  chunkCount: number;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentChunk {
+  id: string;
+  documentId: string;
+  chunkIndex: number;
+  content: string;
+  title: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  characterCount: number;
+  createdAt: string;
 }
 
 export interface KnowledgeReviewItem {
@@ -112,6 +152,9 @@ export interface FaqDebugMatch {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
   rank: number;
   bestScore: number;
   matchedBy: Array<'vector' | 'keyword'>;
@@ -128,19 +171,20 @@ export interface FaqDebugResult {
 
 // ── Model Config Types ─────────────────────────────
 
+export type ModelProvider = 'openai' | 'openai-compatible' | 'other';
+
 export interface ModelConfigDTO {
+  llmProvider: ModelProvider;
   llmApiBase: string;
   llmModel: string;
-  llmApiKey: string;
-  embedProvider: string;
+  embedProvider: ModelProvider;
   embedApiBase: string;
   embedModel: string;
-  embedApiKey: string;
 }
 
 export interface ModelConfigResponseDTO extends ModelConfigDTO {
-  llmApiKeyOverridden: boolean;
-  embedApiKeyOverridden: boolean;
+  llmApiKeyConfigured: boolean;
+  embedApiKeyConfigured: boolean;
 }
 
 // ── API Types ──────────────────────────────────────
@@ -178,6 +222,7 @@ export interface AdminOverview {
   avgSatisfaction: number;
   escalationRate: number;
   activeSessions: number;
+  activeWindowMinutes: number;
 }
 
 export interface SatisfactionTrend {
@@ -199,6 +244,8 @@ export interface ConversationDetail {
     status: SessionStatus;
     createdAt: string;
     updatedAt: string;
+    closedAt: string | null;
+    closeReason: string | null;
   };
   messages: Array<{
     id: string;
@@ -206,6 +253,7 @@ export interface ConversationDetail {
     content: string;
     intent: IntentCategory | null;
     intentConf: number | null;
+    retrievalSnapshot: KnowledgeRetrievalSnapshot[];
     satisfaction: SatisfactionRating | null;
     escalated: number;
     createdAt: string;
@@ -225,6 +273,7 @@ export interface ChatHistorySession {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closeReason: string | null;
   messageCount: number;
   preview: string | null;
 }

@@ -81,6 +81,7 @@ export interface ChatHistorySession {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closeReason: string | null;
   messageCount: number;
   preview: string | null;
 }
@@ -89,6 +90,7 @@ export interface ChatHistorySession {
 export interface SatisfactionRequest {
   messageId?: string;
   sessionId?: string;
+  userIdent: string;
   rating: SatisfactionRating;
 }
 
@@ -141,6 +143,7 @@ export interface AdminOverview {
   avgSatisfaction: number;
   escalationRate: number;
   activeSessions: number;
+  activeWindowMinutes: number;
 }
 
 export interface SatisfactionTrend {
@@ -163,6 +166,8 @@ export interface ConversationDetail {
     status: SessionStatus;
     createdAt: string;
     updatedAt: string;
+    closedAt: string | null;
+    closeReason: string | null;
   };
   messages: Array<{
     id: string;

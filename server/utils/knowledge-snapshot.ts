@@ -14,7 +14,7 @@ export function parseKnowledgeSnapshot(value: unknown): KnowledgeRetrievalSnapsh
       if (!item || typeof item !== 'object') return [];
       const record = item as Record<string, unknown>;
       if (
-        record.knowledgeType !== 'faq' ||
+        (record.knowledgeType !== 'faq' && record.knowledgeType !== 'document') ||
         typeof record.knowledgeId !== 'string' ||
         typeof record.title !== 'string' ||
         typeof record.similarity !== 'number' ||
@@ -22,13 +22,17 @@ export function parseKnowledgeSnapshot(value: unknown): KnowledgeRetrievalSnapsh
       ) return [];
       if (record.source !== undefined && !SOURCES.has(String(record.source))) return [];
       return [{
-        knowledgeType: 'faq',
+        knowledgeType: record.knowledgeType,
         knowledgeId: record.knowledgeId,
+        documentId: typeof record.documentId === 'string' ? record.documentId : undefined,
         title: record.title,
         source: record.source as KnowledgeRetrievalSnapshot['source'],
         similarity: record.similarity,
         keywordScore: optionalScore(record.keywordScore),
         vectorScore: optionalScore(record.vectorScore),
+        chunkIndex: optionalScore(record.chunkIndex),
+        pageStart: optionalScore(record.pageStart),
+        pageEnd: optionalScore(record.pageEnd),
       }];
     });
   } catch {

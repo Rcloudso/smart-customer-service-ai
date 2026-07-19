@@ -1,10 +1,10 @@
 import Database from 'better-sqlite3';
 import { getDatabase } from '../db';
-import { semanticSearch } from '../ai/semantic-search';
+import { PreparedFaqIndex, semanticSearch } from '../ai/semantic-search';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { KnowledgeReviewRepo } from '../db/repos/knowledge-review.repo';
 import { MessageRepo } from '../db/repos/message.repo';
-import { FaqMatch } from '../types/ai';
+import { FaqMatch, RetrievalResult } from '../types/ai';
 import {
   FaqEntry,
   IntentCategory,
@@ -20,7 +20,7 @@ import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError 
 
 const KNOWLEDGE_GAP_THRESHOLD = 0.55;
 
-type IndexPreparation = (faq: FaqEntry) => Promise<number[] | null | undefined>;
+type IndexPreparation = (faq: FaqEntry) => Promise<PreparedFaqIndex | null | undefined>;
 type IndexCommit = (faq: FaqEntry) => void;
 
 export class KnowledgeReviewService {
@@ -44,25 +44,46 @@ export class KnowledgeReviewService {
     intent: IntentCategory;
     intentConf: number;
     faqMatches: FaqMatch[];
+    retrievalResults?: RetrievalResult[];
     escalationType: 'explicit' | 'low_confidence' | null;
   }): KnowledgeReviewItem | null {
     if (params.escalationType === 'explicit') return null;
 
-    const triggerReason = params.faqMatches.length === 0
+    const retrievalResults: RetrievalResult[] = params.retrievalResults ?? params.faqMatches.map((match) => ({
+      knowledgeType: 'faq' as const,
+      knowledgeId: match.id,
+      title: match.question,
+      content: match.answer,
+      similarity: match.similarity,
+      source: match.source,
+      keywordScore: match.keywordScore,
+      vectorScore: match.vectorScore,
+      fusionScore: match.fusionScore,
+      keywordRank: match.keywordRank,
+      vectorRank: match.vectorRank,
+    }));
+    const triggerReason = retrievalResults.length === 0
       ? KnowledgeReviewTriggerReason.NO_MATCH
-      : params.faqMatches[0].similarity < KNOWLEDGE_GAP_THRESHOLD
+      : retrievalResults[0].similarity < KNOWLEDGE_GAP_THRESHOLD
         ? KnowledgeReviewTriggerReason.LOW_RETRIEVAL_SCORE
         : null;
     if (!triggerReason) return null;
 
-    const retrievalSnapshot: KnowledgeRetrievalSnapshot[] = params.faqMatches.slice(0, 3).map((match) => ({
-      knowledgeType: 'faq',
-      knowledgeId: match.id,
-      title: match.question,
-      source: match.source,
-      similarity: match.similarity,
-      keywordScore: match.keywordScore,
-      vectorScore: match.vectorScore,
+    const retrievalSnapshot: KnowledgeRetrievalSnapshot[] = retrievalResults.slice(0, 3).map((result) => ({
+      knowledgeType: result.knowledgeType,
+      knowledgeId: result.knowledgeId,
+      documentId: result.documentId,
+      title: result.title,
+      source: result.source,
+      similarity: result.similarity,
+      keywordScore: result.keywordScore,
+      vectorScore: result.vectorScore,
+      fusionScore: result.fusionScore,
+      keywordRank: result.keywordRank,
+      vectorRank: result.vectorRank,
+      chunkIndex: result.chunkIndex,
+      pageStart: result.pageStart,
+      pageEnd: result.pageEnd,
     }));
 
     return this.reviewRepo.create({
@@ -182,16 +203,17 @@ export class KnowledgeReviewService {
       return { review, faq };
     })();
 
-    let embedding: number[] | null | undefined;
+    let preparedIndex: PreparedFaqIndex | null | undefined;
     try {
-      embedding = await this.prepareFaqIndex(linked.faq);
+      preparedIndex = await this.prepareFaqIndex(linked.faq);
     } catch {
       throw new ServiceUnavailableError('FAQ索引同步失败，请稍后重试');
     }
 
     const preparedFaq: FaqEntry = {
       ...linked.faq,
-      embedding: embedding ?? null,
+      embedding: preparedIndex?.embedding ?? null,
+      embeddingProfile: preparedIndex?.embeddingProfile ?? null,
       isActive: 1,
     };
     try {
@@ -209,6 +231,7 @@ export class KnowledgeReviewService {
         }
         const faq = this.faqRepo.update(linked.faq.id, {
           embedding: preparedFaq.embedding,
+          embeddingProfile: preparedFaq.embeddingProfile,
           isActive: 1,
         });
         if (!faq) throw new NotFoundError('已关联的 FAQ 不存在');

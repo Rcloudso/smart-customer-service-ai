@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -13,7 +13,7 @@ import {
   Textarea,
 } from 'tdesign-react';
 import type { SelectValue } from 'tdesign-react';
-import { CloseIcon, SearchIcon } from 'tdesign-icons-react';
+import { CloseIcon, FilterClearIcon, SearchIcon } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
 import type {
   IntentCategory,
@@ -22,6 +22,7 @@ import type {
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
 } from '../../api/admin';
+import { SafeMarkdown } from '../../components/common/SafeMarkdown';
 import { useTranslation } from '../../hooks/usePreferences';
 
 const { FormItem } = Form;
@@ -57,6 +58,9 @@ export function KnowledgeReviewPage(): React.ReactElement {
   const [status, setStatus] = useState<KnowledgeReviewStatus | ''>('pending');
   const [triggerReason, setTriggerReason] = useState<KnowledgeReviewTriggerReason | ''>('');
   const [keyword, setKeyword] = useState('');
+  const [appliedStatus, setAppliedStatus] = useState<KnowledgeReviewStatus | ''>('pending');
+  const [appliedTriggerReason, setAppliedTriggerReason] = useState<KnowledgeReviewTriggerReason | ''>('');
+  const [appliedKeyword, setAppliedKeyword] = useState('');
   const [selected, setSelected] = useState<KnowledgeReviewItem | null>(null);
   const [convertItem, setConvertItem] = useState<KnowledgeReviewItem | null>(null);
   const [dismissItem, setDismissItem] = useState<KnowledgeReviewItem | null>(null);
@@ -64,6 +68,7 @@ export function KnowledgeReviewPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [convertInitial, setConvertInitial] = useState<ConvertFormValues | null>(null);
   const [convertForm] = Form.useForm();
+  const requestIdRef = useRef(0);
 
   const statusOptions = useMemo(() => [
     { label: t('common.all'), value: '' },
@@ -85,23 +90,26 @@ export function KnowledgeReviewPage(): React.ReactElement {
   })), [language]);
 
   const fetchReviews = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
       const result = await adminApi.listKnowledgeReviews({
-        status: status || undefined,
-        triggerReason: triggerReason || undefined,
-        keyword: keyword.trim() || undefined,
+        status: appliedStatus || undefined,
+        triggerReason: appliedTriggerReason || undefined,
+        keyword: appliedKeyword || undefined,
         page,
         pageSize,
       });
+      if (requestId !== requestIdRef.current) return;
       setItems(result.items ?? []);
       setTotal(result.total ?? 0);
     } catch (error) {
+      if (requestId !== requestIdRef.current) return;
       MessagePlugin.error(error instanceof Error ? error.message : t('knowledgeReview.loadFailed'));
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [status, triggerReason, keyword, page, pageSize, language]);
+  }, [appliedStatus, appliedTriggerReason, appliedKeyword, page, pageSize, language]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -121,6 +129,29 @@ export function KnowledgeReviewPage(): React.ReactElement {
 
   const refresh = async () => {
     await Promise.all([fetchReviews(), fetchStats()]);
+  };
+
+  const handleSearch = () => {
+    const nextKeyword = keyword.trim();
+    const shouldRefresh = page === 1
+      && nextKeyword === appliedKeyword
+      && status === appliedStatus
+      && triggerReason === appliedTriggerReason;
+    setAppliedKeyword(nextKeyword);
+    setAppliedStatus(status);
+    setAppliedTriggerReason(triggerReason);
+    setPage(1);
+    if (shouldRefresh) void fetchReviews();
+  };
+
+  const handleReset = () => {
+    setKeyword('');
+    setStatus('pending');
+    setTriggerReason('');
+    setAppliedKeyword('');
+    setAppliedStatus('pending');
+    setAppliedTriggerReason('');
+    setPage(1);
   };
 
   const openConvert = (item: KnowledgeReviewItem) => {
@@ -223,15 +254,15 @@ export function KnowledgeReviewPage(): React.ReactElement {
       fixed: 'right' as const,
       cell: ({ row }: { row: KnowledgeReviewItem }) => (
         <Space size="small">
-          <Button variant="text" size="small" onClick={() => setSelected(row)} data-testid="knowledge-review-view">
+          <Button variant="text" size="small" className="app-table-action-button" onClick={() => setSelected(row)} data-testid="knowledge-review-view">
             {t('knowledgeReview.view')}
           </Button>
           {row.status === 'pending' && (
             <>
-              <Button theme="primary" variant="text" size="small" onClick={() => openConvert(row)} data-testid="knowledge-review-convert">
+              <Button theme="primary" variant="text" size="small" className="app-table-action-button" onClick={() => openConvert(row)} data-testid="knowledge-review-convert">
                 {t('knowledgeReview.convert')}
               </Button>
-              <Button theme="danger" variant="text" size="small" onClick={() => setDismissItem(row)} data-testid="knowledge-review-dismiss">
+              <Button theme="danger" variant="text" size="small" className="app-table-action-button" onClick={() => setDismissItem(row)} data-testid="knowledge-review-dismiss">
                 {t('knowledgeReview.dismiss')}
               </Button>
             </>
@@ -264,7 +295,6 @@ export function KnowledgeReviewPage(): React.ReactElement {
           <Input
             value={keyword}
             onChange={(value: string) => setKeyword(value)}
-            onEnter={() => { setPage(1); fetchReviews(); }}
             placeholder={t('knowledgeReview.searchPlaceholder')}
             prefixIcon={<SearchIcon />}
             clearable
@@ -273,18 +303,21 @@ export function KnowledgeReviewPage(): React.ReactElement {
           />
           <Select
             value={status}
-            onChange={(value: SelectValue) => { setStatus(String(value ?? '') as KnowledgeReviewStatus | ''); setPage(1); }}
+            onChange={(value: SelectValue) => setStatus(String(value ?? '') as KnowledgeReviewStatus | '')}
             options={statusOptions}
             className="app-filter-select"
           />
           <Select
             value={triggerReason}
-            onChange={(value: SelectValue) => { setTriggerReason(String(value ?? '') as KnowledgeReviewTriggerReason | ''); setPage(1); }}
+            onChange={(value: SelectValue) => setTriggerReason(String(value ?? '') as KnowledgeReviewTriggerReason | '')}
             options={reasonOptions}
             className="app-filter-select"
           />
-          <Button theme="primary" icon={<SearchIcon />} onClick={() => { setPage(1); fetchReviews(); }}>
+          <Button theme="primary" icon={<SearchIcon />} onClick={handleSearch}>
             {t('common.search')}
+          </Button>
+          <Button variant="outline" icon={<FilterClearIcon />} onClick={handleReset} data-testid="knowledge-review-filter-reset">
+            {t('common.reset')}
           </Button>
         </div>
       </Card>
@@ -314,8 +347,14 @@ export function KnowledgeReviewPage(): React.ReactElement {
       >
         {selected && (
           <div className="app-knowledge-detail" data-testid="knowledge-review-detail">
-            <section><h4>{t('knowledgeReview.userQuestion')}</h4><p>{selected.question}</p></section>
-            <section><h4>{t('knowledgeReview.aiAnswer')}</h4><p>{selected.answer}</p></section>
+            <section>
+              <h4>{t('knowledgeReview.userQuestion')}</h4>
+              <SafeMarkdown content={selected.question} />
+            </section>
+            <section>
+              <h4>{t('knowledgeReview.aiAnswer')}</h4>
+              <SafeMarkdown content={selected.answer} />
+            </section>
             <section>
               <h4>{t('knowledgeReview.intent')}</h4>
               <p>{t(`intent.${selected.intent ?? 'general'}`)} · {selected.intentConf?.toFixed(3) ?? '—'}</p>

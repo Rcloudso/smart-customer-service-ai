@@ -9,7 +9,7 @@ import { buildSystemPrompt, buildMessages } from '../ai/prompt-manager';
 import { getWindow } from '../ai/context-manager';
 import { getLLMClient } from '../ai/llm-client';
 import { KnowledgeRetrievalSnapshot, MessageRole, SatisfactionRating } from '../types/domain';
-import { FaqMatch, LLMMessage } from '../types/ai';
+import { FaqMatch, LLMMessage, RetrievalResult } from '../types/ai';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -30,9 +30,14 @@ const historyQuerySchema = z.object({
 const satisfactionSchema = z.object({
   messageId: z.string().min(1, 'messageId不能为空').optional(),
   sessionId: z.string().min(1, 'sessionId不能为空').optional(),
+  userIdent: z.string().min(1, 'userIdent不能为空'),
   rating: z.number().int().min(1).max(5),
 }).refine((value) => Boolean(value.messageId || value.sessionId), {
   message: 'messageId或sessionId不能为空',
+});
+
+const closeSessionSchema = z.object({
+  userIdent: z.string().min(1, 'userIdent不能为空'),
 });
 
 function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
@@ -42,15 +47,30 @@ function findDirectFaqAnswer(faqMatches: FaqMatch[]): FaqMatch | null {
   ) ?? null;
 }
 
-function toRetrievalSnapshot(faqMatches: FaqMatch[]): KnowledgeRetrievalSnapshot[] {
-  return faqMatches.slice(0, 3).map((match) => ({
-    knowledgeType: 'faq',
-    knowledgeId: match.id,
-    title: match.question,
-    source: match.source,
-    similarity: match.similarity,
-    keywordScore: match.keywordScore,
-    vectorScore: match.vectorScore,
+function faqMatchesForClient(
+  faqMatches: FaqMatch[],
+  retrievalResults: RetrievalResult[],
+): FaqMatch[] {
+  if (retrievalResults[0]?.knowledgeType !== 'document') return faqMatches;
+  return faqMatches.filter((match) => match.source === 'keyword' || match.source === 'hybrid');
+}
+
+function toRetrievalSnapshot(results: RetrievalResult[]): KnowledgeRetrievalSnapshot[] {
+  return results.slice(0, 3).map((result) => ({
+    knowledgeType: result.knowledgeType,
+    knowledgeId: result.knowledgeId,
+    documentId: result.documentId,
+    title: result.title,
+    source: result.source,
+    similarity: result.similarity,
+    keywordScore: result.keywordScore,
+    vectorScore: result.vectorScore,
+    fusionScore: result.fusionScore,
+    keywordRank: result.keywordRank,
+    vectorRank: result.vectorRank,
+    chunkIndex: result.chunkIndex,
+    pageStart: result.pageStart,
+    pageEnd: result.pageEnd,
   }));
 }
 
@@ -87,11 +107,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const userIdent = inputUserIdent || req.ip || 'anonymous';
 
     // Step 1: Get or create session
-    let sessionId = inputSessionId;
-    if (!sessionId) {
-      const session = conversationService.createSession(userIdent);
-      sessionId = session.id;
-    }
+    const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent);
+    const sessionId = session.id;
 
     // Step 2: Save user message
     const userMessage = conversationService.saveMessage({
@@ -118,7 +135,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Step 6: Build system prompt
     const systemPrompt = buildSystemPrompt({
       intent: intentResult.intent.intent,
-      faqResults: intentResult.faqMatches,
+      knowledgeResults: intentResult.retrievalResults,
       userQuestion: message,
       conversationSummary: null,
       shouldOfferEscalation: intentResult.needsEscalation,
@@ -127,7 +144,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Step 7: Build full messages array for LLM
     const fullMessages = buildMessages(systemPrompt, {
       intent: intentResult.intent.intent,
-      faqResults: intentResult.faqMatches,
+      knowledgeResults: intentResult.retrievalResults,
       userQuestion: message,
       conversationSummary: null,
       shouldOfferEscalation: intentResult.needsEscalation,
@@ -153,10 +170,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     });
 
     // Send FAQ matches
-    if (intentResult.faqMatches.length > 0) {
+    const clientFaqMatches = faqMatchesForClient(
+      intentResult.faqMatches,
+      intentResult.retrievalResults,
+    );
+    if (clientFaqMatches.length > 0) {
       sseSend({
         type: 'faq',
-        content: intentResult.faqMatches.map((m) => ({
+        content: clientFaqMatches.map((m) => ({
           id: m.id,
           question: m.question,
           answer: m.answer,
@@ -164,6 +185,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           source: m.source,
           vectorScore: m.vectorScore,
           keywordScore: m.keywordScore,
+          fusionScore: m.fusionScore,
+          vectorRank: m.vectorRank,
+          keywordRank: m.keywordRank,
         })),
       });
     }
@@ -178,6 +202,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const directFaq = intentResult.needsEscalation ? null : findDirectFaqAnswer(intentResult.faqMatches);
     if (directFaq) {
       const fullContent = directFaq.answer;
+      const directKnowledge = intentResult.retrievalResults.filter((result) => (
+        result.knowledgeType === 'faq' && result.knowledgeId === directFaq.id
+      ));
       sseSend({ type: 'token', content: fullContent });
 
       const assistantMessage = conversationService.saveMessage({
@@ -187,7 +214,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         intent: intentResult.intent.intent,
         intentConf: intentResult.intent.confidence,
         replyToMessageId: userMessage.id,
-        retrievalSnapshot: toRetrievalSnapshot(intentResult.faqMatches),
+        retrievalSnapshot: toRetrievalSnapshot(directKnowledge),
       });
 
       captureKnowledgeGapSafely({
@@ -196,6 +223,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         intent: intentResult.intent.intent,
         intentConf: intentResult.intent.confidence,
         faqMatches: intentResult.faqMatches,
+        retrievalResults: intentResult.retrievalResults,
         escalationType: intentResult.escalationType,
       });
 
@@ -205,6 +233,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           sessionId,
           messageId: assistantMessage.id,
           intent: intentResult.intent.intent,
+          knowledgeSources: assistantMessage.retrievalSnapshot,
         },
       });
 
@@ -269,7 +298,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       intent: intentResult.intent.intent,
       intentConf: intentResult.intent.confidence,
       replyToMessageId: userMessage.id,
-      retrievalSnapshot: toRetrievalSnapshot(intentResult.faqMatches),
+      retrievalSnapshot: toRetrievalSnapshot(intentResult.retrievalResults),
     });
     assistantMessageId = assistantMessage.id;
 
@@ -279,6 +308,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       intent: intentResult.intent.intent,
       intentConf: intentResult.intent.confidence,
       faqMatches: intentResult.faqMatches,
+      retrievalResults: intentResult.retrievalResults,
       escalationType: intentResult.escalationType,
     });
 
@@ -297,6 +327,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         sessionId,
         messageId: assistantMessageId,
         intent: intentResult.intent.intent,
+        knowledgeSources: assistantMessage.retrievalSnapshot,
       },
     });
 
@@ -318,7 +349,7 @@ router.post('/satisfaction', async (req: Request, res: Response, next: NextFunct
       throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
     }
 
-    const { messageId, sessionId, rating } = parsed.data;
+    const { messageId, sessionId, userIdent, rating } = parsed.data;
     let assistantMessage = messageId ? conversationService.getMessage(messageId) : null;
 
     if (messageId && (!assistantMessage || assistantMessage.role !== MessageRole.ASSISTANT)) {
@@ -341,6 +372,7 @@ router.post('/satisfaction', async (req: Request, res: Response, next: NextFunct
     }
 
     const resolvedSessionId = assistantMessage.sessionId;
+    conversationService.assertSessionOwnership(resolvedSessionId, userIdent);
     knowledgeReviewService.recordRating({
       sessionId: resolvedSessionId,
       assistantMessageId: assistantMessage.id,
@@ -372,6 +404,26 @@ router.get('/sessions', (req: Request, res: Response, next: NextFunction) => {
 
     const result = conversationService.getUserConversations(parsed.data);
     res.json({ code: 0, data: result, message: 'ok' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/chat/sessions/:sessionId/close
+ * Close the current anonymous user's session before starting a new chat.
+ */
+router.post('/sessions/:sessionId/close', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const parsed = closeSessionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
+    }
+    const session = conversationService.closeUserSession(
+      req.params.sessionId,
+      parsed.data.userIdent,
+    );
+    res.json({ code: 0, data: session, message: 'ok' });
   } catch (err) {
     next(err);
   }

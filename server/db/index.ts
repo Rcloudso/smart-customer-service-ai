@@ -56,6 +56,12 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_status_created ON sessions(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_ident, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_status_created ON sessions(user_ident, status, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS faq_entries (
       id TEXT PRIMARY KEY,
@@ -64,6 +70,7 @@ export function initSchema(database: Database.Database): void {
       category TEXT NOT NULL CHECK(category IN ('refund', 'order', 'technical', 'general')),
       keywords TEXT NOT NULL DEFAULT '[]',
       embedding TEXT,
+      embedding_profile TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -72,6 +79,47 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_faq_entries_category ON faq_entries(category);
     CREATE INDEX IF NOT EXISTS idx_faq_entries_is_active ON faq_entries(is_active);
+
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      format TEXT NOT NULL CHECK(format IN ('txt', 'md', 'pdf', 'docx')),
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256 TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'ready', 'failed')),
+      is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+      parser_version TEXT NOT NULL,
+      chunker_version TEXT NOT NULL,
+      failure_code TEXT,
+      character_count INTEGER NOT NULL DEFAULT 0,
+      chunk_count INTEGER NOT NULL DEFAULT 0,
+      uploaded_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_sha256 ON documents(sha256);
+    CREATE INDEX IF NOT EXISTS idx_documents_status_updated ON documents(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_documents_active_updated ON documents(is_active, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_chunks (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      title TEXT,
+      page_start INTEGER,
+      page_end INTEGER,
+      character_count INTEGER NOT NULL,
+      embedding TEXT NOT NULL,
+      embedding_profile TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(document_id, chunk_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_chunks_document ON document_chunks(document_id, chunk_index);
 
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -131,8 +179,17 @@ export function initSchema(database: Database.Database): void {
     );
   `);
 
+  // v0.2.6 security migration: model credentials are environment-injected only.
+  // Delete legacy plaintext overrides without reading or logging their values.
+  database.prepare(
+    "DELETE FROM model_configs WHERE key IN ('llmApiKey', 'embedApiKey')",
+  ).run();
+
   ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
   ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
+  ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
 }
 

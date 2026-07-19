@@ -1,135 +1,84 @@
-import { getLLMClient } from './llm-client';
-import { InMemoryVectorStore, VectorStore } from './vector-store';
 import { getDatabase } from '../db';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { FaqDebugMatch, FaqDebugResult, FaqIndexStatus, FaqMatch } from '../types/ai';
 import { FaqEntry } from '../types/domain';
 import { logger } from '../utils/logger';
+import { buildFaqEmbeddingText, persistCurrentFaqEmbedding } from './knowledge-adapters';
+import {
+  FAQ_EMBEDDING_INPUT_VERSION,
+  currentEmbeddingProfile,
+} from './embedding-profile';
+import { faqKnowledgeAdapter, knowledgeRetriever } from './knowledge-system';
+import { getLLMClient } from './llm-client';
 
-const KEYWORD_MATCH_SCORE = 0.55;
-const KEYWORD_EXACT_MATCH_SCORE = 0.95;
 const EMBEDDING_BATCH_SIZE = 100;
-const HYBRID_SOURCE_PRIORITY: Record<NonNullable<FaqMatch['source']>, number> = {
-  hybrid: 3,
-  vector: 2,
-  keyword: 1,
-};
 
-export function buildFaqEmbeddingText(entry: FaqEntry): string {
-  return [
-    `Question: ${entry.question}`,
-    `Answer: ${entry.answer}`,
-    `Keywords: ${entry.keywords.join(' ')}`,
-  ].join('\n');
+export interface PreparedFaqIndex {
+  embedding: number[];
+  embeddingProfile: string;
 }
 
 class SemanticSearch {
-  private faqRepo: FaqRepo;
-  private vectorStore: VectorStore;
-  private initialized: boolean;
-  private lastRebuiltAt: string | null;
-  private lastError: string | null;
-
-  constructor(vectorStore: VectorStore = new InMemoryVectorStore()) {
-    const db = getDatabase();
-    this.faqRepo = new FaqRepo(db);
-    this.vectorStore = vectorStore;
-    this.initialized = false;
-    this.lastRebuiltAt = null;
-    this.lastError = null;
-  }
+  private readonly faqRepo = new FaqRepo(getDatabase());
+  private initialized = false;
+  private lastRebuiltAt: string | null = null;
+  private lastError: string | null = null;
 
   async initialize(force: boolean = false): Promise<void> {
-    if (this.initialized && !force) {
-      return;
-    }
-
-    this.vectorStore.clear();
-
+    if (this.initialized && !force) return;
     try {
-      const entries = this.faqRepo.listAllActive();
-      const entriesWithEmbeddings = entries.filter((e) => e.embedding && e.embedding.length > 0);
-      const entriesWithoutEmbeddings = entries.filter((e) => !e.embedding || e.embedding.length === 0);
-
-      for (const entry of entriesWithEmbeddings) {
-        if (entry.embedding) {
-          this.vectorStore.upsert(entry, entry.embedding);
-        }
-      }
-
-      if (entriesWithoutEmbeddings.length > 0) {
-        logger.info({ count: entriesWithoutEmbeddings.length }, 'Generating embeddings for FAQ entries');
-        await this.embedAndStore(entriesWithoutEmbeddings);
-      }
-
-      this.initialized = true;
+      if (force) await knowledgeRetriever.refreshSource('faq');
+      else await knowledgeRetriever.initialize();
+      const failedSources = knowledgeRetriever.getFailedSources();
+      this.initialized = !failedSources.includes('faq');
       this.lastRebuiltAt = new Date().toISOString();
-      this.lastError = null;
-      logger.info({ indexSize: this.vectorStore.stats().indexedCount }, 'Semantic search index initialized');
-    } catch (err) {
-      this.lastError = err instanceof Error ? err.message : String(err);
+      this.lastError = this.initialized ? null : 'FAQ vector index is degraded; keyword fallback remains available';
+    } catch (error) {
       this.initialized = true;
-      logger.error({ err }, 'Failed to initialize semantic search index');
+      this.lastError = error instanceof Error ? error.message : String(error);
+      logger.error({ err: error }, 'Failed to initialize semantic search index');
     }
   }
 
   async rebuildIndex(): Promise<FaqIndexStatus> {
-    this.initialized = false;
     await this.initialize(true);
     return this.getStatus();
   }
 
   getStatus(): FaqIndexStatus {
     const activeEntries = this.faqRepo.listAllActive();
-    const stats = this.vectorStore.stats();
-
+    const stats = knowledgeRetriever.stats();
+    const isDegraded = knowledgeRetriever.getFailedSources().includes('faq');
     return {
-      initialized: this.initialized,
+      initialized: knowledgeRetriever.hasInitialized() && !isDegraded,
       activeCount: activeEntries.length,
-      indexedCount: stats.indexedCount,
-      missingEmbeddingCount: activeEntries.filter((entry) => !entry.embedding || entry.embedding.length === 0).length,
+      indexedCount: knowledgeRetriever.getIndexedCount('faq'),
+      missingEmbeddingCount: activeEntries.filter((entry) => (
+        !entry.embedding?.length
+        || entry.embeddingProfile !== currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION)
+      )).length,
       embeddingDimensions: stats.embeddingDimensions,
       lastRebuiltAt: this.lastRebuiltAt ?? stats.updatedAt,
-      lastError: this.lastError,
+      lastError: isDegraded
+        ? this.lastError ?? 'FAQ vector index is degraded; keyword fallback remains available'
+        : null,
     };
   }
 
   async search(query: string, topK: number = 5): Promise<FaqMatch[]> {
-    try {
-      await this.initialize();
-      const merged = new Map<string, FaqMatch>();
-
-      const vectorMatches = await this.semanticSearch(query, topK);
-      for (const match of vectorMatches) {
-        merged.set(match.id, match);
-      }
-
-      const keywordMatches = this.fallbackSearch(query, topK);
-      for (const match of keywordMatches) {
-        const existing = merged.get(match.id);
-        if (existing) {
-          const vectorScore = existing.vectorScore ?? existing.similarity;
-          const keywordScore = match.keywordScore ?? KEYWORD_MATCH_SCORE;
-          merged.set(match.id, {
-            ...existing,
-            source: 'hybrid',
-            vectorScore,
-            keywordScore,
-            similarity: Math.max(vectorScore, keywordScore),
-          });
-        } else {
-          merged.set(match.id, match);
-        }
-      }
-
-      return [...merged.values()]
-        .sort((a, b) => this.compareMatches(a, b))
-        .slice(0, topK);
-    } catch (err) {
-      this.lastError = err instanceof Error ? err.message : String(err);
-      logger.warn({ err }, 'Hybrid FAQ search failed, using keyword fallback');
-      return this.fallbackSearch(query, topK);
-    }
+    const results = await knowledgeRetriever.search(query, topK, ['faq']);
+    return results.map((result) => ({
+      id: result.knowledgeId,
+      question: result.title,
+      answer: result.content,
+      similarity: result.similarity,
+      source: result.source,
+      vectorScore: result.vectorScore,
+      keywordScore: result.keywordScore,
+      fusionScore: result.fusionScore,
+      vectorRank: result.vectorRank,
+      keywordRank: result.keywordRank,
+    }));
   }
 
   async debugSearch(query: string, topK: number = 5): Promise<FaqDebugResult> {
@@ -143,176 +92,102 @@ class SemanticSearch {
     };
   }
 
-  private async semanticSearch(query: string, topK: number): Promise<FaqMatch[]> {
-    if (this.vectorStore.stats().indexedCount === 0) {
-      return [];
-    }
-
-    const llmClient = getLLMClient();
-    const queryEmbedResult = await llmClient.embed([query]);
-    const queryEmbedding = queryEmbedResult[0]?.embedding;
-
-    if (!queryEmbedding) {
-      return [];
-    }
-
-    return this.vectorStore.search(queryEmbedding, topK).map((result) => ({
-      id: result.entry.id,
-      question: result.entry.question,
-      answer: result.entry.answer,
-      similarity: result.score,
-      source: 'vector',
-      vectorScore: result.score,
-    }));
+  async prepareIndex(entry: FaqEntry): Promise<PreparedFaqIndex> {
+    const result = await getLLMClient().embed([buildFaqEmbeddingText(entry)]);
+    const embedding = result[0]?.embedding;
+    if (!embedding) throw new Error('Embedding result was empty');
+    return {
+      embedding,
+      embeddingProfile: currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION),
+    };
   }
 
-  private fallbackSearch(query: string, topK: number): FaqMatch[] {
-    logger.debug({ query, topK }, 'Using LIKE fallback search');
-    const results = this.faqRepo.searchLike(query, topK);
-    return results.map((entry) => {
-      const keywordScore = this.keywordScore(query, entry);
-      return {
-        id: entry.id,
-        question: entry.question,
-        answer: entry.answer,
-        similarity: keywordScore,
-        source: 'keyword',
-        keywordScore,
-      };
-    });
+  commitPreparedIndex(entry: FaqEntry): void {
+    knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+    if (entry.isActive && entry.embedding) {
+      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(entry));
+    }
   }
 
-  private keywordScore(query: string, entry: FaqEntry): number {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return KEYWORD_MATCH_SCORE;
+  async updateIndex(entry: FaqEntry): Promise<void> {
+    if (!entry.isActive) {
+      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+      return;
     }
-
-    const haystack = [
-      entry.question,
-      entry.answer,
-      entry.keywords.join(' '),
-    ].join(' ').toLowerCase();
-
-    if (haystack.includes(normalizedQuery)) {
-      return KEYWORD_EXACT_MATCH_SCORE;
+    try {
+      const updated = await persistCurrentFaqEmbedding(
+        entry,
+        this.faqRepo,
+        (current) => this.prepareIndex(current),
+      );
+      if (!updated || !updated.isActive) {
+        knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+        return;
+      }
+      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(updated));
+    } catch (error) {
+      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+      this.lastError = error instanceof Error ? error.message : String(error);
+      logger.warn({ err: error, entryId: entry.id }, 'Failed to update FAQ index entry');
     }
-
-    const terms = normalizedQuery.split(/\s+/).filter(Boolean);
-    if (terms.length === 0) {
-      return KEYWORD_MATCH_SCORE;
-    }
-
-    const matchedTerms = terms.filter((term) => haystack.includes(term)).length;
-    return KEYWORD_MATCH_SCORE + Math.min(0.1, matchedTerms / terms.length * 0.1);
   }
 
-  private compareMatches(a: FaqMatch, b: FaqMatch): number {
-    const aScore = Math.max(a.vectorScore ?? 0, a.keywordScore ?? 0, a.similarity);
-    const bScore = Math.max(b.vectorScore ?? 0, b.keywordScore ?? 0, b.similarity);
-    const scoreDelta = bScore - aScore;
-    if (scoreDelta !== 0) {
-      return scoreDelta;
+  async updateIndexBatch(entries: FaqEntry[]): Promise<void> {
+    const active = entries.filter((entry) => entry.isActive);
+    const currentProfile = currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION);
+    for (const entry of entries) knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+    const updates: Array<{
+      id: string;
+      embedding: number[];
+      embeddingProfile: string;
+      expectedUpdatedAt: string;
+    }> = [];
+    for (let i = 0; i < active.length; i += EMBEDDING_BATCH_SIZE) {
+      const batch = active.slice(i, i + EMBEDDING_BATCH_SIZE);
+      const missing = batch.filter((entry) => (
+        !entry.embedding?.length || entry.embeddingProfile !== currentProfile
+      ));
+      let generated: number[][] = [];
+      if (missing.length > 0) {
+        const results = await getLLMClient().embed(missing.map(buildFaqEmbeddingText));
+        generated = results.map((result) => result.embedding);
+      }
+      for (const [index, entry] of missing.entries()) {
+        const embedding = generated[index];
+        if (!embedding?.length) throw new Error('Embedding result was empty');
+        updates.push({
+          id: entry.id,
+          embedding,
+          embeddingProfile: currentProfile,
+          expectedUpdatedAt: entry.updatedAt,
+        });
+      }
     }
-
-    return HYBRID_SOURCE_PRIORITY[b.source ?? 'keyword'] - HYBRID_SOURCE_PRIORITY[a.source ?? 'keyword'];
+    if (updates.length > 0) this.faqRepo.updateEmbeddings(updates);
+    const refreshed = new Map(this.faqRepo.listAllActive().map((entry) => [entry.id, entry]));
+    for (const entry of active) {
+      const indexedEntry = refreshed.get(entry.id) ?? entry;
+      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(indexedEntry));
+    }
   }
 
   private toDebugMatch(match: FaqMatch, index: number): FaqDebugMatch {
     const vectorScore = match.vectorScore ?? 0;
     const keywordScore = match.keywordScore ?? 0;
-    const bestScore = Math.max(vectorScore, keywordScore, match.similarity);
+    const bestScore = match.fusionScore ?? Math.max(vectorScore, keywordScore, match.similarity);
     const matchedBy: Array<'vector' | 'keyword'> = [];
-    if (match.source === 'vector' || match.source === 'hybrid') {
-      matchedBy.push('vector');
-    }
-    if (match.source === 'keyword' || match.source === 'hybrid') {
-      matchedBy.push('keyword');
-    }
-
-    const source = match.source ?? 'keyword';
+    if (match.source === 'vector' || match.source === 'hybrid') matchedBy.push('vector');
+    if (match.source === 'keyword' || match.source === 'hybrid') matchedBy.push('keyword');
     return {
       ...match,
       rank: index + 1,
       bestScore,
       matchedBy,
-      rankingReason: `${source} match ranked by best score ${bestScore.toFixed(3)}`,
+      rankingReason: match.fusionScore === undefined
+        ? `${match.source ?? 'keyword'} match ranked by best score ${bestScore.toFixed(3)}`
+        : `${match.source ?? 'keyword'} match fused by RRF ${bestScore.toFixed(4)}`
+          + ` (vector rank ${match.vectorRank ?? '-'}, keyword rank ${match.keywordRank ?? '-'})`,
     };
-  }
-
-  async updateIndex(entry: FaqEntry): Promise<void> {
-    this.vectorStore.delete(entry.id);
-
-    if (!entry.isActive) {
-      return;
-    }
-
-    try {
-      await this.embedAndStore([entry]);
-    } catch (err) {
-      this.lastError = err instanceof Error ? err.message : String(err);
-      logger.warn({ err, entryId: entry.id }, 'Failed to update index for entry');
-    }
-  }
-
-  async prepareIndex(entry: FaqEntry): Promise<number[]> {
-    try {
-      const result = await getLLMClient().embed([buildFaqEmbeddingText(entry)]);
-      const embedding = result[0]?.embedding;
-      if (!embedding) throw new Error('Embedding result was empty');
-      return embedding;
-    } catch (error) {
-      this.lastError = 'FAQ index preparation failed';
-      logger.warn({ entryId: entry.id }, 'Failed to prepare FAQ index entry');
-      throw error;
-    }
-  }
-
-  commitPreparedIndex(entry: FaqEntry): void {
-    this.vectorStore.delete(entry.id);
-    if (entry.isActive && entry.embedding) {
-      this.vectorStore.upsert(entry, entry.embedding);
-    }
-  }
-
-  async updateIndexBatch(entries: FaqEntry[]): Promise<void> {
-    const activeEntries: FaqEntry[] = [];
-
-    for (const entry of entries) {
-      this.vectorStore.delete(entry.id);
-      if (entry.isActive) {
-        activeEntries.push(entry);
-      }
-    }
-
-    if (activeEntries.length === 0) {
-      return;
-    }
-
-    try {
-      await this.embedAndStore(activeEntries);
-    } catch (err) {
-      this.lastError = err instanceof Error ? err.message : String(err);
-      logger.warn({ err, count: activeEntries.length }, 'Failed to update index for FAQ batch');
-    }
-  }
-
-  private async embedAndStore(entries: FaqEntry[]): Promise<void> {
-    const llmClient = getLLMClient();
-
-    for (let i = 0; i < entries.length; i += EMBEDDING_BATCH_SIZE) {
-      const batch = entries.slice(i, i + EMBEDDING_BATCH_SIZE);
-      const results = await llmClient.embed(batch.map((entry) => buildFaqEmbeddingText(entry)));
-
-      for (let j = 0; j < batch.length; j++) {
-        const entry = batch[j];
-        const embedding = results[j]?.embedding;
-        if (embedding) {
-          const updated = this.faqRepo.updateEmbedding(entry.id, embedding) ?? { ...entry, embedding };
-          this.vectorStore.upsert(updated, embedding);
-        }
-      }
-    }
   }
 }
 

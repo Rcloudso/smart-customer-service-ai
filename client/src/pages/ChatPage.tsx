@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { Button, MessagePlugin } from 'tdesign-react';
-import { AddIcon, ChatIcon, ClearIcon } from 'tdesign-icons-react';
+import { AddIcon, ChatIcon } from 'tdesign-icons-react';
 import { useChat } from '../hooks/useChat';
 import { useTranslation } from '../hooks/usePreferences';
 import { ChatBubble } from '../components/chat/ChatBubble';
@@ -71,11 +71,6 @@ export function ChatPage(): React.ReactElement {
     [fetchHistory, sendMessage],
   );
 
-  const handleClear = useCallback(() => {
-    clearChat();
-    MessagePlugin.success(t('chat.cleared'));
-  }, [clearChat, t]);
-
   const handleLoadHistory = useCallback(async (sessionId: string) => {
     setHistoryLoading(true);
     try {
@@ -91,8 +86,8 @@ export function ChatPage(): React.ReactElement {
   }, [language, loadHistory]);
 
   const handleNewChat = useCallback(() => {
-    clearChat();
-  }, [clearChat]);
+    void clearChat().then(fetchHistory);
+  }, [clearChat, fetchHistory]);
 
   const handleSubmitRating = useCallback(
     (messageId: string, rating: number) => {
@@ -111,6 +106,7 @@ export function ChatPage(): React.ReactElement {
             variant="outline"
             icon={<AddIcon />}
             onClick={handleNewChat}
+            disabled={isStreaming}
             block
             data-testid="new-chat-button"
           >
@@ -156,16 +152,6 @@ export function ChatPage(): React.ReactElement {
             </p>
           </div>
           <div className="app-chat-header-actions">
-            {messages.length > 0 && (
-              <Button
-                variant="text"
-                icon={<ClearIcon />}
-                onClick={handleClear}
-                size="small"
-              >
-                {t('chat.clear')}
-              </Button>
-            )}
             <PreferenceControls compact />
           </div>
         </div>

@@ -1,0 +1,60 @@
+{
+  "faqs": [
+    {
+      "question": "商品有质量问题怎么办？",
+      "answer": "请提交售后申请并上传故障证据。",
+      "keywords": ["质量", "售后"]
+    },
+    {
+      "question": "有哪些优惠活动？",
+      "answer": "活动以商城页面实时展示为准。",
+      "keywords": ["优惠", "活动"]
+    }
+  ],
+  "documents": [
+    {
+      "id": "gpu-catalogue",
+      "title": "05-gpu-model-catalog-messy.md",
+      "sectionTitle": "GPU 型号清单",
+      "content": "GPU 显卡型号清单：NXG-4060F、NXG-4070T、NXG-5080 AURORA OC、NXG-3070 RF。5080 建议 1000W 电源；3070 RF 是官翻卡，质保 12 个月。"
+    },
+    {
+      "id": "service-guide",
+      "title": "04-customer-service-guideline-messy.md",
+      "sectionTitle": "客服排查指引",
+      "content": "新卡黑屏先确认显示线接在显卡而不是主板。客服回答前需要核对具体型号，但不能把示例当成完整型号清单。"
+    }
+  ],
+  "cases": [
+    {
+      "id": "gpu-natural-catalogue",
+      "query": "GPU型号有哪些",
+      "expectedTitle": "05-gpu-model-catalog-messy.md"
+    },
+    {
+      "id": "gpu-colloquial-catalogue",
+      "query": "有什么显卡",
+      "expectedTitle": "05-gpu-model-catalog-messy.md"
+    },
+    {
+      "id": "gpu-power",
+      "query": "5080需要多大电源",
+      "expectedTitle": "05-gpu-model-catalog-messy.md"
+    },
+    {
+      "id": "gpu-refurbished-warranty",
+      "query": "3070 RF质保多久",
+      "expectedTitle": "05-gpu-model-catalog-messy.md"
+    },
+    {
+      "id": "gpu-black-screen",
+      "query": "新显卡黑屏怎么排查",
+      "expectedTitle": "04-customer-service-guideline-messy.md"
+    },
+    {
+      "id": "exact-faq",
+      "query": "商品有质量问题怎么办？",
+      "expectedTitle": "商品有质量问题怎么办？"
+    }
+  ]
+}

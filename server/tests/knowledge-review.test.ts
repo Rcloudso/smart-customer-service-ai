@@ -181,7 +181,7 @@ async function testConversionRetryAndStatusConflicts(): Promise<void> {
   const service = new KnowledgeReviewService(fixture.db, async (faq) => {
     indexedFaqIds.push(faq.id);
     if (shouldFail) throw new Error('index unavailable');
-    return [0.1, 0.2];
+    return { embedding: [0.1, 0.2], embeddingProfile: 'test-profile' };
   }, () => {
     statusAtIndexCommit.push(fixture.reviews.findById(conversionReviewId)?.status as KnowledgeReviewStatus);
   });

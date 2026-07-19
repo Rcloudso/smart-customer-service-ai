@@ -48,14 +48,62 @@ export enum KnowledgeReviewStatus {
   DISMISSED = 'dismissed',
 }
 
+export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type DocumentStatus = 'pending' | 'ready' | 'failed';
+
+export interface DocumentRecord {
+  id: string;
+  fileName: string;
+  storagePath: string;
+  format: DocumentFormat;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  status: DocumentStatus;
+  isActive: number;
+  parserVersion: string;
+  chunkerVersion: string;
+  failureCode: string | null;
+  characterCount: number;
+  chunkCount: number;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type Document = Omit<DocumentRecord, 'storagePath' | 'sha256'>;
+
+export interface DocumentChunk {
+  id: string;
+  documentId: string;
+  chunkIndex: number;
+  content: string;
+  title: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  characterCount: number;
+  embedding: number[];
+  embeddingProfile: string | null;
+  createdAt: string;
+}
+
+export type DocumentChunkView = Omit<DocumentChunk, 'embedding' | 'embeddingProfile'>;
+
 export interface KnowledgeRetrievalSnapshot {
-  knowledgeType: 'faq';
+  knowledgeType: 'faq' | 'document';
   knowledgeId: string;
+  documentId?: string;
   title: string;
   source?: 'vector' | 'keyword' | 'hybrid';
   similarity: number;
   keywordScore?: number;
   vectorScore?: number;
+  fusionScore?: number;
+  keywordRank?: number;
+  vectorRank?: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
 }
 
 export interface KnowledgeReviewItem {
@@ -85,6 +133,7 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  closeReason: string | null;
 }
 
 export interface Message {
@@ -108,6 +157,7 @@ export interface FaqEntry {
   category: IntentCategory;
   keywords: string[];
   embedding: number[] | null;
+  embeddingProfile: string | null;
   isActive: number;
   createdAt: string;
   updatedAt: string;

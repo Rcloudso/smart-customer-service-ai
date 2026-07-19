@@ -6,18 +6,14 @@ import {
   Select,
   Button,
   MessagePlugin,
+  Tag,
 } from 'tdesign-react';
 import * as adminApi from '../../api/admin';
 import type { ModelConfigResponseDTO, ModelConfigDTO } from '../../api/admin';
+import type { ModelProvider } from '../../types';
 import { useTranslation } from '../../hooks/usePreferences';
 
 const { FormItem } = Form;
-
-/** Fields that represent API keys — special masking/password handling. */
-const API_KEY_FIELDS: (keyof ModelConfigDTO)[] = ['llmApiKey', 'embedApiKey'];
-
-/** Placeholder shown when the API key is unchanged from env/current. */
-const API_KEY_PLACEHOLDER = '********';
 
 /**
  * Model configuration page — display and edit LLM / Embedding model settings.
@@ -32,14 +28,13 @@ export function ModelConfigPage(): React.ReactElement {
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
 
   // Form state — mirrors the editable fields
-  const [form, setForm] = useState<Record<string, string>>({
+  const [form, setForm] = useState<ModelConfigDTO>({
+    llmProvider: 'openai',
     llmApiBase: '',
     llmModel: '',
-    llmApiKey: '',
     embedProvider: 'openai',
     embedApiBase: '',
     embedModel: '',
-    embedApiKey: '',
   });
 
   const fetchConfig = useCallback(async () => {
@@ -49,14 +44,12 @@ export function ModelConfigPage(): React.ReactElement {
       setConfig(data);
       setModifiedFields(new Set()); // reset dirty tracking on fresh load
       setForm({
+        llmProvider: data.llmProvider,
         llmApiBase: data.llmApiBase,
         llmModel: data.llmModel,
-        // For API keys: if overridden, show masked value as placeholder (don't prefill)
-        llmApiKey: '',
         embedProvider: data.embedProvider,
         embedApiBase: data.embedApiBase,
         embedModel: data.embedModel,
-        embedApiKey: '',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : t('config.loadFailed');
@@ -70,51 +63,30 @@ export function ModelConfigPage(): React.ReactElement {
     fetchConfig();
   }, [fetchConfig]);
 
-  /** Get the placeholder for an API key field based on override status. */
-  const getApiKeyPlaceholder = (field: keyof ModelConfigDTO): string => {
-    if (!config) return API_KEY_PLACEHOLDER;
-    const overridden = field === 'llmApiKey'
-      ? config.llmApiKeyOverridden
-      : config.embedApiKeyOverridden;
-    return overridden ? config[field] : API_KEY_PLACEHOLDER;
-  };
-
-  const handleFieldChange = (field: string, value: string): void => {
+  const handleFieldChange = (field: keyof ModelConfigDTO, value: string): void => {
     setModifiedFields((prev) => new Set(prev).add(field));
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const providerOptions = [
+    { label: 'OpenAI', value: 'openai' },
+    { label: 'OpenAI Compatible', value: 'openai-compatible' },
+    { label: t('config.otherProvider'), value: 'other' },
+  ];
+
   const handleSave = async (): Promise<void> => {
     setSaving(true);
     try {
-      // Build update payload — filter out empty strings.
-      // Non-key fields: only include if the user actually modified them.
       const updates: Partial<ModelConfigDTO> = {};
       for (const [key, value] of Object.entries(form)) {
         if (value === '') continue;
-        // Non-key fields: skip if not explicitly modified by the user
-        if (!API_KEY_FIELDS.includes(key as keyof ModelConfigDTO) && !modifiedFields.has(key)) continue;
+        if (!modifiedFields.has(key)) continue;
         (updates as Record<string, string>)[key] = value;
       }
 
-      // Collect reset keys — fields explicitly cleared by user
       const resetKeys: string[] = [];
-      for (const key of API_KEY_FIELDS) {
-        // Only reset API key if user explicitly modified the field AND left it empty
-        if (form[key] === '' && modifiedFields.has(key) && config) {
-          const overridden = key === 'llmApiKey'
-            ? config.llmApiKeyOverridden
-            : config.embedApiKeyOverridden;
-          if (overridden) {
-            resetKeys.push(key);
-          }
-        }
-      }
-      // Also allow resetting non-key fields if explicitly cleared
-      const nonKeyFields: (keyof ModelConfigDTO)[] = ['llmApiBase', 'llmModel', 'embedProvider', 'embedApiBase', 'embedModel'];
-      for (const key of nonKeyFields) {
-        if (form[key] === '' && config && config[key as keyof ModelConfigResponseDTO] !== '') {
-          // Field was cleared — reset to env default
+      for (const key of Object.keys(form) as Array<keyof ModelConfigDTO>) {
+        if (form[key] === '' && modifiedFields.has(key) && config?.[key] !== '') {
           resetKeys.push(key);
         }
       }
@@ -154,22 +126,29 @@ export function ModelConfigPage(): React.ReactElement {
       >
         <Form layout="vertical" labelWidth={120}>
           <FormItem label={t('config.provider')} help={t('config.providerHelp')}>
-            <Select
-              value="openai"
-              disabled
-              options={[{ label: 'OpenAI', value: 'openai' }]}
-              style={{ width: '100%' }}
-            />
+            <div data-testid="llm-provider-select">
+              <Select
+                value={form.llmProvider}
+                onChange={(val) => handleFieldChange('llmProvider', val as ModelProvider)}
+                options={providerOptions}
+                style={{ width: '100%' }}
+                disabled={loading}
+              />
+            </div>
           </FormItem>
 
-          <FormItem label={t('config.apiBaseUrl')}>
-            <Input
-              value={form.llmApiBase}
-              placeholder={config?.llmApiBase || 'https://api.openai.com/v1'}
-              onChange={(val) => handleFieldChange('llmApiBase', val as string)}
-              disabled={loading}
-            />
-          </FormItem>
+          {form.llmProvider !== 'openai' && (
+            <FormItem label={t('config.apiBaseUrl')}>
+              <div data-testid="llm-api-base-field">
+                <Input
+                  value={form.llmApiBase}
+                  placeholder={config?.llmApiBase || ''}
+                  onChange={(val) => handleFieldChange('llmApiBase', val as string)}
+                  disabled={loading}
+                />
+              </div>
+            </FormItem>
+          )}
 
           <FormItem label={t('config.model')}>
             <Input
@@ -181,13 +160,14 @@ export function ModelConfigPage(): React.ReactElement {
           </FormItem>
 
           <FormItem label={t('config.apiKey')}>
-            <Input
-              type="password"
-              value={form.llmApiKey}
-              placeholder={getApiKeyPlaceholder('llmApiKey')}
-              onChange={(val) => handleFieldChange('llmApiKey', val as string)}
-              disabled={loading}
-            />
+            <div className="app-config-secret-status" data-testid="llm-api-key-status">
+              <Tag theme={config?.llmApiKeyConfigured ? 'success' : 'default'} variant="light">
+                {t(config?.llmApiKeyConfigured ? 'config.apiKeyConfigured' : 'config.apiKeyNotConfigured')}
+              </Tag>
+              <span>
+                {t('config.apiKeyEnvironmentHelp', { variable: 'LLM_API_KEY / OPENAI_API_KEY' })}
+              </span>
+            </div>
           </FormItem>
         </Form>
       </Card>
@@ -201,27 +181,30 @@ export function ModelConfigPage(): React.ReactElement {
         bodyStyle={{ padding: '24px' }}
       >
         <Form layout="vertical" labelWidth={120}>
-          <FormItem label={t('config.provider')}>
-            <Select
-              value={form.embedProvider}
-              onChange={(val) => handleFieldChange('embedProvider', val as string)}
-              options={[
-                { label: 'OpenAI', value: 'openai' },
-                { label: t('config.otherProvider'), value: 'other' },
-              ]}
-              style={{ width: '100%' }}
-              disabled={loading}
-            />
+          <FormItem label={t('config.provider')} help={t('config.providerHelp')}>
+            <div data-testid="embed-provider-select">
+              <Select
+                value={form.embedProvider}
+                onChange={(val) => handleFieldChange('embedProvider', val as ModelProvider)}
+                options={providerOptions}
+                style={{ width: '100%' }}
+                disabled={loading}
+              />
+            </div>
           </FormItem>
 
-          <FormItem label={t('config.apiBaseUrl')}>
-            <Input
-              value={form.embedApiBase}
-              placeholder={config?.embedApiBase || ''}
-              onChange={(val) => handleFieldChange('embedApiBase', val as string)}
-              disabled={loading}
-            />
-          </FormItem>
+          {form.embedProvider !== 'openai' && (
+            <FormItem label={t('config.apiBaseUrl')}>
+              <div data-testid="embed-api-base-field">
+                <Input
+                  value={form.embedApiBase}
+                  placeholder={config?.embedApiBase || ''}
+                  onChange={(val) => handleFieldChange('embedApiBase', val as string)}
+                  disabled={loading}
+                />
+              </div>
+            </FormItem>
+          )}
 
           <FormItem label={t('config.model')}>
             <Input
@@ -233,13 +216,14 @@ export function ModelConfigPage(): React.ReactElement {
           </FormItem>
 
           <FormItem label={t('config.apiKey')}>
-            <Input
-              type="password"
-              value={form.embedApiKey}
-              placeholder={getApiKeyPlaceholder('embedApiKey')}
-              onChange={(val) => handleFieldChange('embedApiKey', val as string)}
-              disabled={loading}
-            />
+            <div className="app-config-secret-status" data-testid="embed-api-key-status">
+              <Tag theme={config?.embedApiKeyConfigured ? 'success' : 'default'} variant="light">
+                {t(config?.embedApiKeyConfigured ? 'config.apiKeyConfigured' : 'config.apiKeyNotConfigured')}
+              </Tag>
+              <span>
+                {t('config.apiKeyEnvironmentHelp', { variable: 'EMBED_API_KEY' })}
+              </span>
+            </div>
           </FormItem>
         </Form>
       </Card>

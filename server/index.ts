@@ -14,6 +14,7 @@ let adminFaqRoutes: express.Router;
 let adminStatsRoutes: express.Router;
 let adminConfigRoutes: express.Router;
 let adminKnowledgeReviewRoutes: express.Router;
+let adminDocumentRoutes: express.Router;
 
 function createApp(): express.Application {
   const app = express();
@@ -87,6 +88,13 @@ function createApp(): express.Application {
     return adminKnowledgeReviewRoutes(_req, _res, next);
   });
 
+  app.use('/api/admin/documents', (_req, _res, next) => {
+    if (!adminDocumentRoutes) {
+      adminDocumentRoutes = require('./routes/admin/documents').default;
+    }
+    return adminDocumentRoutes(_req, _res, next);
+  });
+
   // ---- Health check ----
   app.get('/api/health', (_req, res) => {
     res.json({ code: 0, data: { status: 'ok', uptime: process.uptime() }, message: 'ok' });
@@ -106,10 +114,10 @@ async function start(): Promise<void> {
     getDatabase();
     logger.info('Database initialized');
 
-    // Hydrate runtime config from DB overrides (restore persisted model_configs)
+    // Hydrate runtime config from environment-owned model settings.
     const { configService } = await import('./services/config.service');
     configService.hydrate();
-    logger.info('Runtime config hydrated from DB overrides');
+    logger.info('Runtime config hydrated from environment');
 
     // Initialize semantic search index
     const { semanticSearch } = await import('./ai/semantic-search');

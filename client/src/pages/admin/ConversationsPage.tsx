@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Table,
   Card,
   Button,
   Input,
+  DatePicker,
   Select,
   Tag,
   Dialog,
@@ -13,11 +14,13 @@ import type { SelectValue } from 'tdesign-react';
 import {
   SearchIcon,
   DownloadIcon,
+  FilterClearIcon,
   RefreshIcon,
 } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
 import type { ConversationDetail } from '../../api/admin';
-import { IntentCategory } from '../../api/admin';
+import { SessionStatus } from '../../api/admin';
+import { SafeMarkdown } from '../../components/common/SafeMarkdown';
 import { useTranslation } from '../../hooks/usePreferences';
 
 /** Simplified column definition to avoid depending on TDesign's internal TableColumn type. */
@@ -39,6 +42,23 @@ interface ConversationRow {
   updatedAt: string;
 }
 
+function localDayTimezoneOffsets(date: string): {
+  start: number;
+  end: number;
+} {
+  if (!date) {
+    const current = new Date().getTimezoneOffset();
+    return { start: current, end: current };
+  }
+  const start = new Date(`${date}T00:00:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return {
+    start: start.getTimezoneOffset(),
+    end: end.getTimezoneOffset(),
+  };
+}
+
 const STATUS_MAP: Record<string, { labelKey: string; theme: 'success' | 'warning' | 'danger' | 'default' }> = {
   active: { labelKey: 'status.active', theme: 'success' },
   closed: { labelKey: 'status.closed', theme: 'default' },
@@ -57,45 +77,84 @@ export function ConversationsPage(): React.ReactElement {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [keyword, setKeyword] = useState('');
-  const [intentFilter, setIntentFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [createdDate, setCreatedDate] = useState('');
+  const [appliedKeyword, setAppliedKeyword] = useState('');
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState('');
+  const [appliedCreatedDate, setAppliedCreatedDate] = useState('');
+  const timezoneOffsets = localDayTimezoneOffsets(appliedCreatedDate);
   const [detailVisible, setDetailVisible] = useState(false);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const intentOptions = [
-    { label: t('intent.all'), value: '' },
-    { label: t('intent.refund'), value: IntentCategory.REFUND },
-    { label: t('intent.order'), value: IntentCategory.ORDER },
-    { label: t('intent.technical'), value: IntentCategory.TECHNICAL },
-    { label: t('intent.general'), value: IntentCategory.GENERAL },
+  const requestIdRef = useRef(0);
+  const statusOptions = [
+    { label: t('status.all'), value: '' },
+    { label: t('status.active'), value: SessionStatus.ACTIVE },
+    { label: t('status.closed'), value: SessionStatus.CLOSED },
+    { label: t('status.escalated'), value: SessionStatus.ESCALATED },
   ];
 
   const fetchConversations = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
       const result = await adminApi.getConversations({
         page,
         limit: pageSize,
-        intent: intentFilter || undefined,
-        keyword: keyword || undefined,
+        status: (appliedStatusFilter || undefined) as SessionStatus | undefined,
+        keyword: appliedKeyword || undefined,
+        from: appliedCreatedDate || undefined,
+        to: appliedCreatedDate || undefined,
+        timezoneOffset: timezoneOffsets.start,
+        timezoneOffsetTo: timezoneOffsets.end,
       });
 
+      if (requestId !== requestIdRef.current) return;
       setData((result.items ?? []) as ConversationRow[]);
       setTotal(result.total ?? 0);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       const message = err instanceof Error ? err.message : t('conversations.listLoadFailed');
       MessagePlugin.error(message);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [page, pageSize, intentFilter, keyword, language]);
+  }, [
+    page,
+    pageSize,
+    appliedStatusFilter,
+    appliedKeyword,
+    appliedCreatedDate,
+    timezoneOffsets.start,
+    timezoneOffsets.end,
+    language,
+  ]);
 
   useEffect(() => {
     fetchConversations();
   }, [fetchConversations]);
 
   const handleSearch = () => {
+    const nextKeyword = keyword.trim();
+    const shouldRefresh = page === 1
+      && nextKeyword === appliedKeyword
+      && statusFilter === appliedStatusFilter
+      && createdDate === appliedCreatedDate;
+    setAppliedKeyword(nextKeyword);
+    setAppliedStatusFilter(statusFilter);
+    setAppliedCreatedDate(createdDate);
     setPage(1);
-    fetchConversations();
+    if (shouldRefresh) void fetchConversations();
+  };
+
+  const handleReset = () => {
+    setKeyword('');
+    setStatusFilter('');
+    setCreatedDate('');
+    setAppliedKeyword('');
+    setAppliedStatusFilter('');
+    setAppliedCreatedDate('');
+    setPage(1);
   };
 
   const handleViewDetail = async (sessionId: string) => {
@@ -114,7 +173,14 @@ export function ConversationsPage(): React.ReactElement {
 
   const handleExport = async () => {
     try {
-      await adminApi.exportConversations();
+      await adminApi.exportConversations({
+        from: appliedCreatedDate || undefined,
+        to: appliedCreatedDate || undefined,
+        status: (appliedStatusFilter || undefined) as SessionStatus | undefined,
+        keyword: appliedKeyword || undefined,
+        timezoneOffset: timezoneOffsets.start,
+        timezoneOffsetTo: timezoneOffsets.end,
+      });
       MessagePlugin.success(t('common.exportSuccess'));
     } catch (err) {
       const message = err instanceof Error ? err.message : t('common.exportFailed');
@@ -203,24 +269,43 @@ export function ConversationsPage(): React.ReactElement {
             placeholder={t('conversations.searchPlaceholder')}
             value={keyword}
             onChange={(val: string) => setKeyword(val)}
-            onEnter={handleSearch}
             prefixIcon={<SearchIcon />}
             className="app-filter-input"
             clearable
           />
-          <Select
-            value={intentFilter}
-            onChange={(val: SelectValue) => setIntentFilter(String(val ?? ''))}
-            options={intentOptions}
-            className="app-filter-select"
+          <label className="app-filter-select-field">
+            <span className="app-sr-only">{t('conversations.statusFilter')}</span>
+            <Select
+              value={statusFilter}
+              onChange={(val: SelectValue) => setStatusFilter(String(val ?? ''))}
+              options={statusOptions}
+              placeholder={t('conversations.statusFilter')}
+              className="app-filter-select"
+            />
+          </label>
+          <DatePicker
+            value={createdDate}
+            onChange={(value) => setCreatedDate(String(value ?? ''))}
+            placeholder={t('conversations.createdDateFilter')}
+            clearable
+            className="app-filter-date"
+            data-testid="conversation-created-date-filter"
           />
           <Button theme="primary" onClick={handleSearch} icon={<SearchIcon />}>
             {t('common.search')}
           </Button>
+          <Button variant="outline" onClick={handleReset} icon={<FilterClearIcon />} data-testid="conversation-filter-reset">
+            {t('common.reset')}
+          </Button>
           <div className="app-toolbar-spacer" />
           <div className="app-toolbar-actions">
-            <Button variant="outline" onClick={handleExport} icon={<DownloadIcon />}>
-              {t('common.exportCsv')}
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              icon={<DownloadIcon />}
+              title={t('conversations.exportFilteredHint')}
+            >
+              {t('conversations.exportFiltered')}
             </Button>
             <Button variant="outline" onClick={fetchConversations} icon={<RefreshIcon />}>
               {t('common.refresh')}
@@ -297,7 +382,7 @@ export function ConversationsPage(): React.ReactElement {
                   )}
                 </div>
                 <div className="app-conversation-message__content">
-                  {msg.content}
+                  <SafeMarkdown content={msg.content} />
                 </div>
               </div>
             ))}

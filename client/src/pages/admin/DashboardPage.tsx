@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Card, DateRangePicker, MessagePlugin, Space } from 'tdesign-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Button, Card, DateRangePicker, MessagePlugin, Space } from 'tdesign-react';
 import {
   ChatIcon,
   FileIcon,
+  FilterClearIcon,
+  SearchIcon,
   StarIcon,
   UserIcon,
 } from 'tdesign-icons-react';
@@ -24,34 +26,40 @@ export function DashboardPage(): React.ReactElement {
   const [intentDistribution, setIntentDistribution] = useState<IntentDistribution[]>([]);
   const [trend, setTrend] = useState<SatisfactionTrend[]>([]);
   const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+  const [appliedDateRange, setAppliedDateRange] = useState<[string, string] | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetchData = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
-      const from = dateRange?.[0] ?? undefined;
-      const to = dateRange?.[1] ?? undefined;
+      const from = appliedDateRange?.[0] ?? undefined;
+      const to = appliedDateRange?.[1] ?? undefined;
 
       const [overviewData, trendData] = await Promise.all([
         adminApi.getStatsOverview(from, to),
         adminApi.getSatisfactionTrend(from, to, 'day'),
       ]);
 
+      if (requestId !== requestIdRef.current) return;
       setOverview({
         totalConversations: overviewData.totalConversations,
         totalMessages: overviewData.totalMessages,
         avgSatisfaction: overviewData.avgSatisfaction,
         escalationRate: overviewData.escalationRate,
         activeSessions: overviewData.activeSessions,
+        activeWindowMinutes: overviewData.activeWindowMinutes,
       });
       setIntentDistribution(overviewData.intentDistribution ?? []);
       setTrend(trendData);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       const message = err instanceof Error ? err.message : t('common.loadFailed');
       MessagePlugin.error(message);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [dateRange, language]);
+  }, [appliedDateRange, language]);
 
   useEffect(() => {
     fetchData();
@@ -66,6 +74,18 @@ export function DashboardPage(): React.ReactElement {
     }
   };
 
+  const handleSearch = () => {
+    const unchanged = dateRange?.[0] === appliedDateRange?.[0]
+      && dateRange?.[1] === appliedDateRange?.[1];
+    setAppliedDateRange(dateRange ? [...dateRange] : null);
+    if (unchanged) void fetchData();
+  };
+
+  const handleReset = () => {
+    setDateRange(null);
+    setAppliedDateRange(null);
+  };
+
   return (
     <div className="app-page-container">
       {/* Page header */}
@@ -75,11 +95,29 @@ export function DashboardPage(): React.ReactElement {
         </h2>
         <Space className="app-page-actions">
           <DateRangePicker
+            value={dateRange ?? []}
             placeholder={[t('dashboard.startDate'), t('dashboard.endDate')]}
             onChange={handleDateChange}
+            allowInput
             clearable
             style={{ width: '260px' }}
           />
+          <Button
+            theme="primary"
+            icon={<SearchIcon />}
+            onClick={handleSearch}
+            data-testid="dashboard-filter-search"
+          >
+            {t('common.search')}
+          </Button>
+          <Button
+            variant="outline"
+            icon={<FilterClearIcon />}
+            onClick={handleReset}
+            data-testid="dashboard-filter-reset"
+          >
+            {t('common.reset')}
+          </Button>
         </Space>
       </div>
 
@@ -116,7 +154,9 @@ export function DashboardPage(): React.ReactElement {
             icon={<StarIcon />}
           />
           <StatsCard
-            title={t('dashboard.activeSessions')}
+            title={t('dashboard.activeSessionsWindow', {
+              minutes: overview?.activeWindowMinutes ?? 30,
+            })}
             value={overview?.activeSessions ?? 0}
             unit={t('unit.sessions')}
             color="purple"

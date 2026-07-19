@@ -1,5 +1,25 @@
 import { IntentCategory } from './domain';
 
+export type KnowledgeType = 'faq' | 'document';
+
+export interface RetrievalResult {
+  knowledgeType: KnowledgeType;
+  knowledgeId: string;
+  documentId?: string;
+  title: string;
+  content: string;
+  similarity: number;
+  source?: 'vector' | 'keyword' | 'hybrid';
+  vectorScore?: number;
+  keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
+}
+
 export interface IntentResult {
   intent: IntentCategory;
   confidence: number;
@@ -14,6 +34,9 @@ export interface FaqMatch {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
 }
 
 export interface FaqDebugMatch extends FaqMatch {
@@ -48,7 +71,7 @@ export interface LLMMessage {
 
 export interface PromptContext {
   intent: IntentCategory;
-  faqResults: FaqMatch[];
+  knowledgeResults: RetrievalResult[];
   userQuestion: string;
   conversationSummary: string | null;
   shouldOfferEscalation: boolean;
@@ -58,7 +81,13 @@ export interface ChatCompletionOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
-  responseFormat?: 'text' | 'json_object';
+  responseFormat?: 'text' | 'json_object' | 'json_schema';
+  responseSchema?: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
+  maxRetries?: number;
 }
 
 export interface EmbeddingResult {

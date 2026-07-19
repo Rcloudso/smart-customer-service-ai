@@ -2,9 +2,10 @@
  * Chat API client — SSE streaming and satisfaction rating.
  */
 
-import { ApiError, get } from './client';
+import { ApiError, get, post } from './client';
 import { usePreferences } from '../hooks/usePreferences';
 import type { ChatHistorySession, ConversationDetail, PaginationResponse } from '../types';
+import type { KnowledgeRetrievalSnapshot } from '../types';
 
 export interface FaqMatchDTO {
   id: string;
@@ -14,6 +15,9 @@ export interface FaqMatchDTO {
   source?: 'vector' | 'keyword' | 'hybrid';
   vectorScore?: number;
   keywordScore?: number;
+  fusionScore?: number;
+  vectorRank?: number;
+  keywordRank?: number;
 }
 
 /**
@@ -42,7 +46,12 @@ export interface SSECallbacks {
   onIntent?: (intent: string, confidence: number) => void;
   onFaq?: (faqMatches: FaqMatchDTO[]) => void;
   onEscalate?: (reason: string) => void;
-  onDone?: (data: { sessionId: string; messageId: string; intent: string }) => void;
+  onDone?: (data: {
+    sessionId: string;
+    messageId: string;
+    intent: string;
+    knowledgeSources?: KnowledgeRetrievalSnapshot[];
+  }) => void;
   onError?: (message: string) => void;
 }
 
@@ -164,6 +173,7 @@ export async function sendMessage(
                 sessionId: string;
                 messageId: string;
                 intent: string;
+                knowledgeSources?: KnowledgeRetrievalSnapshot[];
               };
               resultSessionId = doneData.sessionId;
               resultMessageId = doneData.messageId;
@@ -210,7 +220,12 @@ export async function submitRating(messageId: string, sessionId: string, rating:
   const response = await fetch('/api/chat/satisfaction', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ messageId, sessionId, rating }),
+    body: JSON.stringify({
+      messageId,
+      sessionId,
+      userIdent: getAnonymousUserId(),
+      rating,
+    }),
   });
 
   if (!response.ok) {
@@ -220,6 +235,14 @@ export async function submitRating(messageId: string, sessionId: string, rating:
 
 export function getCurrentAnonymousUserId(): string {
   return getAnonymousUserId();
+}
+
+export async function closeSession(sessionId: string): Promise<void> {
+  await post(
+    `/chat/sessions/${sessionId}/close`,
+    { userIdent: getAnonymousUserId() },
+    { auth: false },
+  );
 }
 
 export async function getChatHistory(page: number = 1, pageSize: number = 20): Promise<ChatHistoryResponse> {

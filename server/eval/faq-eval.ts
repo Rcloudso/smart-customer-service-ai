@@ -26,8 +26,8 @@ interface FaqEvalCaseResult {
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_NO_MATCH_MAX_SCORE = 0.9;
-const MIN_TOP1_ACCURACY = 0.75;
-const MIN_TOPK_RECALL = 0.9;
+const MIN_TOP1_ACCURACY = 1;
+const MIN_TOPK_RECALL = 1;
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-123';
@@ -35,6 +35,7 @@ process.env.ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 process.env.EMBED_PROVIDER = process.env.EMBED_PROVIDER || 'other';
 process.env.LLM_API_KEY = process.env.LLM_API_KEY || '';
+process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 process.env.EMBED_API_KEY = process.env.EMBED_API_KEY || '';
 process.env.DB_PATH = process.env.DB_PATH || './data/faq-eval.db';
 
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
   const failures = results.filter((result) =>
     result.shouldMatch ? !result.topKHit : !result.noMatchPass,
   );
+  const top1Misses = matchCases.filter((result) => !result.top1Hit);
 
   console.log('FAQ retrieval evaluation');
   console.log(`Cases: ${results.length}`);
@@ -120,6 +122,9 @@ async function main(): Promise<void> {
   console.log(`Top${DEFAULT_TOP_K} recall: ${(topKRecall * 100).toFixed(1)}%`);
   console.log(`No-match accuracy: ${(noMatchAccuracy * 100).toFixed(1)}%`);
   console.log(`Source distribution: ${JSON.stringify(sourceDistribution)}`);
+  for (const miss of top1Misses) {
+    console.log(`- Top1 miss ${miss.id}: top="${miss.topQuestion}" expected=${miss.expectedQuestions.join(' | ')}`);
+  }
 
   if (failures.length > 0) {
     console.log('Failures:');

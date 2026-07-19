@@ -3,7 +3,7 @@
  */
 
 import { get, post, put, del, uploadFile, downloadBlob } from './client';
-import { IntentCategory } from '../types';
+import { IntentCategory, SessionStatus } from '../types';
 import type {
   LoginResponse,
   PaginationResponse,
@@ -20,10 +20,13 @@ import type {
   KnowledgeReviewStats,
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
+  DocumentItem,
+  DocumentChunk,
+  DocumentStatus,
 } from '../types';
 
 // Re-export types
-export { IntentCategory };
+export { IntentCategory, SessionStatus };
 export type {
   LoginResponse,
   PaginationResponse,
@@ -40,12 +43,15 @@ export type {
   KnowledgeReviewStats,
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
+  DocumentItem,
+  DocumentChunk,
+  DocumentStatus,
 };
 
 // ── Auth ───────────────────────────────────────────
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
-  return post<LoginResponse>('/auth/login', { username, password });
+  return post<LoginResponse>('/auth/login', { username, password }, { auth: false });
 }
 
 // ── Conversations ──────────────────────────────────
@@ -54,17 +60,23 @@ export async function getConversations(params: {
   page?: number;
   limit?: number;
   intent?: string;
+  status?: SessionStatus;
   from?: string;
   to?: string;
   keyword?: string;
+  timezoneOffset?: number;
+  timezoneOffsetTo?: number;
 }): Promise<PaginationResponse<unknown>> {
   return get<PaginationResponse<unknown>>('/admin/conversations', {
     page: params.page,
     limit: params.limit,
     intent: params.intent,
+    status: params.status,
     from: params.from,
     to: params.to,
     keyword: params.keyword,
+    timezoneOffset: params.timezoneOffset,
+    timezoneOffsetTo: params.timezoneOffsetTo,
   });
 }
 
@@ -72,10 +84,27 @@ export async function getConversationDetail(sessionId: string): Promise<Conversa
   return get<ConversationDetail>(`/admin/conversations/${sessionId}`);
 }
 
-export async function exportConversations(from?: string, to?: string): Promise<void> {
+export async function exportConversations(filters?: {
+  from?: string;
+  to?: string;
+  intent?: string;
+  status?: SessionStatus;
+  keyword?: string;
+  timezoneOffset?: number;
+  timezoneOffsetTo?: number;
+}): Promise<void> {
   const params = new URLSearchParams();
-  if (from) params.set('from', from);
-  if (to) params.set('to', to);
+  if (filters?.from) params.set('from', filters.from);
+  if (filters?.to) params.set('to', filters.to);
+  if (filters?.intent) params.set('intent', filters.intent);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.keyword) params.set('keyword', filters.keyword);
+  if (filters?.timezoneOffset !== undefined) {
+    params.set('timezoneOffset', String(filters.timezoneOffset));
+  }
+  if (filters?.timezoneOffsetTo !== undefined) {
+    params.set('timezoneOffsetTo', String(filters.timezoneOffsetTo));
+  }
   const queryStr = params.toString();
   const path = queryStr ? `/admin/conversations/export?${queryStr}` : '/admin/conversations/export';
   await downloadBlob(path, `conversations-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -179,17 +208,57 @@ export async function dismissKnowledgeReview(id: string, reason?: string): Promi
   return post<KnowledgeReviewItem>(`/admin/knowledge-reviews/${id}/dismiss`, { reason });
 }
 
+// ── Document Knowledge ────────────────────────────
+
+export async function listDocuments(params?: {
+  status?: DocumentStatus;
+  isActive?: boolean;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginationResponse<DocumentItem>> {
+  return get<PaginationResponse<DocumentItem>>('/admin/documents', {
+    status: params?.status,
+    isActive: params?.isActive === undefined ? undefined : String(params.isActive),
+    keyword: params?.keyword,
+    page: params?.page,
+    pageSize: params?.pageSize,
+  });
+}
+
+export async function uploadDocument(file: File): Promise<DocumentItem> {
+  return uploadFile<DocumentItem>('/admin/documents', file);
+}
+
+export async function getDocument(id: string): Promise<DocumentItem> {
+  return get<DocumentItem>(`/admin/documents/${id}`);
+}
+
+export async function listDocumentChunks(id: string, page: number, pageSize: number): Promise<PaginationResponse<DocumentChunk>> {
+  return get<PaginationResponse<DocumentChunk>>(`/admin/documents/${id}/chunks`, { page, pageSize });
+}
+
+export async function updateDocument(id: string, isActive: boolean): Promise<DocumentItem> {
+  return put<DocumentItem>(`/admin/documents/${id}`, { isActive });
+}
+
+export async function retryDocument(id: string): Promise<DocumentItem> {
+  return post<DocumentItem>(`/admin/documents/${id}/retry`, {});
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  return del<void>(`/admin/documents/${id}`);
+}
+
 // ── Model Config ───────────────────────────────────
 
-/**
- * Get current effective model configuration (API keys are masked server-side).
- */
+/** Get non-secret model configuration and environment credential status. */
 export async function getModelConfig(): Promise<ModelConfigResponseDTO> {
   return get<ModelConfigResponseDTO>('/admin/config/model');
 }
 
 /**
- * Update model configuration. Only non-empty fields are persisted.
+ * Update non-secret model configuration. Only non-empty fields are persisted.
  * Empty/omitted fields keep their current value.
  */
 export async function updateModelConfig(updates: Partial<ModelConfigDTO>, resetKeys: string[] = []): Promise<void> {
