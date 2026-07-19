@@ -13,6 +13,18 @@
 
 当前版本：**v0.2.6（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能调整。
 
+<p align="center">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
+    <img src="docs/demo/v0.2.6-preview.gif" width="880" alt="Smart Customer Service v0.2.6 文档知识回答演示">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看 2 分 57 秒产品演示</a>
+  · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI 辅助开发复盘</a>
+  · <a href="docs/releases/v0.2.6-evidence.md">版本验证证据</a>
+</p>
+
 Smart Customer Service AI 是一个 AI 智能客服全栈示例项目。它把用户聊天页、FAQ 与文档知识库、混合检索、运行时模型配置、会话分析、中英文界面、暗/亮主题，以及检索评测工具放在同一个可运行工程里。
 
 [快速开始](#快速开始) · [特性](#特性) · [检索设计](#检索设计) · [评测与调试](#评测与调试) · [Docker](#docker)
@@ -36,6 +48,12 @@ Smart Customer Service AI:
 管理员可以维护 FAQ，上传和管理文档，预览已索引切片，查看检索行为与会话记录，并在“知识审核”页面把答不好的问题沉淀成可复用 FAQ。
 
 这个项目适合 Demo、学习、开源 MVP 和小规模客服场景。它先保留 SQLite + 内存向量索引的低依赖方案，同时把未来接入向量数据库的接口边界留清楚。
+
+### 产品证据
+
+| 带文档来源的客服回答 | 文档运营与切片检查 | 移动端深色主题 |
+| --- | --- | --- |
+| ![显示文档名和切片来源的客服回答](docs/releases/assets/v0.2.6-chat-document-source.png) | ![文档状态和切片详情](docs/releases/assets/v0.2.6-document-rag-demo.png) | ![移动端英文深色文档页面](docs/releases/assets/v0.2.6-documents-mobile-dark.png) |
 
 ---
 
@@ -228,8 +246,11 @@ data/          本地 SQLite 数据库文件
 
 ## Roadmap
 
-- 增加正式引用、页码跳转和无依据拒答。
-- 扩展检索评测数据集和阈值调优能力。
-- 增加网页、OCR 和图片知识来源适配器。
-- 增加后台角色权限。
-- 支持更大规模 FAQ 的导入、导出和批处理。
+有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
+
+- v0.2.7：增加正式引用，并在依据不足时执行确定性拒答或转人工。
+- v0.2.8：版本化检索质量实验、阈值、失败样例和可选重排。
+- v0.2.9：生成结构化转人工交接包，并对优先级和客服队列进行校验与路由。
+- v0.3.0–v0.3.2：先实现订单/物流只读工具，再补人工协作，最后在确认和审计下处理退款申请等写操作。
+- 后续适配器：经过审核的网页采集、OCR/图片知识、基于同意的客户记忆，以及复用现有聊天、检索、工具和转人工链路的语音通道。
+- v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份、监控，以及由规模证据驱动的外部向量存储。
