@@ -13,6 +13,18 @@
 
 Current release: **v0.2.6 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
 
+<p align="center">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
+    <img src="docs/demo/v0.2.6-preview.gif" width="880" alt="Smart Customer Service v0.2.6 document-grounded answer demo">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the 2m57s product demo</a>
+  · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI-assisted development case study</a>
+  · <a href="docs/releases/v0.2.6-evidence.md">Release evidence</a>
+</p>
+
 ## English
 
 Smart Customer Service AI is a full-stack demo for building an AI-assisted support system. It combines customer chat, FAQ and document knowledge management, hybrid retrieval, runtime model configuration, conversation analytics, bilingual UI, light/dark themes, and retrieval evaluation tooling.
@@ -38,6 +50,12 @@ Smart Customer Service AI:
 Admins can maintain FAQs, upload and manage documents, preview indexed chunks, inspect retrieval behavior, review conversations, and turn weak answers into reusable FAQs from the Knowledge Review page.
 
 This project is designed for demos, learning, and small open-source MVPs that need a clear customer-support foundation without introducing a dedicated vector database on day one.
+
+### Product evidence
+
+| Document-grounded chat | Document operations | Mobile dark theme |
+| --- | --- | --- |
+| ![Chat answer with document and chunk provenance](docs/releases/assets/v0.2.6-chat-document-source.png) | ![Document status and chunk inspection](docs/releases/assets/v0.2.6-document-rag-demo.png) | ![Responsive English document workflow in dark theme](docs/releases/assets/v0.2.6-documents-mobile-dark.png) |
 
 ---
 
@@ -230,11 +248,14 @@ data/          Local SQLite database files
 
 ## Roadmap
 
-- Grounded citations, page navigation, and no-evidence refusal behavior.
-- Better retrieval datasets and threshold tuning.
-- Web-page ingestion, OCR, and image knowledge-source adapters.
-- Role-based admin permissions.
-- Import/export flows for larger FAQ collections.
+The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
+
+- v0.2.7: grounded citations and deterministic refusal or escalation when evidence is insufficient.
+- v0.2.8: versioned retrieval-quality experiments, thresholds, failure cases and optional reranking.
+- v0.2.9: structured escalation packets with validated priority and support-queue routing.
+- v0.3.0–v0.3.2: read-only order/logistics tools first, then human collaboration, then confirmed and audited write actions such as refund requests.
+- Later adapters: reviewed web ingestion, OCR/image knowledge, consent-based customer memory and a voice channel that reuses the same chat, retrieval, tool and escalation workflows.
+- v0.4.0: multi-knowledge-base and tenant boundaries, RBAC, audit, migration, backup, monitoring and evidence-driven external vector storage.
 
 ---
 
