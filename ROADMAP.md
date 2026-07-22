@@ -15,7 +15,7 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 
 v0.2.7 已经形成可运行且带回答边界的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、转人工记录、满意度、知识审核、会话分析、双语后台、
-可信回答决策、来源持久化、Docker、检索评测和 Playwright 回归在同一工程内闭环。后续版本不再以增加
+可信回答决策、来源持久化、接口幂等、防重复提交、Docker、检索评测和 Playwright 回归在同一工程内闭环。后续版本不再以增加
 “另一个聊天 Demo”为目标，而是依次补齐可信度、业务处理和人工协作。
 
 ## Planned Sequence / 计划顺序

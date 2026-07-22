@@ -8,7 +8,7 @@ import { SatisfactionRating } from './SatisfactionRating';
 
 interface ChatBubbleProps {
   message: ChatMessage;
-  onSubmitRating?: (messageId: string, rating: number) => void;
+  onSubmitRating?: (messageId: string, rating: number) => Promise<boolean>;
 }
 
 const INTENT_COLORS: Record<string, string> = {

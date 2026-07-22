@@ -9,11 +9,13 @@ import {
   KnowledgeReviewTriggerReason,
 } from '../../types/domain';
 import { ValidationError } from '../../utils/errors';
+import { idempotencyMiddleware } from '../../middleware/idempotency';
 
 const router = Router();
 
 router.use(authMiddleware);
 router.use(adminOnlyMiddleware);
+router.use(idempotencyMiddleware);
 
 const listSchema = z.object({
   status: z.nativeEnum(KnowledgeReviewStatus).optional(),

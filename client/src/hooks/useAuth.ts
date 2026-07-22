@@ -43,7 +43,7 @@ function t(key: string, params?: Record<string, string | number>): string {
   return usePreferences.getState().t(key, params);
 }
 
-export const useAuth = create<AuthState>((set) => ({
+export const useAuth = create<AuthState>((set, get) => ({
   token: initialState.token,
   user: initialState.user,
   isAuthenticated: initialState.isAuthenticated,
@@ -52,6 +52,7 @@ export const useAuth = create<AuthState>((set) => ({
   error: null,
 
   login: async (username: string, password: string) => {
+    if (get().isLoading) return;
     set({ isLoading: true, error: null });
     try {
       const result = await adminApi.login(username, password);

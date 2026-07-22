@@ -2,7 +2,7 @@
  * Chat API client — SSE streaming and satisfaction rating.
  */
 
-import { ApiError, get, post } from './client';
+import { ApiError, createIdempotencyKey, get, post } from './client';
 import { usePreferences } from '../hooks/usePreferences';
 import type {
   AnswerMode,
@@ -93,6 +93,7 @@ export async function sendMessage(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'text/event-stream',
+    'Idempotency-Key': createIdempotencyKey(),
   };
 
   const token = getToken();
@@ -232,6 +233,7 @@ export async function sendMessage(
 export async function submitRating(messageId: string, sessionId: string, rating: number): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Idempotency-Key': createIdempotencyKey(),
   };
 
   const token = getToken();
@@ -263,7 +265,7 @@ export async function closeSession(sessionId: string): Promise<void> {
   await post(
     `/chat/sessions/${sessionId}/close`,
     { userIdent: getAnonymousUserId() },
-    { auth: false },
+    { auth: false, idempotencyKey: createIdempotencyKey() },
   );
 }
 

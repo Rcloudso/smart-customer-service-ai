@@ -24,6 +24,7 @@ type UnauthorizedHandler = (requestToken: string) => void;
 
 interface RequestOptions {
   auth?: boolean;
+  idempotencyKey?: string;
 }
 
 let unauthorizedHandler: UnauthorizedHandler | null = null;
@@ -42,6 +43,20 @@ function getToken(): string | null {
   } catch {
     return null;
   }
+}
+
+export function createIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function addIdempotencyHeader(
+  headers: Record<string, string>,
+  idempotencyKey: string | undefined,
+): void {
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 }
 
 function handleUnauthorized(response: Response, requestToken: string | null): void {
@@ -121,6 +136,7 @@ export async function post<T = unknown>(path: string, body?: unknown, options: R
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  addIdempotencyHeader(headers, options.idempotencyKey);
 
   const response = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
@@ -131,7 +147,11 @@ export async function post<T = unknown>(path: string, body?: unknown, options: R
   return handleResponse<T>(response, token);
 }
 
-export async function put<T = unknown>(path: string, body?: unknown): Promise<T> {
+export async function put<T = unknown>(
+  path: string,
+  body?: unknown,
+  options: RequestOptions = {},
+): Promise<T> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
@@ -141,6 +161,7 @@ export async function put<T = unknown>(path: string, body?: unknown): Promise<T>
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  addIdempotencyHeader(headers, options.idempotencyKey);
 
   const response = await fetch(`${BASE_URL}${path}`, {
     method: 'PUT',
@@ -151,7 +172,10 @@ export async function put<T = unknown>(path: string, body?: unknown): Promise<T>
   return handleResponse<T>(response, token);
 }
 
-export async function del<T = unknown>(path: string): Promise<T> {
+export async function del<T = unknown>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
@@ -160,6 +184,7 @@ export async function del<T = unknown>(path: string): Promise<T> {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  addIdempotencyHeader(headers, options.idempotencyKey);
 
   const response = await fetch(`${BASE_URL}${path}`, {
     method: 'DELETE',

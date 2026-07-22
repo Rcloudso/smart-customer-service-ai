@@ -167,6 +167,96 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(assistantBubble).not.toContainText('这是一段未完成的回答');
     await expect(page.locator('.app-chat-rating-row')).toHaveCount(0);
   });
+
+  test('rapid chat submission sends one idempotent request', async ({ page }) => {
+    const requestHeaders: string[] = [];
+    await page.route('**/api/chat', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      requestHeaders.push(route.request().headers()['idempotency-key'] ?? '');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: [
+          { type: 'intent', content: 'general', confidence: 0.9 },
+          { type: 'token', content: '只处理一次' },
+          {
+            type: 'done',
+            content: {
+              sessionId: 'single-flight-session',
+              messageId: 'single-flight-message',
+              intent: 'general',
+            },
+          },
+        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+      });
+    });
+
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill('快速重复发送');
+    await page.getByTestId('chat-send-button').evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      (button as HTMLButtonElement).click();
+    });
+
+    await expect(page.getByTestId('chat-messages')).toContainText('只处理一次');
+    expect(requestHeaders).toHaveLength(1);
+    expect(requestHeaders[0]).toMatch(/^[a-f0-9-]{36}$/);
+  });
+
+  test('failed satisfaction submission unlocks the rating control for retry', async ({ page }) => {
+    let ratingRequests = 0;
+    await page.route('**/api/chat**', async (route) => {
+      if (route.request().url().includes('/satisfaction')) {
+        ratingRequests += 1;
+        await route.fulfill({
+          status: ratingRequests === 1 ? 503 : 200,
+          contentType: 'application/json',
+          body: JSON.stringify(ratingRequests === 1
+            ? { code: 503, data: null, message: 'retry rating' }
+            : { code: 0, data: null, message: 'ok' }),
+        });
+        return;
+      }
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: [
+          { type: 'intent', content: 'general', confidence: 0.9 },
+          { type: 'token', content: '可以评价的回答' },
+          {
+            type: 'done',
+            content: {
+              sessionId: 'rating-retry-session',
+              messageId: 'rating-retry-message',
+              intent: 'general',
+            },
+          },
+        ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+      });
+    });
+
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill('评分重试');
+    await page.getByTestId('chat-send-button').click();
+    const rating = page.getByTitle('非常满意');
+    await expect(rating).toBeEnabled();
+
+    await rating.click();
+    await expect(rating).toBeEnabled();
+    await expect(page.getByText('已评价')).toHaveCount(0);
+
+    await rating.click();
+    await expect(page.getByText('已评价')).toBeVisible();
+    expect(ratingRequests).toBe(2);
+  });
 });
 
 test.describe('Web automation: admin boundaries and FAQ index operation', () => {
@@ -229,6 +319,54 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await page.getByTestId('language-toggle').click();
     await expect(page.getByTestId('llm-api-key-status')).toContainText('Not configured');
     await expect(page.getByTestId('llm-api-key-status')).toContainText('environment');
+  });
+
+  test('rapid model save sends one idempotent update', async ({ page }) => {
+    let updateRequests = 0;
+    let idempotencyKey = '';
+    await page.route('**/api/admin/config/model', async (route) => {
+      if (route.request().method() === 'PUT') {
+        updateRequests += 1;
+        idempotencyKey = route.request().headers()['idempotency-key'] ?? '';
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 0, data: null, message: 'ok' }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            llmProvider: 'openai',
+            llmApiBase: '',
+            llmModel: 'gpt-4o-mini',
+            embedProvider: 'openai',
+            embedApiBase: '',
+            embedModel: 'text-embedding-3-small',
+            llmApiKeyConfigured: false,
+            embedApiKeyConfigured: false,
+          },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    await page.getByText('模型配置').click();
+    const save = page.getByRole('button', { name: '保存' });
+    await expect(save).toBeVisible();
+    await save.evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      (button as HTMLButtonElement).click();
+    });
+
+    await expect.poll(() => updateRequests).toBe(1);
+    expect(idempotencyKey).toMatch(/^[a-f0-9-]{36}$/);
   });
 
   test('model provider selection echoes configured values and controls custom base URL fields', async ({ page }) => {

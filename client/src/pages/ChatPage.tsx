@@ -90,9 +90,10 @@ export function ChatPage(): React.ReactElement {
   }, [clearChat, fetchHistory]);
 
   const handleSubmitRating = useCallback(
-    (messageId: string, rating: number) => {
-      submitRating(messageId, rating);
-      MessagePlugin.success(t('chat.ratingThanks'));
+    async (messageId: string, rating: number): Promise<boolean> => {
+      const submitted = await submitRating(messageId, rating);
+      if (submitted) MessagePlugin.success(t('chat.ratingThanks'));
+      return submitted;
     },
     [submitRating, t],
   );

@@ -120,6 +120,10 @@ the corresponding index namespace aligned.
   action requests, then refuse and route them to human support.
 - Provider calls have bounded, abortable timeouts. Streaming responses are not
   retried after the first token, preventing duplicated partial answers.
+- JSON and SSE mutation clients may send an `Idempotency-Key`. The API stores
+  the request fingerprint and completed response in SQLite after authorization;
+  matching retries replay that response, while payload reuse and in-flight
+  duplicates fail closed with `409`.
 
 ## Availability And Failure Behavior
 
@@ -131,6 +135,11 @@ the corresponding index namespace aligned.
 - Retrieval and model failures return handled SSE errors or deterministic
   fallbacks; incomplete generated answers are not persisted as successful
   assistant messages.
+- Idempotency records survive normal process restarts and expire after 24
+  hours. A connection closed before a response is finalized leaves an
+  ambiguous request in `processing`, so same-key retries fail closed instead
+  of risking a duplicate write. Multipart uploads use their existing
+  content/workflow duplicate checks instead of generic response replay.
 - SQLite uses WAL mode, foreign keys, and a busy timeout. The architecture
   targets one application instance with a small knowledge collection.
 
@@ -164,6 +173,8 @@ switch today.
   version and evaluate them against mixed-source failure cases.
 - Escalation records exist, but real-time agent assignment and response are not
   yet implemented.
+- Idempotency is deployment-local and does not coordinate independent API
+  replicas or external business systems.
 
 See [ROADMAP.md](ROADMAP.md) for the ordered product plan and
 [docs/releases/](docs/releases/) for release evidence.

@@ -241,6 +241,84 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(deleteResponse.status()).toBe(200);
   });
 
+  test('idempotency keys replay JSON and SSE writes without duplicate side effects', async ({ request }) => {
+    const token = await login(request);
+    const faqHeaders = {
+      ...authHeaders(token),
+      'Idempotency-Key': 'e2e-faq-request-0001',
+    };
+    const faqData = {
+      question: 'E2E idempotency contract question',
+      answer: 'E2E idempotency contract answer',
+      category: 'general',
+      keywords: ['idempotency-contract'],
+    };
+
+    const created = await request.post('/api/admin/faq', {
+      headers: faqHeaders,
+      data: faqData,
+    });
+    expect(created.status()).toBe(201);
+    const createdBody = await readJson(created);
+
+    const replayed = await request.post('/api/admin/faq', {
+      headers: faqHeaders,
+      data: faqData,
+    });
+    expect(replayed.status()).toBe(201);
+    expect(replayed.headers()['idempotency-replayed']).toBe('true');
+    expect((await readJson(replayed)).data.id).toBe(createdBody.data.id);
+
+    const mismatch = await request.post('/api/admin/faq', {
+      headers: faqHeaders,
+      data: { ...faqData, answer: 'different payload' },
+    });
+    expect(mismatch.status()).toBe(409);
+    expect((await readJson(mismatch)).message).toContain('different request');
+
+    const chatHeaders = { 'Idempotency-Key': 'e2e-chat-request-0001' };
+    const chatData = {
+      message: '如何申请退款？',
+      userIdent: 'e2e-idempotency-user',
+    };
+    const firstChat = await request.post('/api/chat', {
+      headers: chatHeaders,
+      data: chatData,
+    });
+    expect(firstChat.status()).toBe(200);
+    const firstChatBody = await firstChat.text();
+
+    const replayedChat = await request.post('/api/chat', {
+      headers: chatHeaders,
+      data: chatData,
+    });
+    expect(replayedChat.status()).toBe(200);
+    expect(replayedChat.headers()['idempotency-replayed']).toBe('true');
+    expect(await replayedChat.text()).toBe(firstChatBody);
+
+    const done = firstChatBody
+      .split('\n\n')
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.startsWith('data: '))
+      .map((chunk) => JSON.parse(chunk.slice('data: '.length)))
+      .find((event) => event.type === 'done')?.content;
+    const history = await request.get(`/api/chat/sessions/${done.sessionId}`, {
+      params: { userIdent: chatData.userIdent },
+    });
+    expect(history.status()).toBe(200);
+    const messages = (await readJson(history)).data.messages;
+    expect(messages.filter((message: any) => message.role === 'user')).toHaveLength(1);
+    expect(messages.filter((message: any) => message.role === 'assistant')).toHaveLength(1);
+
+    const deleted = await request.delete(`/api/admin/faq/${createdBody.data.id}`, {
+      headers: {
+        ...authHeaders(token),
+        'Idempotency-Key': 'e2e-faq-cleanup-0001',
+      },
+    });
+    expect(deleted.status()).toBe(200);
+  });
+
   test('document upload is private, searchable, paginated and lifecycle-safe', async ({ request }) => {
     const unauthenticated = await request.get('/api/admin/documents');
     expect(unauthenticated.status()).toBe(401);

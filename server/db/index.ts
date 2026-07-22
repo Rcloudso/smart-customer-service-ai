@@ -180,6 +180,22 @@ export function initSchema(database: Database.Database): void {
       value TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS idempotency_records (
+      scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('processing', 'completed')),
+      status_code INTEGER,
+      content_type TEXT,
+      response_body BLOB,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(scope, idempotency_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_idempotency_records_updated
+      ON idempotency_records(updated_at);
   `);
 
   // v0.2.6 security migration: model credentials are environment-injected only.

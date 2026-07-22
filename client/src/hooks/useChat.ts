@@ -45,13 +45,14 @@ interface ChatState {
   showEscalation: boolean;
   escalationReason: string | null;
   sendMessage: (text: string) => Promise<void>;
-  submitRating: (messageId: string, rating: number) => Promise<void>;
+  submitRating: (messageId: string, rating: number) => Promise<boolean>;
   loadHistory: (detail: ChatHistoryDetail) => void;
   clearChat: () => Promise<void>;
   clearError: () => void;
 }
 
 let messageCounter = 0;
+let closeChatInFlight = false;
 function nextLocalId(): string {
   messageCounter++;
   return `local-${Date.now()}-${messageCounter}`;
@@ -217,7 +218,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   submitRating: async (messageId: string, rating: number) => {
     const state = get();
-    if (!state.sessionId) return;
+    if (!state.sessionId) return false;
 
     try {
       await chatApi.submitRating(messageId, state.sessionId, rating);
@@ -226,9 +227,11 @@ export const useChat = create<ChatState>((set, get) => ({
           m.id === messageId ? { ...m, satisfaction: rating } : m,
         ),
       }));
+      return true;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : t('chat.satisfactionSubmitFailed');
       set({ error: errorMsg });
+      return false;
     }
   },
 
@@ -261,26 +264,29 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   clearChat: async () => {
+    if (closeChatInFlight) return;
+    closeChatInFlight = true;
     const sessionId = get().sessionId;
-    if (sessionId) {
-      try {
+    try {
+      if (sessionId) {
         await chatApi.closeSession(sessionId);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : t('chat.closeFailed');
-        set({ error: errorMsg });
-        return;
       }
+      set({
+        sessionId: null,
+        messages: [],
+        isStreaming: false,
+        currentIntent: null,
+        currentFaqs: [],
+        error: null,
+        showEscalation: false,
+        escalationReason: null,
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : t('chat.closeFailed');
+      set({ error: errorMsg });
+    } finally {
+      closeChatInFlight = false;
     }
-    set({
-      sessionId: null,
-      messages: [],
-      isStreaming: false,
-      currentIntent: null,
-      currentFaqs: [],
-      error: null,
-      showEscalation: false,
-      escalationReason: null,
-    });
   },
 
   clearError: () => {

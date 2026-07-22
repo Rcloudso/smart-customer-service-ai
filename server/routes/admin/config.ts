@@ -5,12 +5,14 @@ import { adminOnlyMiddleware } from '../../middleware/adminOnly';
 import { configService, ModelConfigDTO } from '../../services/config.service';
 import { MODEL_PROVIDERS } from '../../config';
 import { logger } from '../../utils/logger';
+import { idempotencyMiddleware } from '../../middleware/idempotency';
 
 const router = Router();
 
 // All routes require admin authentication
 router.use(authMiddleware);
 router.use(adminOnlyMiddleware);
+router.use(idempotencyMiddleware);
 
 const modelConfigKeySchema = z.enum([
   'llmProvider',

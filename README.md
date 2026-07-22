@@ -103,6 +103,14 @@ FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. T
 
 v0.2.7 evaluates answer evidence before generation. High-confidence keyword/hybrid FAQ matches remain deterministic; non-direct evidence that clears the initial retrieval threshold can enter the model prompt as at most three untrusted excerpts. Missing or weak evidence is refused without calling the answer-generation stream. Duplicate direct FAQs with materially different answers and recognized private-state/action requests are refused and escalated. The answer mode, threshold result, reason, and compact FAQ/document/chunk/page source snapshots are saved with the assistant message and survive history restoration. These are retrieved sources, not claim-level citation or entailment verification.
 
+JSON and SSE mutation endpoints also accept an optional `Idempotency-Key`
+header. Reusing the same key with the same payload replays the persisted
+response without repeating the write; a different payload or a concurrent
+in-flight request returns `409`. The bundled UI generates a key per write
+action and synchronously locks mutation controls against rapid re-entry.
+Multipart imports/uploads stay outside generic response replay; document
+uploads retain SHA-256 duplicate protection.
+
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
 - `source`: `vector`, `keyword`, or `hybrid`
@@ -247,6 +255,9 @@ data/          Local SQLite database files
 - `VectorStore` isolates local vector operations, but a network vector database still requires asynchronous contracts, health handling, and consistency tests.
 - Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Initial grounding thresholds will be calibrated in v0.2.8.
 - Intent classification falls back to keyword rules when the LLM call fails.
+- Idempotency replay is scoped to one deployment and retained for 24 hours;
+  multipart uploads are protected by workflow-specific duplicate checks rather
+  than generic response replay.
 - This is a pre-1.0 MVP foundation, not a production support platform. Add observability, stricter auth, backup strategy, and external vector storage before serious production use.
 
 ---

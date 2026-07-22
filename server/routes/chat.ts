@@ -17,8 +17,10 @@ import {
   evaluateGrounding,
   selectDirectFaqCandidates,
 } from '../services/grounding-policy';
+import { idempotencyMiddleware } from '../middleware/idempotency';
 
 const router = Router();
+router.use(idempotencyMiddleware);
 
 const chatSchema = z.object({
   message: z.string().min(1, '消息不能为空').max(2000, '消息过长'),
