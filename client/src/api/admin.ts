@@ -2,7 +2,15 @@
  * Admin API client — authentication, conversations, FAQ, stats, and model config.
  */
 
-import { get, post, put, del, uploadFile, downloadBlob } from './client';
+import {
+  createIdempotencyKey,
+  get,
+  post,
+  put,
+  del,
+  uploadFile,
+  downloadBlob,
+} from './client';
 import { IntentCategory, SessionStatus } from '../types';
 import type {
   LoginResponse,
@@ -47,6 +55,10 @@ export type {
   DocumentChunk,
   DocumentStatus,
 };
+
+function idempotentRequest(): { idempotencyKey: string } {
+  return { idempotencyKey: createIdempotencyKey() };
+}
 
 // ── Auth ───────────────────────────────────────────
 
@@ -142,7 +154,7 @@ export async function createFaq(data: {
   category: string;
   keywords: string[];
 }): Promise<FaqEntry> {
-  return post<FaqEntry>('/admin/faq', data);
+  return post<FaqEntry>('/admin/faq', data, idempotentRequest());
 }
 
 export async function updateFaq(id: string, data: {
@@ -152,11 +164,11 @@ export async function updateFaq(id: string, data: {
   keywords?: string[];
   isActive?: number;
 }): Promise<FaqEntry> {
-  return put<FaqEntry>(`/admin/faq/${id}`, data);
+  return put<FaqEntry>(`/admin/faq/${id}`, data, idempotentRequest());
 }
 
 export async function deleteFaq(id: string): Promise<void> {
-  return del<void>(`/admin/faq/${id}`);
+  return del<void>(`/admin/faq/${id}`, idempotentRequest());
 }
 
 export async function importFaq(file: File): Promise<{ imported: number; total: number }> {
@@ -172,7 +184,7 @@ export async function getFaqIndexStatus(): Promise<FaqIndexStatus> {
 }
 
 export async function rebuildFaqIndex(): Promise<FaqIndexStatus> {
-  return post<FaqIndexStatus>('/admin/faq/index/rebuild', {});
+  return post<FaqIndexStatus>('/admin/faq/index/rebuild', {}, idempotentRequest());
 }
 
 export async function debugFaqSearch(data: { query: string; topK?: number }): Promise<FaqDebugResult> {
@@ -201,11 +213,19 @@ export async function convertKnowledgeReview(id: string, data: {
   category: IntentCategory;
   keywords: string[];
 }): Promise<{ review: KnowledgeReviewItem; faq: FaqEntry }> {
-  return post<{ review: KnowledgeReviewItem; faq: FaqEntry }>(`/admin/knowledge-reviews/${id}/convert`, data);
+  return post<{ review: KnowledgeReviewItem; faq: FaqEntry }>(
+    `/admin/knowledge-reviews/${id}/convert`,
+    data,
+    idempotentRequest(),
+  );
 }
 
 export async function dismissKnowledgeReview(id: string, reason?: string): Promise<KnowledgeReviewItem> {
-  return post<KnowledgeReviewItem>(`/admin/knowledge-reviews/${id}/dismiss`, { reason });
+  return post<KnowledgeReviewItem>(
+    `/admin/knowledge-reviews/${id}/dismiss`,
+    { reason },
+    idempotentRequest(),
+  );
 }
 
 // ── Document Knowledge ────────────────────────────
@@ -239,15 +259,23 @@ export async function listDocumentChunks(id: string, page: number, pageSize: num
 }
 
 export async function updateDocument(id: string, isActive: boolean): Promise<DocumentItem> {
-  return put<DocumentItem>(`/admin/documents/${id}`, { isActive });
+  return put<DocumentItem>(
+    `/admin/documents/${id}`,
+    { isActive },
+    idempotentRequest(),
+  );
 }
 
 export async function retryDocument(id: string): Promise<DocumentItem> {
-  return post<DocumentItem>(`/admin/documents/${id}/retry`, {});
+  return post<DocumentItem>(
+    `/admin/documents/${id}/retry`,
+    {},
+    idempotentRequest(),
+  );
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  return del<void>(`/admin/documents/${id}`);
+  return del<void>(`/admin/documents/${id}`, idempotentRequest());
 }
 
 // ── Model Config ───────────────────────────────────
@@ -262,5 +290,9 @@ export async function getModelConfig(): Promise<ModelConfigResponseDTO> {
  * Empty/omitted fields keep their current value.
  */
 export async function updateModelConfig(updates: Partial<ModelConfigDTO>, resetKeys: string[] = []): Promise<void> {
-  return put<void>('/admin/config/model', { ...updates, resetKeys });
+  return put<void>(
+    '/admin/config/model',
+    { ...updates, resetKeys },
+    idempotentRequest(),
+  );
 }

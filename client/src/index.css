@@ -957,9 +957,16 @@ select {
 }
 
 .app-chat-intent-row,
+.app-chat-grounding-row,
 .app-chat-rating-row {
   margin-top: 8px;
   padding: 0 8px;
+}
+
+.app-chat-grounding-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .app-chat-faq-reference {

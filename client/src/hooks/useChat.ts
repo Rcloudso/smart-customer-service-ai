@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import * as chatApi from '../api/chat';
 import { usePreferences } from './usePreferences';
 import type { ChatHistoryDetail } from '../api/chat';
-import { KnowledgeRetrievalSnapshot, MessageRole } from '../types';
+import {
+  AnswerMode,
+  GroundingStatus,
+  KnowledgeRetrievalSnapshot,
+  MessageRole,
+} from '../types';
 
 export interface ChatFaqMatch {
   id: string;
@@ -22,7 +27,11 @@ export interface ChatMessage {
   intentConf?: number | null;
   faqMatches?: ChatFaqMatch[];
   knowledgeSources?: KnowledgeRetrievalSnapshot[];
+  answerMode?: AnswerMode | null;
+  groundingStatus?: GroundingStatus | null;
+  groundingReason?: string | null;
   satisfaction?: number | null;
+  failed?: boolean;
   isStreaming?: boolean;
 }
 
@@ -36,13 +45,14 @@ interface ChatState {
   showEscalation: boolean;
   escalationReason: string | null;
   sendMessage: (text: string) => Promise<void>;
-  submitRating: (messageId: string, rating: number) => Promise<void>;
+  submitRating: (messageId: string, rating: number) => Promise<boolean>;
   loadHistory: (detail: ChatHistoryDetail) => void;
   clearChat: () => Promise<void>;
   clearError: () => void;
 }
 
 let messageCounter = 0;
+let closeChatInFlight = false;
 function nextLocalId(): string {
   messageCounter++;
   return `local-${Date.now()}-${messageCounter}`;
@@ -147,7 +157,14 @@ export const useChat = create<ChatState>((set, get) => ({
           set((prev) => ({
             messages: prev.messages.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, knowledgeSources: data.knowledgeSources }
+                ? {
+                    ...m,
+                    knowledgeSources: data.knowledgeSources,
+                    answerMode: data.answerMode,
+                    groundingStatus: data.groundingStatus,
+                    groundingReason: data.groundingReason,
+                    failed: false,
+                  }
                 : m,
             ),
           }));
@@ -158,7 +175,12 @@ export const useChat = create<ChatState>((set, get) => ({
           set((prev) => ({
             messages: prev.messages.map((m) =>
               m.id === assistantMsgId
-                ? { ...m, content: m.content || formatErrorContent(message), isStreaming: false }
+                ? {
+                    ...m,
+                    content: formatErrorContent(message),
+                    failed: true,
+                    isStreaming: false,
+                  }
                 : m,
             ),
           }));
@@ -182,7 +204,12 @@ export const useChat = create<ChatState>((set, get) => ({
         error: errorMsg,
         messages: get().messages.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, content: formatErrorContent(errorMsg), isStreaming: false }
+            ? {
+                ...m,
+                content: formatErrorContent(errorMsg),
+                failed: true,
+                isStreaming: false,
+              }
             : m,
         ),
       });
@@ -191,7 +218,7 @@ export const useChat = create<ChatState>((set, get) => ({
 
   submitRating: async (messageId: string, rating: number) => {
     const state = get();
-    if (!state.sessionId) return;
+    if (!state.sessionId) return false;
 
     try {
       await chatApi.submitRating(messageId, state.sessionId, rating);
@@ -200,9 +227,11 @@ export const useChat = create<ChatState>((set, get) => ({
           m.id === messageId ? { ...m, satisfaction: rating } : m,
         ),
       }));
+      return true;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : t('chat.satisfactionSubmitFailed');
       set({ error: errorMsg });
+      return false;
     }
   },
 
@@ -218,7 +247,11 @@ export const useChat = create<ChatState>((set, get) => ({
           intent: message.intent,
           intentConf: message.intentConf,
           knowledgeSources: message.retrievalSnapshot,
+          answerMode: message.answerMode,
+          groundingStatus: message.groundingStatus,
+          groundingReason: message.groundingReason,
           satisfaction: message.satisfaction,
+          failed: false,
           isStreaming: false,
         })),
       isStreaming: false,
@@ -231,26 +264,29 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   clearChat: async () => {
+    if (closeChatInFlight) return;
+    closeChatInFlight = true;
     const sessionId = get().sessionId;
-    if (sessionId) {
-      try {
+    try {
+      if (sessionId) {
         await chatApi.closeSession(sessionId);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : t('chat.closeFailed');
-        set({ error: errorMsg });
-        return;
       }
+      set({
+        sessionId: null,
+        messages: [],
+        isStreaming: false,
+        currentIntent: null,
+        currentFaqs: [],
+        error: null,
+        showEscalation: false,
+        escalationReason: null,
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : t('chat.closeFailed');
+      set({ error: errorMsg });
+    } finally {
+      closeChatInFlight = false;
     }
-    set({
-      sessionId: null,
-      messages: [],
-      isStreaming: false,
-      currentIntent: null,
-      currentFaqs: [],
-      error: null,
-      showEscalation: false,
-      escalationReason: null,
-    });
   },
 
   clearError: () => {

@@ -8,12 +8,14 @@ import { faqService } from '../../services/faq.service';
 import { IntentCategory } from '../../types/domain';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { logger } from '../../utils/logger';
+import { idempotencyMiddleware } from '../../middleware/idempotency';
 
 const router = Router();
 
 // All routes require admin authentication
 router.use(authMiddleware);
 router.use(adminOnlyMiddleware);
+router.use(idempotencyMiddleware);
 
 const upload = multer({
   storage: multer.memoryStorage(),

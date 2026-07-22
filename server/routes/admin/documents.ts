@@ -5,10 +5,12 @@ import { adminOnlyMiddleware } from '../../middleware/adminOnly';
 import { authMiddleware } from '../../middleware/auth';
 import { documentService } from '../../services/document-runtime';
 import { ValidationError } from '../../utils/errors';
+import { idempotencyMiddleware } from '../../middleware/idempotency';
 
 const router = Router();
 router.use(authMiddleware);
 router.use(adminOnlyMiddleware);
+router.use(idempotencyMiddleware);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 

@@ -8,7 +8,7 @@ import { SatisfactionRating } from './SatisfactionRating';
 
 interface ChatBubbleProps {
   message: ChatMessage;
-  onSubmitRating?: (messageId: string, rating: number) => void;
+  onSubmitRating?: (messageId: string, rating: number) => Promise<boolean>;
 }
 
 const INTENT_COLORS: Record<string, string> = {
@@ -27,6 +27,10 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
   const documentSources = message.knowledgeSources?.filter((source) => (
     source.knowledgeType === 'document'
   )) ?? [];
+  const faqSources = message.knowledgeSources?.filter((source) => (
+    source.knowledgeType === 'faq'
+  )) ?? [];
+  const transientFaqMatches = message.knowledgeSources === undefined ? message.faqMatches ?? [] : [];
 
   return (
     <div
@@ -83,11 +87,42 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
         </div>
       )}
 
+      {!isUser && message.answerMode && message.groundingStatus && (
+        <div className="app-chat-grounding-row" data-testid="chat-grounding-status">
+          <Tag theme="default" variant="light" size="small">
+            {t(`chat.answerMode.${message.answerMode}`)}
+          </Tag>
+          <Tag
+            theme={
+              message.groundingStatus === 'sufficient'
+                ? 'success'
+                : message.groundingStatus === 'insufficient'
+                  ? 'warning'
+                  : 'danger'
+            }
+            variant="light"
+            size="small"
+          >
+            {t(`chat.groundingStatus.${message.groundingStatus}`)}
+          </Tag>
+        </div>
+      )}
+
       {/* FAQ reference matches (AI messages only) */}
-      {!isUser && message.faqMatches && message.faqMatches.length > 0 && (
-        <div className="app-chat-faq-reference">
+      {!isUser && (faqSources.length > 0 || transientFaqMatches.length > 0) && (
+        <div className="app-chat-faq-reference" data-testid="chat-faq-references">
           <div className="app-chat-faq-reference__title">{t('chat.faqReferences')}</div>
-          {message.faqMatches.slice(0, 3).map((faq) => (
+          {faqSources.map((source) => (
+            <div
+              key={`${source.knowledgeType}:${source.knowledgeId}`}
+              className="app-chat-faq-reference__item"
+            >
+              <div className="app-chat-faq-reference__question">
+                {t('chat.faqQuestionPrefix')}{source.title}
+              </div>
+            </div>
+          ))}
+          {transientFaqMatches.slice(0, 3).map((faq) => (
             <div
               key={faq.id}
               className="app-chat-faq-reference__item"
@@ -134,7 +169,7 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
       )}
 
       {/* Satisfaction rating (AI messages only, after streaming completes) */}
-      {!isUser && !message.isStreaming && message.content && onSubmitRating && (
+      {!isUser && !message.isStreaming && !message.failed && message.content && onSubmitRating && (
         <div className="app-chat-rating-row">
           <SatisfactionRating
             currentRating={message.satisfaction ?? undefined}

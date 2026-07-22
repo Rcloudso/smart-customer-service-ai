@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Form,
@@ -22,6 +22,7 @@ export function ModelConfigPage(): React.ReactElement {
   const { language, t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [config, setConfig] = useState<ModelConfigResponseDTO | null>(null);
 
   // Track which fields the user has actually modified (to avoid accidental resets)
@@ -75,6 +76,8 @@ export function ModelConfigPage(): React.ReactElement {
   ];
 
   const handleSave = async (): Promise<void> => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const updates: Partial<ModelConfigDTO> = {};
@@ -98,6 +101,7 @@ export function ModelConfigPage(): React.ReactElement {
       const message = err instanceof Error ? err.message : t('config.saveFailed');
       MessagePlugin.error(message);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

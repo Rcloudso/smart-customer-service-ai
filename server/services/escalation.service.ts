@@ -1,13 +1,20 @@
 import { v4 as uuidv4 } from 'uuid';
+import Database from 'better-sqlite3';
 import { getDatabase } from '../db';
+import { EscalationRepo } from '../db/repos/escalation.repo';
+import { SessionRepo } from '../db/repos/session.repo';
 import { EscalationLog, EscalationStatus, SessionStatus } from '../types/domain';
 import { logger } from '../utils/logger';
 
 export class EscalationService {
-  private db: ReturnType<typeof getDatabase>;
+  private db: Database.Database;
+  private escalationRepo: EscalationRepo;
+  private sessionRepo: SessionRepo;
 
-  constructor() {
-    this.db = getDatabase();
+  constructor(db: Database.Database = getDatabase()) {
+    this.db = db;
+    this.escalationRepo = new EscalationRepo(db);
+    this.sessionRepo = new SessionRepo(db);
   }
 
   checkEscalation(content: string): { shouldEscalate: boolean; reason: string | null } {
@@ -38,58 +45,25 @@ export class EscalationService {
       createdAt: now,
     };
 
-    const stmt = this.db.prepare(
-      'INSERT INTO escalation_log (id, session_id, reason, status, resolved_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    );
-    stmt.run(escalation.id, escalation.sessionId, escalation.reason, escalation.status, escalation.resolvedAt, escalation.createdAt);
-
-    // Update session status
-    const sessionStmt = this.db.prepare(
-      `UPDATE sessions
-       SET status = 'escalated', updated_at = ?, closed_at = NULL, close_reason = NULL
-       WHERE id = ?`,
-    );
-    sessionStmt.run(now, sessionId);
+    this.db.transaction(() => {
+      this.escalationRepo.create(escalation);
+      this.sessionRepo.updateStatus(sessionId, SessionStatus.ESCALATED);
+    })();
 
     logger.info({ escalationId: escalation.id, sessionId, reason }, 'Escalation created');
     return escalation;
   }
 
   getQueue(): EscalationLog[] {
-    const stmt = this.db.prepare(
-      "SELECT * FROM escalation_log WHERE status = 'pending' ORDER BY created_at ASC",
-    );
-    const rows = stmt.all() as Array<Record<string, unknown>>;
-    return rows.map((row) => this.mapRow(row));
+    return this.escalationRepo.listPending();
   }
 
   getQueueStatus(): { pending: number; resolved: number; total: number } {
-    const pendingStmt = this.db.prepare("SELECT COUNT(*) as count FROM escalation_log WHERE status = 'pending'");
-    const resolvedStmt = this.db.prepare("SELECT COUNT(*) as count FROM escalation_log WHERE status = 'resolved'");
-    const totalStmt = this.db.prepare('SELECT COUNT(*) as count FROM escalation_log');
-
-    const pending = (pendingStmt.get() as { count: number }).count;
-    const resolved = (resolvedStmt.get() as { count: number }).count;
-    const total = (totalStmt.get() as { count: number }).count;
-
-    return { pending, resolved, total };
+    return this.escalationRepo.countByStatus();
   }
 
   findBySession(sessionId: string): EscalationLog | null {
-    const stmt = this.db.prepare('SELECT * FROM escalation_log WHERE session_id = ? ORDER BY created_at DESC LIMIT 1');
-    const row = stmt.get(sessionId) as Record<string, unknown> | undefined;
-    return row ? this.mapRow(row) : null;
-  }
-
-  private mapRow(row: Record<string, unknown>): EscalationLog {
-    return {
-      id: row.id as string,
-      sessionId: row.session_id as string,
-      reason: row.reason as string,
-      status: row.status as EscalationStatus,
-      resolvedAt: row.resolved_at as string | null,
-      createdAt: row.created_at as string,
-    };
+    return this.escalationRepo.findBySession(sessionId);
   }
 }
 

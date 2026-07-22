@@ -114,8 +114,13 @@ export function FaqManagementPage(): React.ReactElement {
   const [dialogFormValues, setDialogFormValues] = useState<FaqFormValues>(EMPTY_FAQ_FORM);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const requestIdRef = useRef(0);
   const tabsRef = useRef<HTMLDivElement>(null);
+  const submittingRef = useRef(false);
+  const importingRef = useRef(false);
+  const rebuildingIndexRef = useRef(false);
+  const deletingIdsRef = useRef(new Set<string>());
   const categoryOptions = CATEGORY_OPTION_KEYS.map((option) => ({
     label: option.value === '' ? `${t('common.all')} ${t('faq.category')}` : t(option.labelKey),
     value: option.value,
@@ -259,6 +264,8 @@ export function FaqManagementPage(): React.ReactElement {
   };
 
   const handleDelete = async (id: string) => {
+    if (deletingIdsRef.current.has(id)) return;
+    deletingIdsRef.current.add(id);
     try {
       await adminApi.deleteFaq(id);
       MessagePlugin.success(t('faq.deleted'));
@@ -267,30 +274,34 @@ export function FaqManagementPage(): React.ReactElement {
     } catch (err) {
       const message = err instanceof Error ? err.message : t('common.deleteFailed');
       MessagePlugin.error(message);
+    } finally {
+      deletingIdsRef.current.delete(id);
     }
   };
 
   const handleDialogSubmit = async () => {
-    const validateResult = await form.validate();
-    if (validateResult !== true) return;
-
-    const values = form.getFieldsValue(['question', 'answer', 'category', 'keywords']);
-    const question = (values.question as string || '').trim();
-    const answer = (values.answer as string || '').trim();
-    const categoryVal = (values.category as string || 'general').trim();
-    const keywordsStr = (values.keywords as string || '').trim();
-
-    if (!question || !answer) {
-      MessagePlugin.warning(t('faq.emptyWarning'));
-      return;
-    }
-
-    const keywords = keywordsStr
-      ? keywordsStr.split(',').map((s) => s.trim()).filter(Boolean)
-      : [];
-
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
+      const validateResult = await form.validate();
+      if (validateResult !== true) return;
+
+      const values = form.getFieldsValue(['question', 'answer', 'category', 'keywords']);
+      const question = (values.question as string || '').trim();
+      const answer = (values.answer as string || '').trim();
+      const categoryVal = (values.category as string || 'general').trim();
+      const keywordsStr = (values.keywords as string || '').trim();
+
+      if (!question || !answer) {
+        MessagePlugin.warning(t('faq.emptyWarning'));
+        return;
+      }
+
+      const keywords = keywordsStr
+        ? keywordsStr.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
       if (dialogMode === 'create') {
         await adminApi.createFaq({ question, answer, category: categoryVal, keywords });
         MessagePlugin.success(t('faq.created'));
@@ -310,6 +321,7 @@ export function FaqManagementPage(): React.ReactElement {
       const message = err instanceof Error ? err.message : t('common.operationFailed');
       MessagePlugin.error(message);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -325,6 +337,9 @@ export function FaqManagementPage(): React.ReactElement {
   };
 
   const handleImport = async (file: File) => {
+    if (importingRef.current) return;
+    importingRef.current = true;
+    setImporting(true);
     try {
       const result = await adminApi.importFaq(file);
       MessagePlugin.success(t('faq.imported', { imported: result.imported, total: result.total }));
@@ -333,10 +348,15 @@ export function FaqManagementPage(): React.ReactElement {
     } catch (err) {
       const message = err instanceof Error ? err.message : t('faq.importFailed');
       MessagePlugin.error(message);
+    } finally {
+      importingRef.current = false;
+      setImporting(false);
     }
   };
 
   const handleRebuildIndex = async () => {
+    if (rebuildingIndexRef.current) return;
+    rebuildingIndexRef.current = true;
     setRebuildingIndex(true);
     try {
       const status = await adminApi.rebuildFaqIndex();
@@ -347,6 +367,7 @@ export function FaqManagementPage(): React.ReactElement {
       const message = err instanceof Error ? err.message : t('faq.indexRebuildFailed');
       MessagePlugin.error(message);
     } finally {
+      rebuildingIndexRef.current = false;
       setRebuildingIndex(false);
     }
   };
@@ -544,6 +565,7 @@ export function FaqManagementPage(): React.ReactElement {
               theme="file"
               accept=".csv,.json"
               autoUpload={false}
+              disabled={importing}
               onChange={(files: UploadFile | UploadFile[]) => {
                 const file = (Array.isArray(files) ? files[0] : files) as UploadFile;
                 if (file?.raw) {
@@ -551,7 +573,7 @@ export function FaqManagementPage(): React.ReactElement {
                 }
               }}
             >
-              <Button variant="outline" icon={<UploadIcon />}>
+              <Button variant="outline" icon={<UploadIcon />} loading={importing}>
                 {t('faq.import')}
               </Button>
             </Upload>

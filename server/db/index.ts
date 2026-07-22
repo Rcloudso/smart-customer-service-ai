@@ -51,6 +51,9 @@ export function initSchema(database: Database.Database): void {
       escalated INTEGER NOT NULL DEFAULT 0,
       reply_to_message_id TEXT REFERENCES messages(id),
       retrieval_snapshot TEXT NOT NULL DEFAULT '[]',
+      answer_mode TEXT CHECK(answer_mode IN ('direct_faq', 'grounded_generation', 'refusal')),
+      grounding_status TEXT CHECK(grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated')),
+      grounding_reason TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -177,6 +180,22 @@ export function initSchema(database: Database.Database): void {
       value TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS idempotency_records (
+      scope TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('processing', 'completed')),
+      status_code INTEGER,
+      content_type TEXT,
+      response_body BLOB,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(scope, idempotency_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_idempotency_records_updated
+      ON idempotency_records(updated_at);
   `);
 
   // v0.2.6 security migration: model credentials are environment-injected only.
@@ -187,6 +206,9 @@ export function initSchema(database: Database.Database): void {
 
   ensureColumn(database, 'messages', 'reply_to_message_id', 'TEXT REFERENCES messages(id)');
   ensureColumn(database, 'messages', 'retrieval_snapshot', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'messages', 'answer_mode', "TEXT CHECK(answer_mode IN ('direct_faq', 'grounded_generation', 'refusal'))");
+  ensureColumn(database, 'messages', 'grounding_status', "TEXT CHECK(grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated'))");
+  ensureColumn(database, 'messages', 'grounding_reason', 'TEXT');
   ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');

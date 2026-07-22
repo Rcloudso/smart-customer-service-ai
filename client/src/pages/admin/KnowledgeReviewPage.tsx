@@ -69,6 +69,7 @@ export function KnowledgeReviewPage(): React.ReactElement {
   const [convertInitial, setConvertInitial] = useState<ConvertFormValues | null>(null);
   const [convertForm] = Form.useForm();
   const requestIdRef = useRef(0);
+  const submittingRef = useRef(false);
 
   const statusOptions = useMemo(() => [
     { label: t('common.all'), value: '' },
@@ -166,11 +167,13 @@ export function KnowledgeReviewPage(): React.ReactElement {
   };
 
   const submitConvert = async () => {
-    const validation = await convertForm.validate();
-    if (validation !== true || !convertItem) return;
-    const values = convertForm.getFieldsValue(['question', 'answer', 'category', 'keywords']);
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
+      const validation = await convertForm.validate();
+      if (validation !== true || !convertItem) return;
+      const values = convertForm.getFieldsValue(['question', 'answer', 'category', 'keywords']);
       await adminApi.convertKnowledgeReview(convertItem.id, {
         question: String(values.question ?? '').trim(),
         answer: String(values.answer ?? '').trim(),
@@ -183,12 +186,14 @@ export function KnowledgeReviewPage(): React.ReactElement {
     } catch (error) {
       MessagePlugin.error(error instanceof Error ? error.message : t('knowledgeReview.convertFailed'));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   const submitDismiss = async () => {
-    if (!dismissItem) return;
+    if (!dismissItem || submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       await adminApi.dismissKnowledgeReview(dismissItem.id, dismissReason.trim() || undefined);
@@ -199,6 +204,7 @@ export function KnowledgeReviewPage(): React.ReactElement {
     } catch (error) {
       MessagePlugin.error(error instanceof Error ? error.message : t('knowledgeReview.dismissFailed'));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

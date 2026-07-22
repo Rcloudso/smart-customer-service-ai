@@ -13,6 +13,58 @@ export interface LLMClient {
   embed(texts: string[]): Promise<EmbeddingResult[]>;
 }
 
+export interface RetryOptions {
+  maxRetries?: number;
+  timeoutMs?: number;
+  shouldRetry?: (error: Error) => boolean;
+  onRetry?: (params: { attempt: number; maxRetries: number; delay: number; error: Error }) => void;
+}
+
+export async function runWithRetry<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: RetryOptions = {},
+): Promise<T> {
+  const maxRetries = options.maxRetries ?? 3;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    let timedOut = false;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new Error('LLM request timed out'));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([operation(controller.signal), timeout]);
+    } catch (error) {
+      lastError = timedOut
+        ? new Error('LLM request timed out')
+        : error instanceof Error ? error : new Error(String(error));
+      const canRetry = attempt < maxRetries - 1
+        && (options.shouldRetry?.(lastError) ?? true);
+      if (!canRetry) break;
+      const delay = Math.pow(2, attempt) * 1000;
+      options.onRetry?.({
+        attempt: attempt + 1,
+        maxRetries,
+        delay,
+        error: lastError,
+      });
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  throw lastError ?? new Error('LLM request failed after retries');
+}
+
 class OpenAIClientImpl implements LLMClient {
   private chatClient: OpenAI;
   private embedClient: OpenAI;
@@ -78,19 +130,22 @@ class OpenAIClientImpl implements LLMClient {
 
   async chat(messages: LLMMessage[], options?: ChatCompletionOptions): Promise<string> {
     this.ensureFresh();
-    return this.withRetry(async () => {
+    return this.withRetry(async (signal) => {
       const responseFormat = options?.responseFormat === 'json_schema' && options.responseSchema
         ? { type: 'json_schema' as const, json_schema: options.responseSchema }
         : options?.responseFormat === 'json_object'
           ? { type: 'json_object' as const }
           : undefined;
-      const response = await this.chatClient.chat.completions.create({
-        model: options?.model ?? config.llm.model,
-        messages: messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.maxTokens ?? 2000,
-        response_format: responseFormat,
-      });
+      const response = await this.chatClient.chat.completions.create(
+        {
+          model: options?.model ?? config.llm.model,
+          messages: messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.maxTokens ?? 2000,
+          response_format: responseFormat,
+        },
+        { signal },
+      );
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
@@ -106,35 +161,43 @@ class OpenAIClientImpl implements LLMClient {
     options?: ChatCompletionOptions,
   ): Promise<string> {
     this.ensureFresh();
-    return this.withRetry(async () => {
-      const stream = await this.chatClient.chat.completions.create({
-        model: options?.model ?? config.llm.model,
-        messages: messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.maxTokens ?? 2000,
-        stream: true,
-      });
+    let emittedToken = false;
+    return this.withRetry(async (signal) => {
+      const stream = await this.chatClient.chat.completions.create(
+        {
+          model: options?.model ?? config.llm.model,
+          messages: messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.maxTokens ?? 2000,
+          stream: true,
+        },
+        { signal },
+      );
 
       let fullContent = '';
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content;
         if (delta) {
+          emittedToken = true;
           fullContent += delta;
           onToken(delta);
         }
       }
 
       return fullContent;
-    });
+    }, options?.maxRetries, () => !emittedToken);
   }
 
   async embed(texts: string[]): Promise<EmbeddingResult[]> {
     this.ensureFresh();
-    return this.withRetry(async () => {
-      const response = await this.embedClient.embeddings.create({
-        model: config.embed.model,
-        input: texts,
-      });
+    return this.withRetry(async (signal) => {
+      const response = await this.embedClient.embeddings.create(
+        {
+          model: config.embed.model,
+          input: texts,
+        },
+        { signal },
+      );
 
       return response.data.map((item) => ({
         embedding: item.embedding,
@@ -143,29 +206,21 @@ class OpenAIClientImpl implements LLMClient {
     });
   }
 
-  private async withRetry<T>(fn: () => Promise<T>, maxRetries: number = 3): Promise<T> {
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('LLM request timed out')), 30000);
-        });
-        return await Promise.race([fn(), timeoutPromise]);
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        const delay = Math.pow(2, attempt) * 1000;
+  private withRetry<T>(
+    operation: (signal: AbortSignal) => Promise<T>,
+    maxRetries: number = 3,
+    shouldRetry?: (error: Error) => boolean,
+  ): Promise<T> {
+    return runWithRetry(operation, {
+      maxRetries,
+      shouldRetry,
+      onRetry: ({ attempt, maxRetries: attempts, delay, error }) => {
         logger.warn(
-          { attempt: attempt + 1, maxRetries, delay, err: lastError.message },
+          { attempt, maxRetries: attempts, delay, err: error.message },
           'LLM request failed, retrying',
         );
-        if (attempt < maxRetries - 1) {
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-    }
-
-    throw lastError ?? new Error('LLM request failed after retries');
+      },
+    });
   }
 }
 

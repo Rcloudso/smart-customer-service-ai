@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from '../../hooks/usePreferences';
 
 interface SatisfactionRatingProps {
   currentRating?: number;
-  onSubmitRating: (rating: number) => void;
+  onSubmitRating: (rating: number) => Promise<boolean>;
 }
 
 /**
@@ -16,13 +16,21 @@ export function SatisfactionRating({
 }: SatisfactionRatingProps): React.ReactElement {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(!!currentRating);
+  const [submitting, setSubmitting] = useState(false);
+  const inFlightRef = useRef(false);
   const { t } = useTranslation();
   const starLabels = [1, 2, 3, 4, 5].map((rating) => t(`chat.rating.${rating}`));
 
-  const handleClick = (rating: number) => {
-    if (submitted) return;
-    setSubmitted(true);
-    onSubmitRating(rating);
+  const handleClick = async (rating: number) => {
+    if (inFlightRef.current || submitted) return;
+    inFlightRef.current = true;
+    setSubmitting(true);
+    try {
+      if (await onSubmitRating(rating)) setSubmitted(true);
+    } finally {
+      inFlightRef.current = false;
+      setSubmitting(false);
+    }
   };
 
   const displayRating = hoveredIndex ?? currentRating ?? 0;
@@ -44,15 +52,15 @@ export function SatisfactionRating({
           <button
             key={star}
             type="button"
-            onClick={() => handleClick(star)}
-            onMouseEnter={() => !submitted && setHoveredIndex(star)}
-            onMouseLeave={() => !submitted && setHoveredIndex(null)}
-            disabled={submitted}
+            onClick={() => void handleClick(star)}
+            onMouseEnter={() => !submitted && !submitting && setHoveredIndex(star)}
+            onMouseLeave={() => !submitted && !submitting && setHoveredIndex(null)}
+            disabled={submitted || submitting}
             title={starLabels[star - 1]}
             style={{
               background: 'none',
               border: 'none',
-              cursor: submitted ? 'default' : 'pointer',
+              cursor: submitted || submitting ? 'default' : 'pointer',
               fontSize: '20px',
               color: filled ? '#f5a623' : '#d0d0d0',
               padding: 0,

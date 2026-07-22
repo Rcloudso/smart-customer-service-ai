@@ -11,7 +11,7 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Current release: **v0.2.6 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
+Current version: **v0.2.7 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -20,16 +20,16 @@ Current release: **v0.2.6 (pre-1.0)**. APIs and persisted data remain subject to
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the 2m57s product demo</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the latest public product demo (v0.2.6)</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI-assisted development case study</a>
-  · <a href="docs/releases/v0.2.6-evidence.md">Release evidence</a>
+  · <a href="docs/releases/v0.2.7-evidence.md">v0.2.7 release evidence</a>
 </p>
 
 ## English
 
 Smart Customer Service AI is a full-stack demo for building an AI-assisted support system. It combines customer chat, FAQ and document knowledge management, hybrid retrieval, runtime model configuration, conversation analytics, bilingual UI, light/dark themes, and retrieval evaluation tooling.
 
-[Quick Start](#quick-start) · [Features](#features) · [Retrieval Design](#retrieval-design) · [Evaluation](#evaluation-and-debugging) · [Docker](#docker)
+[Quick Start](#quick-start) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Retrieval Design](#retrieval-design) · [Evaluation](#evaluation-and-debugging) · [Docker](#docker)
 
 ---
 
@@ -43,8 +43,8 @@ User: How can I request a refund?
 Smart Customer Service AI:
   Step 1: classify the question intent
   Step 2: retrieve related FAQ entries and document chunks with hybrid search
-  Step 3: call the configured LLM for a natural-language answer
-  Step 4: show references, confidence, and feedback controls
+  Step 3: decide whether evidence supports a direct answer, generation, or refusal
+  Step 4: answer with persisted sources, or escalate high-risk/conflicting requests
 ```
 
 Admins can maintain FAQs, upload and manage documents, preview indexed chunks, inspect retrieval behavior, review conversations, and turn weak answers into reusable FAQs from the Knowledge Review page.
@@ -62,6 +62,7 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 ## Features
 
 - **Customer chat experience** - streaming-style support UI with safe Markdown rendering, conversation context, compact document references, feedback, and history.
+- **Answer-evidence policy** - choose deterministic FAQ, retrieval-supported generation, or refusal before answer generation; persist the decision and retrieved sources.
 - **Admin console** - FAQ management, conversation list, dashboard analytics, and runtime model configuration.
 - **Knowledge gap feedback loop** - no-match, low-score, and negatively rated answers become review items that admins can edit, dismiss, or convert into indexed FAQs.
 - **Document RAG foundation** - upload TXT, Markdown, text-layer PDF, and DOCX files; parse, semantically chunk, embed, index, retry, enable/disable, preview, and delete them from the admin console.
@@ -98,7 +99,17 @@ Query
 
 The default generic `VectorStore<KnowledgeIndexItem>` implementation is in-memory. FAQ and document-chunk embeddings are serialized in SQLite, then loaded into the shared process index under `faq:<id>` and `document:<chunkId>` namespaces. Each stored vector carries an embedding profile derived from provider, model, endpoint, and input-schema version; stale profiles are rebuilt atomically before the process index is replaced. This keeps local setup dependency-free while preventing vectors from different model configurations from being silently mixed.
 
-FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. v0.2.6 adds TXT, Markdown, text-layer PDF, and DOCX ingestion with `semantic-v1` chunking. Document embeddings include document and section titles, and catalogue-style GPU questions receive deterministic vocabulary expansion before lexical recall. Chat recalls FAQ and document candidates separately so one source cannot crowd out the other, then injects at most three untrusted knowledge excerpts into the prompt. Exact FAQ answers remain deterministic; generated assistant messages render safe Markdown and can show compact document/chunk/page provenance. Without an LLM key, the system returns the highest-ranked document name and original excerpt.
+FAQ remains a knowledge-source adapter rather than the permanent RAG boundary. TXT, Markdown, text-layer PDF, and DOCX ingestion use `semantic-v1` chunking. Document embeddings include document and section titles, and catalogue-style GPU questions receive deterministic vocabulary expansion before lexical recall. Chat recalls FAQ and document candidates separately so one source cannot crowd out the other.
+
+v0.2.7 evaluates answer evidence before generation. High-confidence keyword/hybrid FAQ matches remain deterministic; non-direct evidence that clears the initial retrieval threshold can enter the model prompt as at most three untrusted excerpts. Missing or weak evidence is refused without calling the answer-generation stream. Duplicate direct FAQs with materially different answers and recognized private-state/action requests are refused and escalated. The answer mode, threshold result, reason, and compact FAQ/document/chunk/page source snapshots are saved with the assistant message and survive history restoration. These are retrieved sources, not claim-level citation or entailment verification.
+
+JSON and SSE mutation endpoints also accept an optional `Idempotency-Key`
+header. Reusing the same key with the same payload replays the persisted
+response without repeating the write; a different payload or a concurrent
+in-flight request returns `409`. The bundled UI generates a key per write
+action and synchronously locks mutation controls against rapid re-entry.
+Multipart imports/uploads stay outside generic response replay; document
+uploads retain SHA-256 duplicate protection.
 
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
@@ -229,6 +240,7 @@ client/        React + Vite frontend
 server/        Express API, services, AI adapters, SQLite repositories
 eval/          FAQ and document retrieval evaluation cases
 tests/e2e/     Playwright end-to-end tests
+ARCHITECTURE.md Runtime topology, trust boundaries, and scaling triggers
 data/          Local SQLite database files
 ```
 
@@ -238,10 +250,14 @@ data/          Local SQLite database files
 
 - The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
-- Document parsing is synchronous inside the Express process. Encrypted, damaged, and scanned PDFs fail with a stable failure code; OCR, image knowledge, web ingestion, formal citations, and page jumps are not included.
-- Document files are global to the deployment; v0.2.6 does not add tenant-separated knowledge bases, background workers, document versioning, or external vector storage.
-- `VectorStore` is ready for future Qdrant or pgvector implementations, but the default deployment stays dependency-light.
+- Document parsing is synchronous inside the Express process. Encrypted, damaged, and scanned PDFs fail with a stable failure code; OCR, image knowledge, web ingestion, citation links, and page jumps are not included.
+- Document files are global to the deployment; v0.2.7 does not add tenant-separated knowledge bases, background workers, document versioning, or external vector storage.
+- `VectorStore` isolates local vector operations, but a network vector database still requires asynchronous contracts, health handling, and consistency tests.
+- Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Initial grounding thresholds will be calibrated in v0.2.8.
 - Intent classification falls back to keyword rules when the LLM call fails.
+- Idempotency replay is scoped to one deployment and retained for 24 hours;
+  multipart uploads are protected by workflow-specific duplicate checks rather
+  than generic response replay.
 - This is a pre-1.0 MVP foundation, not a production support platform. Add observability, stricter auth, backup strategy, and external vector storage before serious production use.
 
 ---
@@ -250,7 +266,6 @@ data/          Local SQLite database files
 
 The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
 
-- v0.2.7: grounded citations and deterministic refusal or escalation when evidence is insufficient.
 - v0.2.8: versioned retrieval-quality experiments, thresholds, failure cases and optional reranking.
 - v0.2.9: structured escalation packets with validated priority and support-queue routing.
 - v0.3.0–v0.3.2: read-only order/logistics tools first, then human collaboration, then confirmed and audited write actions such as refund requests.

@@ -1,4 +1,13 @@
-import { IntentCategory, MessageRole, SessionStatus, SatisfactionRating, EscalationStatus } from './domain';
+import {
+  AnswerMode,
+  EscalationStatus,
+  GroundingStatus,
+  IntentCategory,
+  KnowledgeRetrievalSnapshot,
+  MessageRole,
+  SatisfactionRating,
+  SessionStatus,
+} from './domain';
 
 // ---- Generic API envelope ----
 export interface ApiResponse<T = unknown> {
@@ -59,6 +68,10 @@ export interface SSEDoneEvent {
     sessionId: string;
     messageId: string;
     intent: IntentCategory;
+    knowledgeSources?: KnowledgeRetrievalSnapshot[];
+    answerMode?: AnswerMode;
+    groundingStatus?: GroundingStatus;
+    groundingReason?: string;
   };
 }
 
@@ -175,6 +188,10 @@ export interface ConversationDetail {
     content: string;
     intent: IntentCategory | null;
     intentConf: number | null;
+    retrievalSnapshot: KnowledgeRetrievalSnapshot[];
+    answerMode: AnswerMode | null;
+    groundingStatus: GroundingStatus | null;
+    groundingReason: string | null;
     satisfaction: SatisfactionRating | null;
     escalated: number;
     createdAt: string;

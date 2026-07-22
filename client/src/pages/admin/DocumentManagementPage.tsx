@@ -55,6 +55,8 @@ export function DocumentManagementPage(): React.ReactElement {
   const [chunkTotal, setChunkTotal] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const uploadingRef = useRef(false);
+  const busyIdRef = useRef<string | null>(null);
 
   const statusOptions = useMemo(() => [
     { label: t('common.all'), value: '' },
@@ -112,6 +114,8 @@ export function DocumentManagementPage(): React.ReactElement {
   };
 
   const handleUpload = async (file: File) => {
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
     setUploading(true);
     try {
       const document = await adminApi.uploadDocument(file);
@@ -124,6 +128,7 @@ export function DocumentManagementPage(): React.ReactElement {
     } catch {
       MessagePlugin.error(t('documents.uploadFailed'));
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
     }
   };
@@ -152,6 +157,8 @@ export function DocumentManagementPage(): React.ReactElement {
   };
 
   const handleRetry = async (document: DocumentItem) => {
+    if (busyIdRef.current) return;
+    busyIdRef.current = document.id;
     setBusyId(document.id);
     try {
       const result = await adminApi.retryDocument(document.id);
@@ -162,11 +169,14 @@ export function DocumentManagementPage(): React.ReactElement {
     } catch {
       MessagePlugin.error(t('documents.retryFailed'));
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   };
 
   const handleToggle = async (document: DocumentItem, isActive: boolean) => {
+    if (busyIdRef.current) return;
+    busyIdRef.current = document.id;
     setBusyId(document.id);
     try {
       await adminApi.updateDocument(document.id, isActive);
@@ -175,11 +185,14 @@ export function DocumentManagementPage(): React.ReactElement {
     } catch {
       MessagePlugin.error(t('common.operationFailed'));
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   };
 
   const handleDelete = async (document: DocumentItem) => {
+    if (busyIdRef.current) return;
+    busyIdRef.current = document.id;
     setBusyId(document.id);
     try {
       await adminApi.deleteDocument(document.id);
@@ -189,6 +202,7 @@ export function DocumentManagementPage(): React.ReactElement {
     } catch {
       MessagePlugin.error(t('common.deleteFailed'));
     } finally {
+      busyIdRef.current = null;
       setBusyId(null);
     }
   };

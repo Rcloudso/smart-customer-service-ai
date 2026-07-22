@@ -41,6 +41,8 @@ export enum EscalationStatus {
 
 export type KnowledgeReviewStatus = 'pending' | 'converted' | 'dismissed';
 export type KnowledgeReviewTriggerReason = 'no_match' | 'low_retrieval_score' | 'negative_feedback';
+export type AnswerMode = 'direct_faq' | 'grounded_generation' | 'refusal';
+export type GroundingStatus = 'sufficient' | 'insufficient' | 'conflicting' | 'high_risk' | 'escalated';
 
 export interface KnowledgeRetrievalSnapshot {
   knowledgeType: 'faq' | 'document';
@@ -254,6 +256,9 @@ export interface ConversationDetail {
     intent: IntentCategory | null;
     intentConf: number | null;
     retrievalSnapshot: KnowledgeRetrievalSnapshot[];
+    answerMode: AnswerMode | null;
+    groundingStatus: GroundingStatus | null;
+    groundingReason: string | null;
     satisfaction: SatisfactionRating | null;
     escalated: number;
     createdAt: string;
