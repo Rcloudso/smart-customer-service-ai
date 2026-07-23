@@ -1516,6 +1516,7 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByTestId('quality-lab-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'RAG 质量实验室' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: '请选择' })).toHaveValue(/RAG Quality Baseline/);
+    await expect(page.getByText('质量实验室加载失败')).toHaveCount(0);
     if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
       await page.getByText('登录成功').waitFor({ state: 'hidden' });
       await page.screenshot({

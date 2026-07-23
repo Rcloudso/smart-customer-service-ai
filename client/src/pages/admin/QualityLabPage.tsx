@@ -67,6 +67,8 @@ export function QualityLabPage(): React.ReactElement {
     failureReason: string | null;
   }> | null>(null);
   const pollRef = useRef<number | null>(null);
+  const translationRef = useRef(t);
+  translationRef.current = t;
   const selectedVersion = datasets.find((item) => item.id === selectedVersionId);
   const coverage = {
     answerable: cases.filter((item) => item.expectedGroundingStatus === 'sufficient').length,
@@ -124,19 +126,19 @@ export function QualityLabPage(): React.ReactElement {
         setSelectedVersionId(datasetItems[0].id);
       }
     } catch {
-      MessagePlugin.error(t('quality.loadFailed'));
+      MessagePlugin.error(translationRef.current('quality.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [language, selectedVersionId, t]);
+  }, [selectedVersionId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     if (!selectedVersionId) return;
     void adminApi.listQualityCases(selectedVersionId)
       .then(setCases)
-      .catch(() => MessagePlugin.error(t('quality.loadFailed')));
-  }, [selectedVersionId, language, t]);
+      .catch(() => MessagePlugin.error(translationRef.current('quality.loadFailed')));
+  }, [selectedVersionId, language]);
   useEffect(() => {
     const active = runs.some((run) => run.status === 'queued' || run.status === 'running');
     if (active && pollRef.current === null) {
