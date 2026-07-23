@@ -20,23 +20,11 @@ import type {
   QualityDatasetVersion,
   QualityRun,
   RetrievalPolicy,
+  RetrievalPolicyEvent,
   RetrievalPolicyConfig,
 } from '../../types';
 import { useTranslation } from '../../hooks/usePreferences';
 import './QualityLabPage.css';
-
-const DEFAULT_MATRIX: RetrievalPolicyConfig[] = [0.75, 0.8, 0.85].flatMap(
-  (directFaqThreshold) => [0.5, 0.55, 0.6].flatMap(
-    (generationEvidenceThreshold) => ['none', 'local_overlap_v1'].map(
-      (rerankerMode) => ({
-        directFaqThreshold,
-        generationEvidenceThreshold,
-        sourceDiversityRatio: 0.6,
-        rerankerMode: rerankerMode as RetrievalPolicyConfig['rerankerMode'],
-      }),
-    ),
-  ),
-);
 
 type CaseDraft = Omit<QualityCase, 'id' | 'versionId' | 'createdAt'>;
 
@@ -57,8 +45,15 @@ export function QualityLabPage(): React.ReactElement {
   const [runs, setRuns] = useState<QualityRun[]>([]);
   const [currentPolicy, setCurrentPolicy] = useState<RetrievalPolicy | null>(null);
   const [policyHistory, setPolicyHistory] = useState<RetrievalPolicy[]>([]);
+  const [policyEvents, setPolicyEvents] = useState<RetrievalPolicyEvent[]>([]);
   const [promotionGates, setPromotionGates] = useState<Record<string, PolicyGateResult>>({});
   const [selectedDatasets, setSelectedDatasets] = useState<Array<string | number>>([]);
+  const [directThresholds, setDirectThresholds] = useState<Array<string | number>>([0.75, 0.8, 0.85]);
+  const [generationThresholds, setGenerationThresholds] = useState<Array<string | number>>([0.5, 0.55, 0.6]);
+  const [rerankerModes, setRerankerModes] = useState<Array<string | number>>([
+    'none',
+    'local_overlap_v1',
+  ]);
   const [loading, setLoading] = useState(false);
   const [datasetDialog, setDatasetDialog] = useState(false);
   const [caseDialog, setCaseDialog] = useState(false);
@@ -78,6 +73,29 @@ export function QualityLabPage(): React.ReactElement {
     insufficient: cases.filter((item) => item.expectedGroundingStatus === 'insufficient').length,
     highRisk: cases.filter((item) => ['high_risk', 'escalated'].includes(item.expectedGroundingStatus)).length,
   };
+  const matrixPolicies = useMemo(() => directThresholds.flatMap(
+    (directValue) => generationThresholds.flatMap((generationValue) => (
+      rerankerModes.map((mode) => ({
+        directFaqThreshold: Number(directValue),
+        generationEvidenceThreshold: Number(generationValue),
+        sourceDiversityRatio: 0.6,
+        rerankerMode: String(mode) as RetrievalPolicyConfig['rerankerMode'],
+      })).filter((policy) => (
+        policy.generationEvidenceThreshold <= policy.directFaqThreshold
+      ))
+    )),
+  ), [directThresholds, generationThresholds, rerankerModes]);
+  const formatPolicy = (policy: RetrievalPolicyConfig): string => (
+    `${t('quality.directShort')} ${policy.directFaqThreshold} · `
+    + `${t('quality.generationShort')} ${policy.generationEvidenceThreshold} · `
+    + `${t('quality.diversityShort')} ${policy.sourceDiversityRatio} · `
+    + t(`quality.reranker.${policy.rerankerMode}`)
+  );
+  const formatSourceDistribution = (distribution: Record<string, number>): string => (
+    Object.entries(distribution)
+      .map(([source, count]) => `${t(`quality.sourceMode.${source}`)}: ${count}`)
+      .join(' · ')
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -91,6 +109,7 @@ export function QualityLabPage(): React.ReactElement {
       setRuns(runPage.items);
       setCurrentPolicy(policyData.current);
       setPolicyHistory(policyData.history);
+      setPolicyEvents(policyData.events);
       const latestCompleted = runPage.items.find((run) => run.status === 'completed');
       if (latestCompleted) {
         const checks = await Promise.all(latestCompleted.candidates.map(async (candidate) => [
@@ -157,7 +176,7 @@ export function QualityLabPage(): React.ReactElement {
     if (!selectedVersion) return;
     try {
       await adminApi.saveQualityCase(selectedVersion.id, {
-        id: editingCaseId ?? crypto.randomUUID(),
+        id: editingCaseId ?? undefined,
         ...caseDraft,
         tags: caseTags.split(',').map((tag) => tag.trim()).filter(Boolean).slice(0, 10),
       });
@@ -196,7 +215,28 @@ export function QualityLabPage(): React.ReactElement {
     try {
       await adminApi.createQualityRun({
         datasetVersionIds: selectedDatasets.map(String),
-        policies: DEFAULT_MATRIX,
+        policies: matrixPolicies,
+      });
+      MessagePlugin.success(t('quality.runQueued'));
+      await refresh();
+    } catch {
+      MessagePlugin.error(t('quality.runFailed'));
+    }
+  };
+
+  const loadGates = async (run: QualityRun) => {
+    const checks = await Promise.all(run.candidates.map(async (candidate) => [
+      `${run.id}:${candidate.key}`,
+      await adminApi.checkQualityPromotion(run.id, candidate.key),
+    ] as const));
+    setPromotionGates((current) => ({ ...current, ...Object.fromEntries(checks) }));
+  };
+
+  const rerun = async (run: QualityRun) => {
+    try {
+      await adminApi.createQualityRun({
+        datasetVersionIds: run.datasetVersionIds,
+        policies: run.policies,
       });
       MessagePlugin.success(t('quality.runQueued'));
       await refresh();
@@ -262,7 +302,7 @@ export function QualityLabPage(): React.ReactElement {
             <Select
               value={selectedVersionId}
               options={datasets.map((item) => ({
-                label: `${item.name} · v${item.version} · ${item.status}`,
+                label: `${item.name} · v${item.version} · ${t(`quality.status.${item.status}`)}`,
                 value: item.id,
               }))}
               onChange={(value) => setSelectedVersionId(String(value))}
@@ -311,7 +351,7 @@ export function QualityLabPage(): React.ReactElement {
           {selectedVersion && (
             <Alert
               theme={selectedVersion.origin === 'builtin' ? 'info' : 'success'}
-              message={`${selectedVersion.origin} · ${selectedVersion.status} · ${selectedVersion.caseCount} ${t('quality.cases')} · ${t('quality.coverage')}: ${coverage.answerable}/6 · ${coverage.insufficient}/4 · ${coverage.highRisk}/2`}
+              message={`${t(`quality.origin.${selectedVersion.origin}`)} · ${t(`quality.status.${selectedVersion.status}`)} · ${selectedVersion.caseCount} ${t('quality.cases')} · ${t('quality.coverage')}: ${coverage.answerable}/6 · ${coverage.insufficient}/4 · ${coverage.highRisk}/2`}
             />
           )}
           <div className="app-quality-table-scroll">
@@ -321,9 +361,12 @@ export function QualityLabPage(): React.ReactElement {
             data={cases}
             columns={[
               { colKey: 'query', title: t('quality.query'), ellipsis: true },
-              { colKey: 'expectedAnswerMode', title: t('quality.answerMode') },
-              { colKey: 'expectedGroundingStatus', title: t('quality.grounding') },
-              { colKey: 'language', title: t('quality.language'), width: 90 },
+              { colKey: 'expectedAnswerMode', title: t('quality.answerMode'),
+                cell: ({ row }) => t(`quality.answerMode.${row.expectedAnswerMode}`) },
+              { colKey: 'expectedGroundingStatus', title: t('quality.grounding'),
+                cell: ({ row }) => t(`quality.grounding.${row.expectedGroundingStatus}`) },
+              { colKey: 'language', title: t('quality.language'), width: 90,
+                cell: ({ row }) => t(`quality.language.${row.language}`) },
               { colKey: 'tags', title: t('quality.tags'), cell: ({ row }) => row.tags.join(', ') || '—' },
               { colKey: 'action', title: t('common.actions'), width: 100,
                 cell: ({ row }) => <Button
@@ -359,9 +402,39 @@ export function QualityLabPage(): React.ReactElement {
                 placeholder={t('quality.selectDatasets')}
                 onChange={(value) => setSelectedDatasets(value as Array<string | number>)}
               />
+              <div className="app-quality-matrix">
+                <Select
+                  value={directThresholds}
+                  options={[0.75, 0.8, 0.85].map((value) => ({ label: String(value), value }))}
+                  multiple
+                  placeholder={t('quality.directThresholds')}
+                  onChange={(value) => setDirectThresholds(value as Array<string | number>)}
+                />
+                <Select
+                  value={generationThresholds}
+                  options={[0.5, 0.55, 0.6].map((value) => ({ label: String(value), value }))}
+                  multiple
+                  placeholder={t('quality.generationThresholds')}
+                  onChange={(value) => setGenerationThresholds(value as Array<string | number>)}
+                />
+                <Select
+                  value={rerankerModes}
+                  options={[
+                    { label: t('quality.reranker.none'), value: 'none' },
+                    { label: t('quality.reranker.local_overlap_v1'), value: 'local_overlap_v1' },
+                  ]}
+                  multiple
+                  placeholder={t('quality.rerankerModes')}
+                  onChange={(value) => setRerankerModes(value as Array<string | number>)}
+                />
+              </div>
               <div className="app-quality-run-actions">
-                <span>{t('quality.matrixSummary')}</span>
-                <Button theme="primary" disabled={selectedDatasets.length === 0} onClick={startRun}>
+                <span>{t('quality.matrixCount', { count: matrixPolicies.length })}</span>
+                <Button
+                  theme="primary"
+                  disabled={selectedDatasets.length === 0 || matrixPolicies.length === 0}
+                  onClick={startRun}
+                >
                   {t('quality.startRun')}
                 </Button>
               </div>
@@ -371,7 +444,7 @@ export function QualityLabPage(): React.ReactElement {
             {runs.map((run) => (
               <Card key={run.id} title={`${t('quality.run')} ${run.id.slice(0, 8)}`}>
                 <div className="app-quality-run-meta">
-                  <Tag>{run.status}</Tag>
+                  <Tag>{t(`quality.status.${run.status}`)}</Tag>
                   <span>{new Date(run.createdAt).toLocaleString()}</span>
                 </div>
                 <Progress percentage={Math.round((run.progress / Math.max(run.totalCases, 1)) * 100)} />
@@ -384,21 +457,21 @@ export function QualityLabPage(): React.ReactElement {
                       { colKey: 'recommended', title: t('quality.recommended'), width: 110,
                         cell: ({ row }) => row.recommended ? <Tag theme="success">✓</Tag> : '—' },
                       { colKey: 'policy', title: t('quality.strategy'),
-                        cell: ({ row }) => `${row.policy.directFaqThreshold}/${row.policy.generationEvidenceThreshold}/${row.policy.sourceDiversityRatio}/${row.policy.rerankerMode}` },
-                      { colKey: 'metrics', title: 'Recall@3 / MRR / Decision',
+                        cell: ({ row }) => formatPolicy(row.policy) },
+                      { colKey: 'metrics', title: t('quality.metricsSummary'),
                         cell: ({ row }) => `${percent(row.metrics.recallAt3)} / ${percent(row.metrics.mrr)} / ${percent(row.metrics.decisionAccuracy)}` },
-                      { colKey: 'recall1', title: 'Recall@1',
+                      { colKey: 'recall1', title: t('quality.recallAt1'),
                         cell: ({ row }) => percent(row.metrics.recallAt1) },
                       { colKey: 'unsafe', title: t('quality.unsafe'), width: 90,
                         cell: ({ row }) => row.metrics.unsafeAnswerCount },
                       { colKey: 'refusal', title: t('quality.overRefusal'), width: 90,
                         cell: ({ row }) => row.metrics.overRefusalCount },
-                      { colKey: 'latency', title: 'P50 / P95',
-                        cell: ({ row }) => `${row.metrics.p50LatencyMs.toFixed(1)} / ${row.metrics.p95LatencyMs.toFixed(1)} ms` },
+                      { colKey: 'latency', title: t('quality.latency'),
+                        cell: ({ row }) => `${row.metrics.p50LatencyMs.toFixed(1)} / ${row.metrics.p95LatencyMs.toFixed(1)} ${t('quality.milliseconds')}` },
                       { colKey: 'usage', title: t('quality.usage'),
                         cell: ({ row }) => `${row.metrics.embeddingCallCount} / ${row.metrics.estimatedTokenCount} / ${t('quality.costUnknown')}` },
                       { colKey: 'sources', title: t('quality.sources'),
-                        cell: ({ row }) => JSON.stringify(row.metrics.sourceDistribution) },
+                        cell: ({ row }) => formatSourceDistribution(row.metrics.sourceDistribution) },
                       { colKey: 'failures', title: t('quality.failures'), width: 90,
                         cell: ({ row }) => row.metrics.failureCount },
                       { colKey: 'action', title: t('common.actions'), width: 190,
@@ -425,19 +498,40 @@ export function QualityLabPage(): React.ReactElement {
                 )}
                 {run.candidates.filter((candidate) => candidate.recommended).map((candidate) => {
                   const gate = promotionGates[`${run.id}:${candidate.key}`];
-                  if (!gate || gate.eligible) return null;
+                  if (!gate || (gate.eligible && gate.warnings.length === 0)) return null;
                   return (
                     <Alert
                       key={candidate.key}
                       theme="warning"
-                      message={`${t('quality.gateFailed')}: ${gate.reasons.join(', ')}`}
+                      message={`${gate.eligible ? t('quality.gateWarning') : t('quality.gateFailed')}: ${[
+                        ...gate.reasons,
+                        ...gate.warnings,
+                      ].join(', ')}`}
                     />
                   );
                 })}
-                {(run.status === 'queued' || run.status === 'running') && (
-                  <Button variant="outline" onClick={() => adminApi.cancelQualityRun(run.id).then(refresh)}>
-                    {t('quality.cancel')}
-                  </Button>
+                <Space>
+                  {run.status === 'completed' && (
+                    <Button variant="outline" onClick={() => void loadGates(run)}>
+                      {t('quality.checkGates')}
+                    </Button>
+                  )}
+                  {(run.status === 'queued' || run.status === 'running') && (
+                    <Button variant="outline" onClick={() => adminApi.cancelQualityRun(run.id).then(refresh)}>
+                      {t('quality.cancel')}
+                    </Button>
+                  )}
+                  {['failed', 'interrupted', 'cancelled', 'stale'].includes(run.status) && (
+                    <Button variant="outline" onClick={() => void rerun(run)}>
+                      {t('quality.rerun')}
+                    </Button>
+                  )}
+                </Space>
+                {run.status === 'failed' && run.failureCode && (
+                  <Alert theme="error" message={`${t('quality.failureCode')}: ${run.failureCode}`} />
+                )}
+                {run.status === 'stale' && (
+                  <Alert theme="warning" message={t('quality.staleReason')} />
                 )}
               </Card>
             ))}
@@ -447,7 +541,7 @@ export function QualityLabPage(): React.ReactElement {
           {currentPolicy && (
             <Card title={t('quality.currentPolicy')} className="app-quality-current">
               <strong>v{currentPolicy.version}</strong>
-              <code>{JSON.stringify(currentPolicy.config)}</code>
+              <code>{formatPolicy(currentPolicy.config)}</code>
             </Card>
           )}
           <div className="app-quality-table-scroll">
@@ -456,7 +550,7 @@ export function QualityLabPage(): React.ReactElement {
             data={policyHistory}
             columns={[
               { colKey: 'version', title: t('quality.version'), width: 90, cell: ({ row }) => `v${row.version}` },
-              { colKey: 'config', title: t('quality.strategy'), cell: ({ row }) => JSON.stringify(row.config) },
+              { colKey: 'config', title: t('quality.strategy'), cell: ({ row }) => formatPolicy(row.config) },
               { colKey: 'sourceRunId', title: t('quality.sourceRun'), ellipsis: true },
               { colKey: 'createdBy', title: t('quality.actor'), width: 120 },
               { colKey: 'action', title: t('common.actions'), width: 120,
@@ -467,6 +561,22 @@ export function QualityLabPage(): React.ReactElement {
                   onClick={() => void rollback(row)}
                 >{t('quality.rollback')}</Button> },
             ]}
+            />
+          </div>
+          <h3>{t('quality.auditEvents')}</h3>
+          <div className="app-quality-table-scroll">
+            <Table
+              rowKey="id"
+              data={policyEvents}
+              columns={[
+                { colKey: 'action', title: t('quality.eventAction'),
+                  cell: ({ row }) => t(`quality.event.${row.action}`) },
+                { colKey: 'fromPolicyId', title: t('quality.fromPolicy'), ellipsis: true },
+                { colKey: 'toPolicyId', title: t('quality.toPolicy'), ellipsis: true },
+                { colKey: 'actor', title: t('quality.actor') },
+                { colKey: 'createdAt', title: t('quality.eventTime'),
+                  cell: ({ row }) => new Date(row.createdAt).toLocaleString() },
+              ]}
             />
           </div>
         </Tabs.TabPanel>
@@ -493,7 +603,7 @@ export function QualityLabPage(): React.ReactElement {
         {failureDetail?.length ? failureDetail.map((item) => (
           <div key={item.caseId} className="app-quality-failure">
             <code>{item.caseId}</code>
-            <span>{item.failureReason}</span>
+            <span>{t(`quality.failure.${item.failureReason ?? 'unknown'}`)}</span>
           </div>
         )) : <span>—</span>}
       </Dialog>
@@ -515,12 +625,18 @@ export function QualityLabPage(): React.ReactElement {
           <Input value={caseDraft.query} onChange={(query) => setCaseDraft({ ...caseDraft, query })} placeholder={t('quality.query')} />
           <Select
             value={caseDraft.expectedAnswerMode}
-            options={['direct_faq', 'grounded_generation', 'refusal'].map((value) => ({ label: value, value }))}
+            options={['direct_faq', 'grounded_generation', 'refusal'].map((value) => ({
+              label: t(`quality.answerMode.${value}`),
+              value,
+            }))}
             onChange={(value) => setCaseDraft({ ...caseDraft, expectedAnswerMode: String(value) as QualityCase['expectedAnswerMode'] })}
           />
           <Select
             value={caseDraft.expectedGroundingStatus}
-            options={['sufficient', 'insufficient', 'high_risk', 'escalated'].map((value) => ({ label: value, value }))}
+            options={['sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated'].map((value) => ({
+              label: t(`quality.grounding.${value}`),
+              value,
+            }))}
             onChange={(value) => setCaseDraft({
               ...caseDraft,
               expectedGroundingStatus: String(value) as QualityCase['expectedGroundingStatus'],
@@ -533,8 +649,8 @@ export function QualityLabPage(): React.ReactElement {
               <Select
                 value={caseDraft.expectedSources[0]?.knowledgeType ?? 'faq'}
                 options={[
-                  { label: 'FAQ', value: 'faq' },
-                  { label: t('nav.documents'), value: 'document' },
+                  { label: t('quality.source.faq'), value: 'faq' },
+                  { label: t('quality.source.document'), value: 'document' },
                 ]}
                 onChange={(value) => setCaseDraft({
                   ...caseDraft,
@@ -559,7 +675,10 @@ export function QualityLabPage(): React.ReactElement {
           )}
           <Select
             value={caseDraft.language}
-            options={[{ label: '中文', value: 'zh' }, { label: 'English', value: 'en' }]}
+            options={[
+              { label: t('quality.language.zh'), value: 'zh' },
+              { label: t('quality.language.en'), value: 'en' },
+            ]}
             onChange={(value) => setCaseDraft({ ...caseDraft, language: String(value) as 'zh' | 'en' })}
           />
           <Input

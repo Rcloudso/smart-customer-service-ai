@@ -118,6 +118,7 @@ export interface QualityCandidateResult {
 export interface QualityRun {
   id: string;
   datasetVersionIds: string[];
+  policies: RetrievalPolicyConfig[];
   status: QualityRunStatus;
   progress: number;
   totalCases: number;

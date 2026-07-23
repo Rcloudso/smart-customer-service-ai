@@ -24,9 +24,14 @@ export function evaluateQualityCandidates(params: {
 }): QualityCandidateResult[] {
   const results: QualityCandidateResult[] = params.policies.map((policy) => {
     const candidateKey = policyKey(policy);
-    const caseResults = params.cases.map(({ testCase, candidates, latencyMs }) => (
-      evaluateCase(testCase, candidates, latencyMs, policy, candidateKey)
-    ));
+    const caseResults = params.cases.map(({ testCase, candidates, latencyMs }) => {
+      const started = performance.now();
+      const result = evaluateCase(testCase, candidates, latencyMs, policy, candidateKey);
+      return {
+        ...result,
+        latencyMs: Number((latencyMs + performance.now() - started).toFixed(3)),
+      };
+    });
     const answerable = params.cases.filter(
       ({ testCase }) => testCase.expectedGroundingStatus === 'sufficient',
     );
@@ -42,14 +47,20 @@ export function evaluateQualityCandidates(params: {
       const rank = caseResult.sources.findIndex((source) => (
         testCase.expectedSources.some((expected) => (
           expected.knowledgeType === source.knowledgeType
-          && expected.knowledgeId === source.knowledgeId
+          && (
+            expected.knowledgeId === source.knowledgeId
+            || (
+              expected.knowledgeType === 'document'
+              && expected.knowledgeId === source.documentId
+            )
+          )
         ))
       ));
       if (rank === 0) top1Hits += 1;
       if (rank >= 0 && rank < 3) top3Hits += 1;
       if (rank >= 0) reciprocalRank += 1 / (rank + 1);
     }
-    const latency = percentileValues(params.cases.map((item) => item.latencyMs));
+    const latency = percentileValues(caseResults.map((item) => item.latencyMs));
     const denominator = Math.max(answerable.length, 1);
     return {
       key: candidateKey,

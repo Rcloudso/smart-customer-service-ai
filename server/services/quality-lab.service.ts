@@ -5,6 +5,7 @@ import { QualityLabRepo } from '../db/repos/quality-lab.repo';
 import {
   QUALITY_BASELINE_CASES,
   QUALITY_BASELINE_DATASET_ID,
+  QUALITY_BASELINE_KNOWLEDGE,
   QUALITY_BASELINE_VERSION_ID,
 } from '../eval/quality-baseline';
 import type {
@@ -39,7 +40,10 @@ export class QualityLabService {
     const now = this.now().toISOString();
     this.repo.bootstrapDefaultPolicy(DEFAULT_POLICY_ID, DEFAULT_RETRIEVAL_POLICY, now);
     const manifestHash = createHash('sha256')
-      .update(JSON.stringify(QUALITY_BASELINE_CASES))
+      .update(JSON.stringify({
+        cases: QUALITY_BASELINE_CASES,
+        knowledge: QUALITY_BASELINE_KNOWLEDGE,
+      }))
       .digest('hex');
     this.repo.bootstrapBuiltinDataset({
       datasetId: QUALITY_BASELINE_DATASET_ID,
@@ -109,6 +113,12 @@ export class QualityLabService {
     if (!query) throw new ValidationError('Case query is required');
     if (version.caseCount >= 500 && !params.id) {
       throw new ValidationError('Dataset versions may contain at most 500 cases');
+    }
+    if (
+      params.id
+      && !this.repo.listCases(versionId).some((testCase) => testCase.id === params.id)
+    ) {
+      throw new NotFoundError('Quality case not found in dataset version');
     }
     this.validateExpectedDecision(params);
     return this.repo.saveCase({

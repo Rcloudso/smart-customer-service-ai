@@ -111,6 +111,7 @@ export class QualityRunRepo {
     return {
       id: row.id,
       datasetVersionIds: JSON.parse(row.dataset_version_ids) as string[],
+      policies: JSON.parse(row.policy_grid) as RetrievalPolicyConfig[],
       status: row.status,
       progress: row.progress,
       totalCases: row.total_cases,

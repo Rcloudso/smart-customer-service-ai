@@ -901,6 +901,45 @@ test.describe('API automation: boundaries and exception flows', () => {
       }),
     ]));
 
+    const customDatasetResponse = await request.post('/api/admin/quality/datasets', {
+      headers: { ...headers, 'Idempotency-Key': `quality-dataset-${Date.now()}` },
+      data: { name: 'Import transaction check' },
+    });
+    expect(customDatasetResponse.status()).toBe(201);
+    const customDataset = (await readJson(customDatasetResponse)).data;
+    const invalidImport = await request.post(
+      `/api/admin/quality/datasets/versions/${customDataset.id}/import`,
+      {
+        headers: { ...headers, 'Idempotency-Key': `quality-import-${Date.now()}` },
+        data: {
+          cases: [
+            {
+              query: 'valid first row',
+              expectedAnswerMode: 'refusal',
+              expectedGroundingStatus: 'insufficient',
+              expectedSources: [],
+              language: 'en',
+              tags: [],
+            },
+            {
+              query: 'invalid second row',
+              expectedAnswerMode: 'direct_faq',
+              expectedGroundingStatus: 'insufficient',
+              expectedSources: [],
+              language: 'en',
+              tags: [],
+            },
+          ],
+        },
+      },
+    );
+    expect(invalidImport.status()).toBe(400);
+    const casesAfterInvalidImport = await request.get(
+      `/api/admin/quality/datasets/versions/${customDataset.id}/cases`,
+      { headers },
+    );
+    expect((await readJson(casesAfterInvalidImport)).data).toEqual([]);
+
     const invalidRun = await request.post('/api/admin/quality/runs', {
       headers,
       data: {
@@ -951,6 +990,27 @@ test.describe('API automation: boundaries and exception flows', () => {
       eligible: false,
       reasons: expect.arrayContaining(['current_knowledge_dataset_required']),
     });
+
+    const activationWithoutIdempotency = await request.post('/api/admin/quality/policies/activate', {
+      headers,
+      data: {
+        runId: queued.id,
+        candidateKey: completed.candidates[0].key,
+        expectedCurrentPolicyId: completed.activePolicyId,
+        confirmed: true,
+      },
+    });
+    expect(activationWithoutIdempotency.status()).toBe(400);
+
+    const rollbackWithoutIdempotency = await request.post('/api/admin/quality/policies/rollback', {
+      headers,
+      data: {
+        targetPolicyId: completed.activePolicyId,
+        expectedCurrentPolicyId: completed.activePolicyId,
+        confirmed: true,
+      },
+    });
+    expect(rollbackWithoutIdempotency.status()).toBe(400);
 
     const chat = await request.post('/api/chat', {
       headers: { Accept: 'text/event-stream' },

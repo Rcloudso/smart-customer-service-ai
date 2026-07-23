@@ -1527,6 +1527,10 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await page.getByTestId('language-toggle').click();
     await expect(page.getByRole('heading', { name: 'RAG Quality Lab' })).toBeVisible();
     await expect(page.getByText('Experiment runs')).toBeVisible();
+    await page.getByText('Experiment runs').click();
+    await expect(page.getByText(/Current matrix: 18 candidates/)).toBeVisible();
+    await page.getByText('Runtime policy').click();
+    await expect(page.getByRole('heading', { name: 'Policy audit events' })).toBeVisible();
     await page.getByTestId('theme-toggle').click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 

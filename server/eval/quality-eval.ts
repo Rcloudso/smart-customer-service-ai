@@ -43,3 +43,9 @@ if (candidates.some((candidate) => candidate.metrics.decisionAccuracy < 1)) {
   console.error('Quality baseline failed: decision accuracy regressed');
   process.exit(1);
 }
+if (candidates.some((candidate) => (
+  candidate.metrics.recallAt3 < 1 || candidate.metrics.mrr < 1
+))) {
+  console.error('Quality baseline failed: retrieval quality regressed');
+  process.exit(1);
+}

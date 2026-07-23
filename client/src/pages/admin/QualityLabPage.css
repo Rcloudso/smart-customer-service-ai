@@ -45,6 +45,12 @@
   margin-bottom: 16px;
 }
 
+.app-quality-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
 .app-quality-table-scroll {
   max-width: 100%;
   overflow-x: auto;
@@ -88,5 +94,9 @@
 
   .app-quality-toolbar .t-space {
     flex-wrap: wrap;
+  }
+
+  .app-quality-matrix {
+    grid-template-columns: 1fr;
   }
 }

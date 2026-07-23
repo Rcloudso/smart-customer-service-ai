@@ -103,6 +103,7 @@ router.get('/policies/promotion-check', (req, res, next) => handle(res, next, ()
   return qualityRuns.checkPromotion(data.runId, data.candidateKey);
 }));
 router.post('/policies/activate', (req, res, next) => handle(res, next, () => {
+  requireIdempotencyKey(req);
   const data = parse(z.object({
     runId: uuid,
     candidateKey: z.string().min(1).max(300),
@@ -112,6 +113,7 @@ router.post('/policies/activate', (req, res, next) => handle(res, next, () => {
   return qualityRuns.activateCandidate({ ...data, actor: actor(req) });
 }));
 router.post('/policies/rollback', (req, res, next) => handle(res, next, () => {
+  requireIdempotencyKey(req);
   const data = parse(z.object({
     targetPolicyId: z.string().min(1).max(200),
     expectedCurrentPolicyId: z.string().min(1).max(200),
@@ -130,6 +132,12 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 
 function actor(req: Request): string {
   return req.user?.username ?? 'unknown';
+}
+
+function requireIdempotencyKey(req: Request): void {
+  if (!req.get('Idempotency-Key')) {
+    throw new ValidationError('Idempotency-Key is required');
+  }
 }
 
 function handle(

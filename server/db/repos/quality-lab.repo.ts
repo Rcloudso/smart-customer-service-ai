@@ -123,12 +123,9 @@ export class QualityLabRepo {
         'SELECT content_hash FROM quality_dataset_versions WHERE id = ?',
       ).get(params.versionId) as { content_hash: string | null };
       if (registered.content_hash !== params.contentHash) {
-        this.db.prepare('DELETE FROM quality_cases WHERE version_id = ?').run(params.versionId);
-        this.db.prepare(
-          `UPDATE quality_dataset_versions
-           SET content_hash = ?, published_at = ?
-           WHERE id = ?`,
-        ).run(params.contentHash, params.now, params.versionId);
+        throw new Error(
+          'Built-in quality dataset content changed without a new immutable version ID',
+        );
       }
       const insertCase = this.db.prepare(
         `INSERT OR IGNORE INTO quality_cases (

@@ -143,6 +143,16 @@ export interface RetrievalPolicy {
   createdAt: string;
 }
 
+export interface RetrievalPolicyEvent {
+  id: string;
+  action: 'activate' | 'rollback';
+  fromPolicyId: string;
+  toPolicyId: string;
+  actor: string;
+  sourceRunId: string | null;
+  createdAt: string;
+}
+
 export interface QualityDatasetVersion {
   id: string;
   datasetId: string;
@@ -202,6 +212,7 @@ export interface QualityCandidateResult {
 export interface QualityRun {
   id: string;
   datasetVersionIds: string[];
+  policies: RetrievalPolicyConfig[];
   status: QualityRunStatus;
   progress: number;
   totalCases: number;

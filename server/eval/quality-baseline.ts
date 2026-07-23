@@ -5,6 +5,52 @@ export const QUALITY_BASELINE_VERSION_ID = 'builtin-rag-quality-baseline-v1';
 
 type BaselineCase = Omit<QualityCase, 'versionId' | 'createdAt'>;
 
+export interface QualityBaselineKnowledge {
+  knowledgeType: 'faq' | 'document';
+  knowledgeId: string;
+  title: string;
+  content: string;
+}
+
+export const QUALITY_BASELINE_KNOWLEDGE: QualityBaselineKnowledge[] = [
+  {
+    knowledgeType: 'faq',
+    knowledgeId: 'faq-refund-apply',
+    title: '如何申请退款？',
+    content: '在订单详情中提交退款申请，并按页面提示补充原因。',
+  },
+  {
+    knowledgeType: 'faq',
+    knowledgeId: 'faq-order-status',
+    title: '如何查询订单状态？',
+    content: '登录后在订单中心查看订单状态和物流进度。',
+  },
+  {
+    knowledgeType: 'faq',
+    knowledgeId: 'faq-human-service',
+    title: '如何联系人工客服？',
+    content: '在聊天窗口输入转人工即可提交人工客服请求。',
+  },
+  {
+    knowledgeType: 'document',
+    knowledgeId: 'document-shipping',
+    title: '偏远地区配送时效',
+    content: '偏远地区配送通常需要七到十个工作日。',
+  },
+  {
+    knowledgeType: 'document',
+    knowledgeId: 'document-account',
+    title: '企业账户成员上限',
+    content: '企业账户最多可以邀请五十名成员。',
+  },
+  {
+    knowledgeType: 'document',
+    knowledgeId: 'document-warranty',
+    title: 'Product warranty period',
+    content: 'The product warranty lasts for twelve months from the purchase date.',
+  },
+];
+
 export const QUALITY_BASELINE_CASES: BaselineCase[] = [
   {
     id: 'builtin-direct-refund',

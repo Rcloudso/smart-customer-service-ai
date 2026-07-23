@@ -7,7 +7,10 @@ import {
   policyKey,
   type RetrievedQualityCase,
 } from '../eval/quality-evaluator';
-import { QUALITY_BASELINE_VERSION_ID } from '../eval/quality-baseline';
+import {
+  QUALITY_BASELINE_KNOWLEDGE,
+  QUALITY_BASELINE_VERSION_ID,
+} from '../eval/quality-baseline';
 import type { RetrievalResult } from '../types/ai';
 import type {
   PolicyGateResult,
@@ -17,6 +20,7 @@ import type {
   RetrievalPolicyConfig,
 } from '../types/quality';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
+import { logger } from '../utils/logger';
 import { QualityLabService, getQualityLabService } from './quality-lab.service';
 
 interface QualityRunServiceOptions {
@@ -160,19 +164,20 @@ export class QualityRunService {
       .map((id) => this.qualityLab.getVersion(id))
       .filter((version) => version?.targetKind === 'current');
     if (currentVersions.length === 0) reasons.push('current_knowledge_dataset_required');
-    const currentCases = currentVersions.flatMap(
-      (version) => this.qualityLab.listCases(version!.id),
-    );
-    const answerable = currentCases.filter(
-      (testCase) => testCase.expectedGroundingStatus === 'sufficient',
-    ).length;
-    const insufficient = currentCases.filter(
-      (testCase) => testCase.expectedGroundingStatus === 'insufficient',
-    ).length;
-    const highRisk = currentCases.filter(
-      (testCase) => ['high_risk', 'escalated'].includes(testCase.expectedGroundingStatus),
-    ).length;
-    if (currentCases.length < 12 || answerable < 6 || insufficient < 4 || highRisk < 2) {
+    const hasCompleteCurrentVersion = currentVersions.some((version) => {
+      const cases = this.qualityLab.listCases(version!.id);
+      const answerable = cases.filter(
+        (testCase) => testCase.expectedGroundingStatus === 'sufficient',
+      ).length;
+      const insufficient = cases.filter(
+        (testCase) => testCase.expectedGroundingStatus === 'insufficient',
+      ).length;
+      const highRisk = cases.filter(
+        (testCase) => ['high_risk', 'escalated'].includes(testCase.expectedGroundingStatus),
+      ).length;
+      return cases.length >= 12 && answerable >= 6 && insufficient >= 4 && highRisk >= 2;
+    });
+    if (currentVersions.length > 0 && !hasCompleteCurrentVersion) {
       reasons.push('current_knowledge_coverage_insufficient');
     }
     if (!run.knowledgeFingerprint || run.knowledgeFingerprint !== this.knowledgeFingerprint()) {
@@ -285,6 +290,10 @@ export class QualityRunService {
       });
       this.repo.saveCompleted(run.id, candidates, this.now().toISOString());
     } catch (error) {
+      logger.error({
+        err: error,
+        runId: run.id,
+      }, 'Quality evaluation run failed');
       this.repo.markFailed(
         run.id,
         error instanceof Error ? error.name : 'QUALITY_RUN_FAILED',
@@ -350,33 +359,62 @@ export class QualityRunService {
 }
 
 export function qualityFixtureCandidates(testCase: QualityCase): RetrievalResult[] {
-  if (testCase.expectedGroundingStatus === 'insufficient') return [];
-  if (testCase.expectedGroundingStatus === 'high_risk') {
-    return [{
-      knowledgeType: 'document',
-      knowledgeId: 'fixture-risk-decoy',
-      title: 'Order help',
-      content: 'General order policy information.',
-      similarity: 0.7,
-      source: 'vector',
-      vectorScore: 0.7,
-      fusionScore: 0.02,
-    }];
+  const queryTerms = localTerms(testCase.query);
+  return QUALITY_BASELINE_KNOWLEDGE
+    .map((item) => {
+      const overlap = localOverlap(queryTerms, localTerms(`${item.title} ${item.content}`));
+      const exactFaq = item.knowledgeType === 'faq'
+        && normalizeFixtureText(item.title) === normalizeFixtureText(testCase.query);
+      if (!exactFaq && overlap < 0.18) return null;
+      const vectorScore = Number(Math.min(0.9, 0.35 + overlap * 0.55).toFixed(6));
+      const keywordScore = exactFaq ? 0.95 : undefined;
+      return {
+        knowledgeType: item.knowledgeType,
+        knowledgeId: item.knowledgeId,
+        documentId: item.knowledgeType === 'document' ? item.knowledgeId : undefined,
+        title: item.title,
+        content: item.content,
+        similarity: Math.max(vectorScore, keywordScore ?? 0),
+        source: exactFaq ? 'hybrid' as const : 'vector' as const,
+        keywordScore,
+        vectorScore,
+        fusionScore: Number((overlap * 0.08 + (exactFaq ? 0.04 : 0)).toFixed(6)),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((left, right) => (
+      (right.fusionScore ?? 0) - (left.fusionScore ?? 0)
+      || left.knowledgeId.localeCompare(right.knowledgeId)
+    ));
+}
+
+function normalizeFixtureText(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/[\s\p{P}]+/gu, '');
+}
+
+function localTerms(value: string): Set<string> {
+  const normalized = value.normalize('NFKC').toLowerCase();
+  const result = new Set<string>();
+  for (const match of normalized.matchAll(/[\p{Script=Han}]+|[a-z0-9]+/gu)) {
+    const token = match[0];
+    if (/^[a-z0-9]+$/.test(token)) {
+      result.add(token);
+      continue;
+    }
+    const characters = Array.from(token);
+    if (characters.length === 1) result.add(characters[0]);
+    for (let index = 0; index < characters.length - 1; index += 1) {
+      result.add(`${characters[index]}${characters[index + 1]}`);
+    }
   }
-  return testCase.expectedSources.map((source, index) => ({
-    knowledgeType: source.knowledgeType,
-    knowledgeId: source.knowledgeId,
-    documentId: source.knowledgeType === 'document' ? source.knowledgeId : undefined,
-    title: source.knowledgeType === 'faq' ? testCase.query : `Fixture source ${source.knowledgeId}`,
-    content: source.knowledgeType === 'faq'
-      ? '这是经过验证的 FAQ 原文答案。'
-      : `${testCase.query} 的经过验证的文档依据。`,
-    similarity: source.knowledgeType === 'faq' ? 0.92 : 0.68,
-    source: source.knowledgeType === 'faq' ? 'hybrid' : 'vector',
-    keywordScore: source.knowledgeType === 'faq' ? 0.92 : undefined,
-    vectorScore: source.knowledgeType === 'faq' ? 0.8 : 0.68,
-    fusionScore: 0.08 - index * 0.001,
-  }));
+  return result;
+}
+
+function localOverlap(query: Set<string>, candidate: Set<string>): number {
+  if (query.size === 0) return 0;
+  let matches = 0;
+  for (const term of query) if (candidate.has(term)) matches += 1;
+  return matches / query.size;
 }
 
 let qualityRunService: QualityRunService | null = null;

@@ -36,6 +36,7 @@ import type {
   QualityDatasetVersion,
   QualityRun,
   RetrievalPolicy,
+  RetrievalPolicyEvent,
   RetrievalPolicyConfig,
 } from '../types';
 
@@ -65,6 +66,7 @@ export type {
   QualityDatasetVersion,
   QualityRun,
   RetrievalPolicy,
+  RetrievalPolicyEvent,
   RetrievalPolicyConfig,
 };
 
@@ -328,7 +330,7 @@ export async function listQualityCases(versionId: string): Promise<QualityCase[]
 
 export async function saveQualityCase(
   versionId: string,
-  data: Omit<QualityCase, 'versionId' | 'createdAt'>,
+  data: Omit<QualityCase, 'id' | 'versionId' | 'createdAt'> & { id?: string },
 ): Promise<QualityCase> {
   return put(`/admin/quality/datasets/versions/${versionId}/cases`, data, idempotentRequest());
 }
@@ -370,7 +372,7 @@ export async function cancelQualityRun(runId: string): Promise<QualityRun> {
 export async function getQualityPolicies(): Promise<{
   current: RetrievalPolicy;
   history: RetrievalPolicy[];
-  events: unknown[];
+  events: RetrievalPolicyEvent[];
 }> {
   return get('/admin/quality/policies');
 }
