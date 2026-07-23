@@ -874,4 +874,93 @@ test.describe('API automation: boundaries and exception flows', () => {
       total: expect.any(Number),
     });
   });
+
+  test('quality lab enforces admin boundaries and persists run lifecycle', async ({ request }) => {
+    const unauthenticated = await request.get('/api/admin/quality/datasets');
+    expect(unauthenticated.status()).toBe(401);
+    const nonAdminToken = jwt.sign(
+      { id: 'viewer-id', username: 'viewer', role: 'viewer' },
+      'test-secret-123',
+    );
+    const forbidden = await request.get('/api/admin/quality/datasets', {
+      headers: authHeaders(nonAdminToken),
+    });
+    expect(forbidden.status()).toBe(403);
+
+    const token = await login(request);
+    const headers = authHeaders(token);
+    const datasetsResponse = await request.get('/api/admin/quality/datasets', { headers });
+    expect(datasetsResponse.status()).toBe(200);
+    const datasets = (await readJson(datasetsResponse)).data;
+    expect(datasets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'builtin-rag-quality-baseline-v1',
+        origin: 'builtin',
+        status: 'published',
+        caseCount: 12,
+      }),
+    ]));
+
+    const invalidRun = await request.post('/api/admin/quality/runs', {
+      headers,
+      data: {
+        datasetVersionIds: ['builtin-rag-quality-baseline-v1'],
+        policies: Array.from({ length: 65 }, (_, index) => ({
+          directFaqThreshold: 0.8,
+          generationEvidenceThreshold: 0.55,
+          sourceDiversityRatio: index / 100,
+          rerankerMode: 'none',
+        })),
+      },
+    });
+    expect(invalidRun.status()).toBe(400);
+
+    const runResponse = await request.post('/api/admin/quality/runs', {
+      headers: { ...headers, 'Idempotency-Key': `quality-run-${Date.now()}` },
+      data: {
+        datasetVersionIds: ['builtin-rag-quality-baseline-v1'],
+        policies: [{
+          directFaqThreshold: 0.8,
+          generationEvidenceThreshold: 0.55,
+          sourceDiversityRatio: 0.6,
+          rerankerMode: 'none',
+        }],
+      },
+    });
+    expect(runResponse.status()).toBe(202);
+    const queued = (await readJson(runResponse)).data;
+    expect(queued.status).toBe('queued');
+
+    let completed: any = queued;
+    await expect.poll(async () => {
+      const response = await request.get(`/api/admin/quality/runs/${queued.id}`, { headers });
+      completed = (await readJson(response)).data;
+      return completed.status;
+    }).toBe('completed');
+    expect(completed.candidates[0].metrics).toMatchObject({
+      unsafeAnswerCount: 0,
+      decisionAccuracy: 1,
+      recallAt3: 1,
+    });
+
+    const gate = await request.get('/api/admin/quality/policies/promotion-check', {
+      headers,
+      params: { runId: queued.id, candidateKey: completed.candidates[0].key },
+    });
+    expect((await readJson(gate)).data).toMatchObject({
+      eligible: false,
+      reasons: expect.arrayContaining(['current_knowledge_dataset_required']),
+    });
+
+    const chat = await request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: '如何申请退款？', userIdent: `quality-chat-${Date.now()}` },
+    });
+    const done = (await parseSse(chat)).find((event) => event.type === 'done');
+    expect(done.content).toMatchObject({
+      sessionId: expect.any(String),
+      messageId: expect.any(String),
+      retrievalPolicyId: expect.any(String),
+    });
+  });
 });

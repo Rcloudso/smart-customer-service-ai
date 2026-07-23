@@ -11,7 +11,7 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Current version: **v0.2.7 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
+Current version: **v0.2.8 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -73,6 +73,7 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 - **Index operations** - admin users can inspect indexed entries, active entries, missing embeddings, dimensions, rebuild time, and index errors.
 - **Retrieval debugging** - admin panel explains ranked matches, source, similarity, keyword score, vector score, and ranking reason.
 - **Retrieval evaluation** - repeatable FAQ and document evals report ranking metrics, score/source distributions, failures, and semantic-v1 versus structure-only comparison.
+- **RAG Quality Lab** - admins version evaluation sets, compare deterministic retrieval/Grounding strategies, inspect failures and safely publish or roll back an immutable runtime policy.
 - **Language switching and bilingual dictionary** - fixed UI copy is read from an editable Chinese/English dictionary instead of being hard-coded across pages.
 - **Light/dark themes** - persisted theme preferences for both customer and admin workflows.
 - **Open-source readiness** - Docker, docker-compose, GitHub Actions CI, Playwright E2E, and bilingual docs are included.

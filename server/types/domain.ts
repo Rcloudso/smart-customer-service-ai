@@ -153,6 +153,7 @@ export interface Message {
   answerMode: AnswerMode | null;
   groundingStatus: GroundingStatus | null;
   groundingReason: string | null;
+  retrievalPolicyId: string | null;
   createdAt: string;
 }
 

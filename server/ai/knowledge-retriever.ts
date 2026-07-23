@@ -3,6 +3,8 @@ import { KnowledgeType, RetrievalResult } from '../types/ai';
 import { logger } from '../utils/logger';
 import { VectorStore } from './vector-store';
 import { expandRetrievalQuery } from './query-expansion';
+import { rankRetrievalResults } from './retrieval-ranking';
+import type { RetrievalPolicyConfig } from '../types/quality';
 
 export interface KnowledgeIndexItem {
   id: string;
@@ -22,12 +24,6 @@ export interface KnowledgeAdapter {
   searchKeyword(query: string, limit: number): RetrievalResult[] | Promise<RetrievalResult[]>;
 }
 
-const SOURCE_PRIORITY: Record<NonNullable<RetrievalResult['source']>, number> = {
-  hybrid: 3,
-  vector: 2,
-  keyword: 1,
-};
-const MIN_DIVERSE_FUSION_RATIO = 0.6;
 const MIN_CANDIDATE_POOL = 20;
 const MAX_CANDIDATE_POOL = 100;
 const CANDIDATE_MULTIPLIER = 4;
@@ -177,102 +173,49 @@ export class KnowledgeRetriever {
     query: string,
     topK: number = 5,
     knowledgeTypes: KnowledgeType[] = ['faq', 'document'],
+    policy?: RetrievalPolicyConfig,
   ): Promise<RetrievalResult[]> {
     await this.initialize();
-    const operationId = uuidv4();
     const expandedQuery = expandRetrievalQuery(query);
-    const allowed = new Set(knowledgeTypes);
-    const merged = new Map<string, RetrievalResult>();
     const candidateLimit = Math.min(
       MAX_CANDIDATE_POOL,
       Math.max(MIN_CANDIDATE_POOL, topK * CANDIDATE_MULTIPLIER),
     );
+    const queryEmbedding = await this.embedQueries([expandedQuery]);
+    const candidates = await this.retrieveCandidates(
+      query,
+      expandedQuery,
+      queryEmbedding[0],
+      candidateLimit,
+      knowledgeTypes,
+    );
 
-    if (this.vectorStore.stats().indexedCount > 0) {
-      try {
-        const embeddings = await this.embedTexts([expandedQuery]);
-        const queryEmbedding = embeddings[0];
-        if (queryEmbedding) {
-          const vectorCandidates = [...allowed].flatMap((knowledgeType) => (
-            this.vectorStore.search(
-              queryEmbedding,
-              candidateLimit,
-              (entry) => entry.result.knowledgeType === knowledgeType,
-            )
-          )).sort((left, right) => right.score - left.score);
-          for (const [index, match] of vectorCandidates.entries()) {
-            const vectorScore = match.score;
-            const vectorRank = index + 1;
-            merged.set(this.resultKey(match.entry.result), {
-              ...match.entry.result,
-              similarity: vectorScore,
-              source: 'vector',
-              vectorScore,
-              vectorRank,
-              fusionScore: this.rrfScore(vectorRank, VECTOR_RRF_WEIGHT),
-            });
-          }
-        }
-      } catch (error) {
-        logger.warn({
-          operationId,
-          errorName: error instanceof Error ? error.name : 'UnknownError',
-        }, 'Knowledge vector query failed; using keyword fallback');
-        // Keyword retrieval remains available when query embedding fails.
-      }
-    }
+    return rankRetrievalResults({
+      query,
+      candidates,
+      topK,
+      knowledgeTypes,
+      policy,
+    });
+  }
 
-    const keywordLists = await Promise.all(this.adapters
-      .filter((adapter) => allowed.has(adapter.knowledgeType))
-      .map(async (adapter) => {
-        try {
-          return await adapter.searchKeyword(
-            adapter.knowledgeType === 'document' ? expandedQuery : query,
-            candidateLimit,
-          );
-        } catch (error) {
-          logger.warn({
-            operationId,
-            knowledgeType: adapter.knowledgeType,
-            errorName: error instanceof Error ? error.name : 'UnknownError',
-          }, 'Knowledge keyword source search failed');
-          return [];
-        }
-      }));
-    for (const keywordResults of keywordLists) {
-      for (const [index, result] of keywordResults.entries()) {
-        const key = this.resultKey(result);
-        const existing = merged.get(key);
-        const keywordScore = result.keywordScore ?? result.similarity;
-        const keywordRank = index + 1;
-        const keywordFusionScore = this.rrfScore(
-          keywordRank,
-          KEYWORD_RRF_WEIGHT,
-        );
-        if (existing) {
-          merged.set(key, {
-            ...existing,
-            source: 'hybrid',
-            keywordScore,
-            keywordRank,
-            fusionScore: (existing.fusionScore ?? 0) + keywordFusionScore,
-            similarity: Math.max(existing.vectorScore ?? existing.similarity, keywordScore),
-          });
-        } else {
-          merged.set(key, {
-            ...result,
-            source: 'keyword',
-            keywordScore,
-            keywordRank,
-            fusionScore: keywordFusionScore,
-            similarity: keywordScore,
-          });
-        }
-      }
-    }
-
-    const ranked = [...merged.values()].sort((a, b) => this.compare(a, b));
-    return this.selectDiverseResults(ranked, topK, knowledgeTypes);
+  async searchCandidatesBatch(
+    queries: string[],
+    limit: number = MAX_CANDIDATE_POOL,
+    knowledgeTypes: KnowledgeType[] = ['faq', 'document'],
+  ): Promise<RetrievalResult[][]> {
+    if (queries.length === 0) return [];
+    await this.initialize();
+    const expanded = queries.map(expandRetrievalQuery);
+    const embeddings = await this.embedQueries(expanded);
+    const candidateLimit = Math.min(MAX_CANDIDATE_POOL, Math.max(1, limit));
+    return Promise.all(queries.map((query, index) => this.retrieveCandidates(
+      query,
+      expanded[index],
+      embeddings[index],
+      candidateLimit,
+      knowledgeTypes,
+    )));
   }
 
   stats(): ReturnType<VectorStore<KnowledgeIndexItem>['stats']> {
@@ -311,58 +254,96 @@ export class KnowledgeRetriever {
     return `${result.knowledgeType}:${result.knowledgeId}`;
   }
 
-  private compare(a: RetrievalResult, b: RetrievalResult): number {
-    const directFaqDelta = Number(this.isDirectFaqCandidate(b)) - Number(this.isDirectFaqCandidate(a));
-    if (directFaqDelta !== 0) return directFaqDelta;
-    const fusionDelta = (b.fusionScore ?? 0) - (a.fusionScore ?? 0);
-    if (fusionDelta !== 0) return fusionDelta;
-    const sourceDelta = SOURCE_PRIORITY[b.source ?? 'keyword'] - SOURCE_PRIORITY[a.source ?? 'keyword'];
-    if (sourceDelta !== 0) return sourceDelta;
-    return this.resultKey(a).localeCompare(this.resultKey(b));
-  }
-
   private rrfScore(rank: number, weight: number): number {
     return weight / (RRF_RANK_CONSTANT + rank);
   }
 
-  private isDirectFaqCandidate(result: RetrievalResult): boolean {
-    return result.knowledgeType === 'faq'
-      && (result.source === 'keyword' || result.source === 'hybrid')
-      && (result.keywordScore ?? result.similarity) >= 0.65;
+  private async embedQueries(queries: string[]): Promise<Array<number[] | undefined>> {
+    if (this.vectorStore.stats().indexedCount === 0) return queries.map(() => undefined);
+    try {
+      return await this.embedTexts(queries);
+    } catch (error) {
+      logger.warn({
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        queryCount: queries.length,
+      }, 'Knowledge vector query batch failed; using keyword fallback');
+      return queries.map(() => undefined);
+    }
   }
 
-  private selectDiverseResults(
-    ranked: RetrievalResult[],
-    topK: number,
+  private async retrieveCandidates(
+    query: string,
+    expandedQuery: string,
+    queryEmbedding: number[] | undefined,
+    candidateLimit: number,
     knowledgeTypes: KnowledgeType[],
-  ): RetrievalResult[] {
-    if (topK <= 1 || knowledgeTypes.length <= 1 || ranked.length <= 1) {
-      return ranked.slice(0, topK);
+  ): Promise<RetrievalResult[]> {
+    const operationId = uuidv4();
+    const allowed = new Set(knowledgeTypes);
+    const merged = new Map<string, RetrievalResult>();
+    if (queryEmbedding) {
+      const vectorCandidates = [...allowed].flatMap((knowledgeType) => (
+        this.vectorStore.search(
+          queryEmbedding,
+          candidateLimit,
+          (entry) => entry.result.knowledgeType === knowledgeType,
+        )
+      )).sort((left, right) => right.score - left.score);
+      for (const [index, match] of vectorCandidates.entries()) {
+        const vectorScore = match.score;
+        const vectorRank = index + 1;
+        merged.set(this.resultKey(match.entry.result), {
+          ...match.entry.result,
+          similarity: vectorScore,
+          source: 'vector',
+          vectorScore,
+          vectorRank,
+          fusionScore: this.rrfScore(vectorRank, VECTOR_RRF_WEIGHT),
+        });
+      }
     }
-    const first = ranked[0];
-    const selected = [first];
-    const selectedKeys = new Set([this.resultKey(first)]);
-    const fusionFloor = (first.fusionScore ?? 0) * MIN_DIVERSE_FUSION_RATIO;
-
-    for (const knowledgeType of knowledgeTypes) {
-      if (selected.some((result) => result.knowledgeType === knowledgeType)) continue;
-      const candidate = ranked.find((result) => (
-        result.knowledgeType === knowledgeType
-        && (result.fusionScore ?? 0) >= fusionFloor
-      ));
-      if (!candidate) continue;
-      selected.push(candidate);
-      selectedKeys.add(this.resultKey(candidate));
-      if (selected.length >= topK) return selected;
+    const keywordLists = await Promise.all(this.adapters
+      .filter((adapter) => allowed.has(adapter.knowledgeType))
+      .map(async (adapter) => {
+        try {
+          return await adapter.searchKeyword(
+            adapter.knowledgeType === 'document' ? expandedQuery : query,
+            candidateLimit,
+          );
+        } catch (error) {
+          logger.warn({
+            operationId,
+            knowledgeType: adapter.knowledgeType,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }, 'Knowledge keyword source search failed');
+          return [];
+        }
+      }));
+    for (const keywordResults of keywordLists) {
+      for (const [index, result] of keywordResults.entries()) {
+        const key = this.resultKey(result);
+        const existing = merged.get(key);
+        const keywordScore = result.keywordScore ?? result.similarity;
+        const keywordRank = index + 1;
+        const keywordFusionScore = this.rrfScore(keywordRank, KEYWORD_RRF_WEIGHT);
+        merged.set(key, existing ? {
+          ...existing,
+          source: 'hybrid',
+          keywordScore,
+          keywordRank,
+          fusionScore: (existing.fusionScore ?? 0) + keywordFusionScore,
+          similarity: Math.max(existing.vectorScore ?? existing.similarity, keywordScore),
+        } : {
+          ...result,
+          source: 'keyword',
+          keywordScore,
+          keywordRank,
+          fusionScore: keywordFusionScore,
+          similarity: keywordScore,
+        });
+      }
     }
-
-    for (const result of ranked) {
-      const key = this.resultKey(result);
-      if (selectedKeys.has(key)) continue;
-      selected.push(result);
-      selectedKeys.add(key);
-      if (selected.length >= topK) break;
-    }
-    return selected;
+    return [...merged.values()];
   }
+
 }

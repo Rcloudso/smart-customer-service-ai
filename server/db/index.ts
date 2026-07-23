@@ -54,6 +54,7 @@ export function initSchema(database: Database.Database): void {
       answer_mode TEXT CHECK(answer_mode IN ('direct_faq', 'grounded_generation', 'refusal')),
       grounding_status TEXT CHECK(grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated')),
       grounding_reason TEXT,
+      retrieval_policy_id TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -196,6 +197,136 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_idempotency_records_updated
       ON idempotency_records(updated_at);
+
+    CREATE TABLE IF NOT EXISTS quality_datasets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      origin TEXT NOT NULL CHECK(origin IN ('builtin', 'custom')),
+      created_by TEXT NOT NULL,
+      archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quality_datasets_origin_created
+      ON quality_datasets(origin, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS quality_dataset_versions (
+      id TEXT PRIMARY KEY,
+      dataset_id TEXT NOT NULL REFERENCES quality_datasets(id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('draft', 'published')),
+      target_kind TEXT NOT NULL CHECK(target_kind IN ('fixture', 'current')),
+      content_hash TEXT,
+      published_at TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(dataset_id, version_number)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quality_versions_dataset
+      ON quality_dataset_versions(dataset_id, version_number DESC);
+    CREATE INDEX IF NOT EXISTS idx_quality_versions_status
+      ON quality_dataset_versions(status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS quality_cases (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL REFERENCES quality_dataset_versions(id) ON DELETE CASCADE,
+      query TEXT NOT NULL,
+      expected_answer_mode TEXT NOT NULL
+        CHECK(expected_answer_mode IN ('direct_faq', 'grounded_generation', 'refusal')),
+      expected_grounding_status TEXT NOT NULL
+        CHECK(expected_grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated')),
+      expected_sources TEXT NOT NULL DEFAULT '[]',
+      language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+      tags TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quality_cases_version
+      ON quality_cases(version_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS retrieval_policies (
+      id TEXT PRIMARY KEY,
+      version_number INTEGER NOT NULL UNIQUE,
+      direct_faq_threshold REAL NOT NULL CHECK(direct_faq_threshold >= 0 AND direct_faq_threshold <= 1),
+      generation_evidence_threshold REAL NOT NULL CHECK(generation_evidence_threshold >= 0 AND generation_evidence_threshold <= 1),
+      source_diversity_ratio REAL NOT NULL CHECK(source_diversity_ratio >= 0 AND source_diversity_ratio <= 1),
+      reranker_mode TEXT NOT NULL CHECK(reranker_mode IN ('none', 'local_overlap_v1')),
+      source_run_id TEXT,
+      source_candidate_key TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      CHECK(generation_evidence_threshold <= direct_faq_threshold)
+    );
+
+    CREATE TABLE IF NOT EXISTS retrieval_policy_state (
+      singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+      active_policy_id TEXT NOT NULL REFERENCES retrieval_policies(id),
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS retrieval_policy_events (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL CHECK(action IN ('activate', 'rollback')),
+      from_policy_id TEXT NOT NULL REFERENCES retrieval_policies(id),
+      to_policy_id TEXT NOT NULL REFERENCES retrieval_policies(id),
+      actor TEXT NOT NULL,
+      source_run_id TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_policy_events_created
+      ON retrieval_policy_events(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS quality_runs (
+      id TEXT PRIMARY KEY,
+      dataset_version_ids TEXT NOT NULL,
+      policy_grid TEXT NOT NULL,
+      status TEXT NOT NULL
+        CHECK(status IN ('queued', 'running', 'completed', 'failed', 'interrupted', 'cancelled', 'stale')),
+      progress INTEGER NOT NULL DEFAULT 0,
+      total_cases INTEGER NOT NULL,
+      knowledge_fingerprint TEXT,
+      active_policy_id TEXT NOT NULL REFERENCES retrieval_policies(id),
+      failure_code TEXT,
+      cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK(cancel_requested IN (0, 1)),
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quality_runs_status_created
+      ON quality_runs(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS quality_run_candidates (
+      run_id TEXT NOT NULL REFERENCES quality_runs(id) ON DELETE CASCADE,
+      candidate_key TEXT NOT NULL,
+      policy_config TEXT NOT NULL,
+      metrics TEXT NOT NULL,
+      recommended INTEGER NOT NULL DEFAULT 0 CHECK(recommended IN (0, 1)),
+      PRIMARY KEY(run_id, candidate_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS quality_case_results (
+      run_id TEXT NOT NULL,
+      candidate_key TEXT NOT NULL,
+      case_id TEXT NOT NULL,
+      actual_answer_mode TEXT NOT NULL,
+      actual_grounding_status TEXT NOT NULL,
+      sources TEXT NOT NULL DEFAULT '[]',
+      latency_ms REAL NOT NULL,
+      passed INTEGER NOT NULL CHECK(passed IN (0, 1)),
+      failure_reason TEXT,
+      PRIMARY KEY(run_id, candidate_key, case_id),
+      FOREIGN KEY(run_id, candidate_key)
+        REFERENCES quality_run_candidates(run_id, candidate_key) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quality_case_results_run_failure
+      ON quality_case_results(run_id, passed, case_id);
   `);
 
   // v0.2.6 security migration: model credentials are environment-injected only.
@@ -209,6 +340,7 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'messages', 'answer_mode', "TEXT CHECK(answer_mode IN ('direct_faq', 'grounded_generation', 'refusal'))");
   ensureColumn(database, 'messages', 'grounding_status', "TEXT CHECK(grounding_status IN ('sufficient', 'insufficient', 'conflicting', 'high_risk', 'escalated'))");
   ensureColumn(database, 'messages', 'grounding_reason', 'TEXT');
+  ensureColumn(database, 'messages', 'retrieval_policy_id', 'TEXT');
   ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');

@@ -3,6 +3,7 @@ import { knowledgeRetriever } from '../ai/knowledge-system';
 import { IntentResult, FaqMatch, LLMMessage, RetrievalResult } from '../types/ai';
 import { IntentCategory } from '../types/domain';
 import { logger } from '../utils/logger';
+import type { RetrievalPolicyConfig } from '../types/quality';
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.7;
 const LOW_CONFIDENCE_THRESHOLD = 0.4;
@@ -20,6 +21,7 @@ export class IntentService {
   async processMessage(
     message: string,
     history: LLMMessage[] = [],
+    policy?: RetrievalPolicyConfig,
   ): Promise<IntentProcessingResult> {
     // Step 1: Classify intent
     const intent = await classify(message, history);
@@ -33,13 +35,13 @@ export class IntentService {
 
     if (intent.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
       // High confidence: search FAQ by category + semantics
-      retrievalResults = await knowledgeRetriever.search(message, 5);
+      retrievalResults = await knowledgeRetriever.search(message, 5, undefined, policy);
     } else if (intent.confidence >= LOW_CONFIDENCE_THRESHOLD) {
       // Medium confidence: semantic search only
-      retrievalResults = await knowledgeRetriever.search(message, 3);
+      retrievalResults = await knowledgeRetriever.search(message, 3, undefined, policy);
     } else {
       // Low confidence: flag for escalation
-      retrievalResults = await knowledgeRetriever.search(message, 3);
+      retrievalResults = await knowledgeRetriever.search(message, 3, undefined, policy);
       if (retrievalResults.length === 0 || retrievalResults[0].similarity < 0.5) {
         needsEscalation = true;
         escalationReason = '意图置信度低且无匹配FAQ，建议转人工';

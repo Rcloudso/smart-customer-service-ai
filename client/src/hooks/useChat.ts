@@ -30,6 +30,7 @@ export interface ChatMessage {
   answerMode?: AnswerMode | null;
   groundingStatus?: GroundingStatus | null;
   groundingReason?: string | null;
+  retrievalPolicyId?: string | null;
   satisfaction?: number | null;
   failed?: boolean;
   isStreaming?: boolean;
@@ -163,6 +164,7 @@ export const useChat = create<ChatState>((set, get) => ({
                     answerMode: data.answerMode,
                     groundingStatus: data.groundingStatus,
                     groundingReason: data.groundingReason,
+                    retrievalPolicyId: data.retrievalPolicyId,
                     failed: false,
                   }
                 : m,
@@ -250,6 +252,7 @@ export const useChat = create<ChatState>((set, get) => ({
           answerMode: message.answerMode,
           groundingStatus: message.groundingStatus,
           groundingReason: message.groundingReason,
+          retrievalPolicyId: message.retrievalPolicyId,
           satisfaction: message.satisfaction,
           failed: false,
           isStreaming: false,

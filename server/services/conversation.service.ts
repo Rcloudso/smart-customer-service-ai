@@ -50,6 +50,7 @@ export interface SaveMessageParams {
   answerMode?: AnswerMode | null;
   groundingStatus?: GroundingStatus | null;
   groundingReason?: string | null;
+  retrievalPolicyId?: string | null;
 }
 
 export class ConversationService {
@@ -150,6 +151,7 @@ export class ConversationService {
       answerMode: params.answerMode,
       groundingStatus: params.groundingStatus,
       groundingReason: params.groundingReason,
+      retrievalPolicyId: params.retrievalPolicyId,
     });
     this.sessionRepo.touch(params.sessionId);
     return message;

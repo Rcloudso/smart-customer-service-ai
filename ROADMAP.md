@@ -11,7 +11,8 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.2.4 | Released | Retrieval Evaluation & Debugging | FAQ 检索可评测、可解释，并在 CI 中执行浏览器回归。 |
 | v0.2.5 | Released | Knowledge Gap Feedback Loop | 低质量回答进入知识审核，管理员可将其沉淀为已索引 FAQ。 |
 | v0.2.6 | Released | Document RAG Foundation | 支持 TXT、Markdown、含文本层 PDF 和 DOCX 的上传、语义切片、FAQ/文档混合检索、来源快照与无 Key 原文回退。 |
-| v0.2.7 | Current | Grounding, Citations & Refusal | 在生成前确定 FAQ 直答、基于证据生成或拒答，持久化来源，并将冲突与高风险业务请求转人工。 |
+| v0.2.7 | Released | Grounding, Citations & Refusal | 在生成前确定 FAQ 直答、基于证据生成或拒答，持久化来源，并将冲突与高风险业务请求转人工。 |
+| v0.2.8 | Current | RAG Quality Lab | 用版本化评测集比较检索与 Grounding 策略，并通过质量门禁安全发布和回滚。 |
 
 v0.2.7 已经形成可运行且带回答边界的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、转人工记录、满意度、知识审核、会话分析、双语后台、
@@ -22,7 +23,6 @@ v0.2.7 已经形成可运行且带回答边界的小规模客服产品基线：�
 
 | Version | Theme | Intended outcome |
 | --- | --- | --- |
-| v0.2.8 | RAG Quality Lab | 用版本化评测集、阈值实验和可选重排器持续验证检索与回答质量。 |
 | v0.2.9 | Structured Escalation & Triage | 把简单转人工记录升级为结构化交接包，并通过确定性规则完成优先级和队列路由。 |
 | v0.3.0 | Read-Only Customer Service Tools | 以订单/物流查询为首个受控工具闭环，只读接入真实或可替换的业务 API。 |
 | v0.3.1 | Human Collaboration | 增加人工接管、处理队列、分配、内部备注、解决结果和知识回流。 |

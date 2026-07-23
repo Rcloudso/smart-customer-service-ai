@@ -11,7 +11,7 @@
 
 **English version**: [README.md](README.md)
 
-当前版本：**v0.2.7（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能调整。
+当前版本：**v0.2.8（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -71,6 +71,7 @@ Smart Customer Service AI:
 - **索引状态管理** - 后台展示启用条目、已索引条目、缺失 embedding、向量维度、上次重建时间和索引错误。
 - **检索调试面板** - 后台可以查看命中条目、source、similarity、keywordScore、vectorScore 和排序原因。
 - **检索评测能力** - FAQ 和文档固定评测集输出排序指标、分数/来源分布、失败样例，以及 semantic-v1 与仅结构切片的对比。
+- **RAG 质量实验室** - 管理员可维护版本化评测集、比较确定性检索与 Grounding 策略、下钻失败样例，并通过门禁发布或回滚不可变运行策略。
 - **中英文词典** - 固定 UI 文案从可编辑的中英文词典读取，减少硬编码散落在组件里。
 - **暗/亮主题切换** - 用户端和后台都支持持久化主题偏好。
 - **开源工程化** - 提供 Docker、docker-compose、GitHub Actions CI、Playwright E2E 和中英文文档。

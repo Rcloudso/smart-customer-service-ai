@@ -121,6 +121,107 @@ export interface KnowledgeReviewStats {
   total: number;
 }
 
+export type RerankerMode = 'none' | 'local_overlap_v1';
+export type QualityRunStatus =
+  | 'queued' | 'running' | 'completed' | 'failed'
+  | 'interrupted' | 'cancelled' | 'stale';
+
+export interface RetrievalPolicyConfig {
+  directFaqThreshold: number;
+  generationEvidenceThreshold: number;
+  sourceDiversityRatio: number;
+  rerankerMode: RerankerMode;
+}
+
+export interface RetrievalPolicy {
+  id: string;
+  version: number;
+  config: RetrievalPolicyConfig;
+  sourceRunId: string | null;
+  sourceCandidateKey: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface QualityDatasetVersion {
+  id: string;
+  datasetId: string;
+  name: string;
+  description: string;
+  origin: 'builtin' | 'custom';
+  version: number;
+  status: 'draft' | 'published';
+  targetKind: 'fixture' | 'current';
+  contentHash: string | null;
+  caseCount: number;
+  publishedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface QualityCase {
+  id: string;
+  versionId: string;
+  query: string;
+  expectedAnswerMode: AnswerMode;
+  expectedGroundingStatus: GroundingStatus;
+  expectedSources: Array<{ knowledgeType: 'faq' | 'document'; knowledgeId: string }>;
+  language: 'zh' | 'en';
+  tags: string[];
+  createdAt: string;
+}
+
+export interface QualityMetrics {
+  recallAt1: number;
+  recallAt3: number;
+  mrr: number;
+  decisionAccuracy: number;
+  unsafeAnswerCount: number;
+  overRefusalCount: number;
+  sourceDistribution: Record<string, number>;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  failureCount: number;
+  embeddingCallCount: number;
+  estimatedTokenCount: number;
+  estimatedCost: null;
+}
+
+export interface QualityCandidateResult {
+  key: string;
+  policy: RetrievalPolicyConfig;
+  metrics: QualityMetrics;
+  recommended: boolean;
+  cases: Array<{
+    caseId: string;
+    passed: boolean;
+    failureReason: string | null;
+  }>;
+}
+
+export interface QualityRun {
+  id: string;
+  datasetVersionIds: string[];
+  status: QualityRunStatus;
+  progress: number;
+  totalCases: number;
+  knowledgeFingerprint: string | null;
+  activePolicyId: string;
+  candidates: QualityCandidateResult[];
+  failureCode: string | null;
+  cancelRequested: boolean;
+  createdBy: string;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface PolicyGateResult {
+  eligible: boolean;
+  warnings: string[];
+  reasons: string[];
+}
+
 // ── Domain Models ──────────────────────────────────
 
 export interface FaqEntry {
@@ -259,6 +360,7 @@ export interface ConversationDetail {
     answerMode: AnswerMode | null;
     groundingStatus: GroundingStatus | null;
     groundingReason: string | null;
+    retrievalPolicyId: string | null;
     satisfaction: SatisfactionRating | null;
     escalated: number;
     createdAt: string;

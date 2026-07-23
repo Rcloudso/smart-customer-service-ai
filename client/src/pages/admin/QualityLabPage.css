@@ -1,0 +1,92 @@
+.app-quality-lab .t-tabs__content {
+  padding-top: 24px;
+}
+
+.app-quality-toolbar,
+.app-quality-run-actions,
+.app-quality-run-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.app-quality-select {
+  min-width: 280px;
+}
+
+.app-quality-file-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 15px;
+  border: 1px solid var(--td-border-level-2-color);
+  border-radius: var(--td-radius-default);
+  cursor: pointer;
+}
+
+.app-quality-file-button:focus-within {
+  outline: 2px solid var(--td-brand-color-focus);
+  outline-offset: 2px;
+}
+
+.app-quality-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.app-quality-control,
+.app-quality-current,
+.app-quality-run-list > * {
+  margin-bottom: 16px;
+}
+
+.app-quality-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.app-quality-table-scroll .t-table {
+  min-width: 720px;
+}
+
+.app-quality-lab .t-tabs__content {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.app-quality-current code {
+  display: block;
+  margin-top: 12px;
+  overflow-x: auto;
+  color: var(--td-text-color-secondary);
+}
+
+.app-quality-failure {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--td-component-border);
+}
+
+@media (max-width: 768px) {
+  .app-quality-toolbar,
+  .app-quality-run-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-quality-select,
+  .app-quality-toolbar .t-space {
+    width: 100%;
+  }
+
+  .app-quality-toolbar .t-space {
+    flex-wrap: wrap;
+  }
+}

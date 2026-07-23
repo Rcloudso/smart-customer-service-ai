@@ -10,6 +10,7 @@ import {
   SettingIcon,
   FileSearchIcon,
   FileIconIcon,
+  SearchIcon,
 } from 'tdesign-icons-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from '../../hooks/usePreferences';
@@ -29,6 +30,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/faq', labelKey: 'nav.faq', icon: <HelpCircleIcon /> },
   { path: '/admin/documents', labelKey: 'nav.documents', icon: <FileIconIcon /> },
   { path: '/admin/knowledge-review', labelKey: 'nav.knowledgeReview', icon: <FileSearchIcon /> },
+  { path: '/admin/quality-lab', labelKey: 'nav.qualityLab', icon: <SearchIcon /> },
   { path: '/admin/config', labelKey: 'nav.config', icon: <SettingIcon /> },
 ];
 
@@ -57,6 +59,7 @@ export function AdminLayout(): React.ReactElement {
     if (location.pathname.startsWith('/admin/faq')) return '/admin/faq';
     if (location.pathname.startsWith('/admin/documents')) return '/admin/documents';
     if (location.pathname.startsWith('/admin/knowledge-review')) return '/admin/knowledge-review';
+    if (location.pathname.startsWith('/admin/quality-lab')) return '/admin/quality-lab';
     if (location.pathname.startsWith('/admin/config')) return '/admin/config';
     return '/admin';
   })();

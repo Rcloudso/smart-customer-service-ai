@@ -1,7 +1,9 @@
 import { FaqMatch, RetrievalResult } from '../types/ai';
 import { AnswerMode, GroundingStatus, IntentCategory } from '../types/domain';
+import type { RetrievalPolicyConfig } from '../types/quality';
 
 export const DIRECT_FAQ_KEYWORD_THRESHOLD = 0.8;
+export const GENERATION_EVIDENCE_THRESHOLD = 0.55;
 
 export interface GroundingDecision {
   answerMode: AnswerMode;
@@ -18,7 +20,12 @@ export function evaluateGrounding(params: {
   faqMatches: FaqMatch[];
   retrievalResults: RetrievalResult[];
   explicitEscalation: boolean;
+  policy?: RetrievalPolicyConfig;
 }): GroundingDecision {
+  const directFaqThreshold = params.policy?.directFaqThreshold
+    ?? DIRECT_FAQ_KEYWORD_THRESHOLD;
+  const generationEvidenceThreshold = params.policy?.generationEvidenceThreshold
+    ?? GENERATION_EVIDENCE_THRESHOLD;
   if (params.explicitEscalation) {
     return {
       answerMode: 'refusal',
@@ -52,7 +59,9 @@ export function evaluateGrounding(params: {
     };
   }
 
-  const eligibleDirectFaqs = params.faqMatches.filter(isDirectFaqCandidate);
+  const eligibleDirectFaqs = params.faqMatches.filter(
+    (match) => isDirectFaqCandidate(match, directFaqThreshold),
+  );
   const conflictingFaqIds = findConflictingFaqIds(eligibleDirectFaqs);
   if (conflictingFaqIds.size > 0) {
     return {
@@ -67,7 +76,11 @@ export function evaluateGrounding(params: {
     };
   }
 
-  const directFaq = selectDirectFaqCandidates(params.message, eligibleDirectFaqs)[0];
+  const directFaq = selectDirectFaqCandidates(
+    params.message,
+    eligibleDirectFaqs,
+    directFaqThreshold,
+  )[0];
   if (directFaq) {
     return {
       answerMode: 'direct_faq',
@@ -87,7 +100,7 @@ export function evaluateGrounding(params: {
     topResult.vectorScore ?? 0,
     topResult.similarity,
   );
-  if (topEvidenceScore < 0.55) {
+  if (topEvidenceScore < generationEvidenceThreshold) {
     return {
       answerMode: 'refusal',
       groundingStatus: 'insufficient',
@@ -158,13 +171,20 @@ function requestsUnsupportedBusinessAction(message: string): boolean {
   ));
 }
 
-export function isDirectFaqCandidate(match: FaqMatch): boolean {
+export function isDirectFaqCandidate(
+  match: FaqMatch,
+  threshold: number = DIRECT_FAQ_KEYWORD_THRESHOLD,
+): boolean {
   return (match.source === 'keyword' || match.source === 'hybrid')
-    && (match.keywordScore ?? match.similarity) >= DIRECT_FAQ_KEYWORD_THRESHOLD;
+    && (match.keywordScore ?? match.similarity) >= threshold;
 }
 
-export function selectDirectFaqCandidates(message: string, matches: FaqMatch[]): FaqMatch[] {
-  const scored = matches.filter(isDirectFaqCandidate);
+export function selectDirectFaqCandidates(
+  message: string,
+  matches: FaqMatch[],
+  threshold: number = DIRECT_FAQ_KEYWORD_THRESHOLD,
+): FaqMatch[] {
+  const scored = matches.filter((match) => isDirectFaqCandidate(match, threshold));
   const normalizedMessage = normalizeQuestion(message);
   const exactQuestionMatches = scored.filter(
     (match) => normalizeQuestion(match.question) === normalizedMessage,
