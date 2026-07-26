@@ -542,6 +542,11 @@ function testResolveWeaveBrandIdentity(): void {
   assert.equal(packageJson.name, 'resolve-weave', 'package name should match the ResolveWeave brand');
   assert.match(indexSource, /<title>ResolveWeave<\/title>/, 'browser title should use the ResolveWeave brand');
   assert.match(dictionarySource, /"chat\.title":\s*\{\s*"zh": "ResolveWeave",\s*"en": "ResolveWeave"/);
+  assert.match(
+    dictionarySource,
+    /"chat\.subtitle":\s*\{\s*"zh": "企业级智能客服平台",\s*"en": "Enterprise Customer Service Platform"/,
+    'product subtitle should describe the current platform without claiming unshipped Agentic Retrieval',
+  );
 }
 
 function testEndToEndAutomationArtifactsExist(): void {

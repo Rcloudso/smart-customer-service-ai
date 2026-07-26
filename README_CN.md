@@ -1,7 +1,7 @@
 # ResolveWeave
 
-> 证据优先的开源企业级 Agentic 智能客服平台：可信回答、文档 RAG、质量评测
-> 和结构化转人工，一套全栈项目直接跑起来。
+> 证据优先的开源企业级智能客服平台：可信回答、文档 RAG、质量评测和
+> 结构化转人工，一套全栈项目直接跑起来。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20.16%2B%20%7C%2022.3%2B-green.svg)](https://nodejs.org/)
@@ -28,7 +28,7 @@
   · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 版本验证证据</a>
 </p>
 
-ResolveWeave 是一个 pre-1.0 的企业级 Agentic 智能客服平台。它关注的
+ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
 不只是“能回答”，还包括为什么允许回答、证据不足时如何拒答，以及高风险问题
 怎样携带有效上下文交给人工。
 
@@ -78,6 +78,9 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 很多 RAG Demo 停留在“检索几段文字，然后调用一次 LLM”。这个项目把可信度、
 运营闭环和验证能力也当成产品功能：
 
+**ResolveWeave** 代表项目的长期方向：把可信知识、受限模型推理、受控业务
+工具和人工判断编织成一条可追责的客户问题解决链路。
+
 - **先判断证据，再生成回答**——确定性策略先决定 FAQ 直答、基于证据生成、
   拒答还是转人工。
 - **知识能够持续运营**——弱回答和负反馈进入知识审核，可以沉淀为可复用知识。
@@ -95,6 +98,16 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 | FAQ/文档 RAG、混合检索、来源持久化、质量实验室、结构化转人工、双语界面、Docker 和 CI | 结构化入库、OCR/表格/图片知识、可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
 
 完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
+
+```mermaid
+flowchart LR
+  K["FAQ + 文档"] --> R["混合检索"]
+  R --> G["确定性 Grounding Gate"]
+  G --> A["可信回答"]
+  G --> H["结构化转人工"]
+  P["受限 Agentic Retrieval（规划）"] -.-> R
+  T["受控业务工具（规划）"] -.-> G
+```
 
 ---
 

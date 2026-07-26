@@ -79,8 +79,10 @@ test.describe('Web automation: customer chat experience', () => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { name: 'ResolveWeave' })).toBeVisible();
+    await expect(page.getByText('企业级智能客服平台', { exact: true })).toBeVisible();
     await page.getByTestId('language-toggle').click();
     await expect(page.getByRole('heading', { name: 'ResolveWeave' })).toBeVisible();
+    await expect(page.getByText('Enterprise Customer Service Platform', { exact: true })).toBeVisible();
     await expect(page.getByTestId('new-chat-button')).toContainText('New chat');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 

@@ -1,8 +1,8 @@
 # ResolveWeave
 
-> Evidence-first open-source enterprise Agentic customer service: grounded
-> answers, document RAG, quality evaluation, and structured human escalation
-> in one runnable full-stack project.
+> Evidence-first open-source enterprise customer service: grounded answers,
+> document RAG, quality evaluation, and structured human escalation in one
+> runnable full-stack project.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20.16%2B%20%7C%2022.3%2B-green.svg)](https://nodejs.org/)
@@ -31,9 +31,9 @@ Current version: **v0.2.9 (pre-1.0)**. APIs and persisted data remain subject to
 
 ## English
 
-ResolveWeave is a pre-1.0 enterprise Agentic customer service platform for
-building support that can explain why it answered, refuse when evidence is
-weak, and hand risky cases to people with useful context.
+ResolveWeave is a pre-1.0 enterprise customer service platform for building
+support that can explain why it answered, refuse when evidence is weak, and
+hand risky cases to people with useful context.
 
 The current release combines customer chat, FAQ and document knowledge,
 hybrid retrieval, persisted sources, deterministic Grounding decisions,
@@ -84,6 +84,10 @@ still required for serious production deployment.
 Many RAG demos stop at “retrieve text and call an LLM.” This project treats
 trust, operations and verification as product features:
 
+The name **ResolveWeave** reflects the product direction: weave trusted
+knowledge, bounded model reasoning, guarded business tools and human judgment
+into one accountable customer-resolution flow.
+
 - **Evidence before generation** — deterministic policy chooses FAQ direct
   answer, grounded generation, refusal or escalation before releasing a reply.
 - **A knowledge operations loop** — weak answers and negative feedback become
@@ -103,6 +107,16 @@ trust, operations and verification as product features:
 | FAQ and document RAG, hybrid retrieval, persisted sources, Quality Lab, structured escalation, bilingual UI, Docker and CI | Structure-aware ingestion, OCR/table/image knowledge, optional Qdrant, retrieval traces, bounded Agentic Retrieval, then mock-first business tools |
 
 See [ROADMAP.md](ROADMAP.md) for release boundaries and non-goals.
+
+```mermaid
+flowchart LR
+  K["FAQ + documents"] --> R["Hybrid retrieval"]
+  R --> G["Deterministic Grounding Gate"]
+  G --> A["Grounded answer"]
+  G --> H["Human escalation"]
+  P["Bounded Agentic Retrieval (planned)"] -.-> R
+  T["Guarded business tools (planned)"] -.-> G
+```
 
 ---
 
@@ -339,7 +353,7 @@ The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones 
 
 ## 中文
 
-ResolveWeave 是一个证据优先的开源企业级 Agentic 智能客服平台，支持可信回答、
+ResolveWeave 是一个证据优先的开源企业级智能客服平台，支持可信回答、
 文档 RAG、质量评测、结构化转人工和中英文切换，并将沿着可控的企业级
 Agentic Retrieval 路线持续演进。完整中文说明请阅读
 [README_CN.md](README_CN.md)。
