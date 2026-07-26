@@ -305,6 +305,209 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByRole('heading', { name: '数据概览' })).toBeVisible();
   });
 
+  test('escalation triage supports queue-to-evidence flow, states, language, theme and mobile width', async ({ page }) => {
+    const escalationId = '11111111-1111-4111-8111-111111111111';
+    const sessionId = '22222222-2222-4222-8222-222222222222';
+    const userMessageId = '33333333-3333-4333-8333-333333333333';
+    let listMode: 'data' | 'empty' | 'error' = 'data';
+    const packet = {
+      escalationId,
+      sessionId,
+      schemaVersion: 1,
+      ruleVersion: 'triage_v1',
+      summary: '客户要求查询订单 TRIAGE-100 的私有状态',
+      category: 'order',
+      priority: 'high',
+      reasonCode: 'unsupported_business_action',
+      reason: '当前请求涉及尚未授权的业务操作，需要人工处理',
+      riskFlags: ['private_data_required', 'business_action_required'],
+      confirmedFacts: [{
+        label: 'order_id',
+        value: 'TRIAGE-100',
+        sourceMessageId: userMessageId,
+        sourceExcerpt: '订单 TRIAGE-100',
+      }],
+      missingInformation: ['authorized_identity_context'],
+      evidenceSources: [{
+        knowledgeType: 'document',
+        knowledgeId: 'chunk-triage',
+        documentId: 'document-triage',
+        title: '订单处理规范.pdf',
+        similarity: 0.87,
+        chunkIndex: 2,
+        pageStart: 4,
+        pageEnd: 4,
+      }],
+      recommendedQueue: 'order_support',
+      suggestedNextStep: 'Prioritize human review.',
+      extractionMode: 'deterministic',
+      createdAt: new Date(Date.now() - 90 * 60_000).toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await page.route('**/api/admin/escalations**', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith(`/${escalationId}`)) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            message: 'ok',
+            data: {
+              escalation: {
+                id: escalationId,
+                sessionId,
+                reason: packet.reason,
+                status: 'pending',
+                resolvedAt: null,
+                createdAt: packet.createdAt,
+              },
+              packet,
+              session: {
+                id: sessionId,
+                userIdent: 'triage-web-user',
+                status: 'escalated',
+                createdAt: packet.createdAt,
+                updatedAt: packet.updatedAt,
+                closedAt: null,
+                closeReason: null,
+              },
+              referencedMessageIds: [userMessageId],
+              messages: [
+                {
+                  id: userMessageId,
+                  role: 'user',
+                  content: '请查询订单 TRIAGE-100 的私有状态并转人工',
+                  intent: 'order',
+                  intentConf: 0.96,
+                  retrievalSnapshot: [],
+                  answerMode: null,
+                  groundingStatus: null,
+                  groundingReason: null,
+                  retrievalPolicyId: null,
+                  satisfaction: null,
+                  escalated: 0,
+                  createdAt: packet.createdAt,
+                },
+                {
+                  id: '44444444-4444-4444-8444-444444444444',
+                  role: 'assistant',
+                  content: '需要人工处理',
+                  intent: 'order',
+                  intentConf: 0.96,
+                  retrievalSnapshot: packet.evidenceSources,
+                  answerMode: 'refusal',
+                  groundingStatus: 'high_risk',
+                  groundingReason: 'unsupported_business_action',
+                  retrievalPolicyId: 'policy-1',
+                  satisfaction: null,
+                  escalated: 1,
+                  createdAt: packet.updatedAt,
+                },
+              ],
+            },
+          }),
+        });
+        return;
+      }
+      if (listMode === 'error') {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 503, data: null, message: 'mock triage failure' }),
+        });
+        return;
+      }
+      const items = listMode === 'empty' ? [] : [{
+        id: escalationId,
+        sessionId,
+        userIdent: 'triage-web-user',
+        reason: packet.reason,
+        status: 'pending',
+        resolvedAt: null,
+        createdAt: packet.createdAt,
+        packet,
+      }];
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          message: 'ok',
+          data: { items, total: items.length, page: 1, pageSize: 20 },
+        }),
+      });
+    });
+
+    await loginAsAdmin(page);
+    await page.getByText('转人工分流', { exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/escalations$/);
+    await expect(page.getByTestId('escalation-triage-page')).toContainText(packet.summary);
+    await expect(page.getByTestId('escalation-triage-table')).toContainText('高');
+    await expect(page.getByTestId('escalation-triage-table')).toContainText('订单支持');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.locator('.t-message').waitFor({ state: 'hidden' });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.2.9-triage-desktop.png',
+        fullPage: true,
+      });
+    }
+
+    await page.getByRole('button', { name: packet.summary }).click();
+    const detail = page.getByTestId('escalation-triage-detail');
+    await expect(detail).toContainText('建议下一步');
+    await expect(detail).toContainText('TRIAGE-100');
+    await expect(detail).toContainText('订单处理规范.pdf');
+    const citedMessage = page.getByTestId(`triage-message-${userMessageId}`);
+    await expect(citedMessage).toContainText('事实引用');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.locator('.t-dialog:visible').evaluate(async (element) => {
+        await Promise.all(
+          element.getAnimations({ subtree: true })
+            .map((animation) => animation.finished.catch(() => undefined)),
+        );
+      });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.2.9-triage-detail.png',
+        fullPage: true,
+      });
+    }
+    await detail.getByRole('button', { name: /订单编号/ }).click();
+    await expect(citedMessage).toHaveClass(/app-triage-message--referenced/);
+
+    await page.locator('.t-dialog:visible .t-dialog__close').click();
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: 'Escalation Triage' })).toBeVisible();
+    await page.getByRole('button', { name: packet.summary }).click();
+    await expect(detail).toContainText('Suggested next step');
+    await page.locator('.t-dialog:visible .t-dialog__close').click();
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId('escalation-triage-page')).toBeVisible();
+    expect(
+      await page.getByTestId('escalation-triage-page').locator('.t-input').first()
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe('rgb(23, 23, 23)');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.2.9-triage-mobile-dark.png',
+        fullPage: true,
+      });
+    }
+
+    listMode = 'empty';
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    await expect(page.getByText('No escalations match the current filters')).toBeVisible();
+
+    listMode = 'error';
+    await page.getByRole('button', { name: 'Refresh' }).click();
+    await expect(page.getByText('mock triage failure')).toBeVisible();
+  });
+
   test('model configuration shows environment credential status without key inputs', async ({ page }) => {
     await loginAsAdmin(page);
     await page.getByText('模型配置').click();

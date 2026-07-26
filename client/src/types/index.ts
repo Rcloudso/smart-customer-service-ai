@@ -39,6 +39,56 @@ export enum EscalationStatus {
   DISMISSED = 'dismissed',
 }
 
+export type EscalationCategory =
+  | 'account_security' | 'complaint' | 'refund' | 'order'
+  | 'technical' | 'general' | 'unknown';
+export type EscalationPriority = 'urgent' | 'high' | 'normal';
+export type EscalationQueue =
+  | 'account_security' | 'complaints' | 'after_sales' | 'order_support'
+  | 'technical_support' | 'general_support' | 'manual_triage';
+export type EscalationExtractionMode =
+  | 'deterministic' | 'llm_json_schema' | 'llm_json_object'
+  | 'llm_text' | 'legacy_unstructured';
+
+export interface EscalationFact {
+  label: string;
+  value: string;
+  sourceMessageId: string;
+  sourceExcerpt: string;
+}
+
+export interface EscalationEvidenceSource {
+  knowledgeType: 'faq' | 'document';
+  knowledgeId: string;
+  documentId?: string;
+  title: string;
+  similarity: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
+}
+
+export interface EscalationPacket {
+  escalationId: string;
+  sessionId: string;
+  schemaVersion: number;
+  ruleVersion: string;
+  summary: string;
+  category: EscalationCategory;
+  priority: EscalationPriority;
+  reasonCode: string;
+  reason: string;
+  riskFlags: string[];
+  confirmedFacts: EscalationFact[];
+  missingInformation: string[];
+  evidenceSources: EscalationEvidenceSource[];
+  recommendedQueue: EscalationQueue;
+  suggestedNextStep: string;
+  extractionMode: EscalationExtractionMode;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type KnowledgeReviewStatus = 'pending' | 'converted' | 'dismissed';
 export type KnowledgeReviewTriggerReason = 'no_match' | 'low_retrieval_score' | 'negative_feedback';
 export type AnswerMode = 'direct_faq' | 'grounded_generation' | 'refusal';
@@ -381,7 +431,42 @@ export interface ConversationDetail {
     reason: string;
     status: EscalationStatus;
     createdAt: string;
+    packet?: EscalationPacket;
   } | null;
+}
+
+export interface EscalationListItem {
+  id: string;
+  sessionId: string;
+  userIdent: string;
+  reason: string;
+  status: EscalationStatus;
+  resolvedAt: string | null;
+  createdAt: string;
+  packet: EscalationPacket;
+}
+
+export interface EscalationDetail {
+  escalation: {
+    id: string;
+    sessionId: string;
+    reason: string;
+    status: EscalationStatus;
+    resolvedAt: string | null;
+    createdAt: string;
+  };
+  packet: EscalationPacket;
+  session: {
+    id: string;
+    userIdent: string;
+    status: SessionStatus;
+    createdAt: string;
+    updatedAt: string;
+    closedAt: string | null;
+    closeReason: string | null;
+  };
+  messages: ConversationDetail['messages'];
+  referencedMessageIds: string[];
 }
 
 export interface ChatHistorySession {

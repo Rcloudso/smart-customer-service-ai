@@ -89,6 +89,70 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(invalidActive.status()).toBe(400);
   });
 
+  test('structured escalation queue is authenticated, filtered and traceable', async ({ request }) => {
+    const unauthenticated = await request.get('/api/admin/escalations');
+    expect(unauthenticated.status()).toBe(401);
+    const token = await login(request);
+    const marker = `TRIAGE_${Date.now()}%`;
+
+    const chat = await request.post('/api/chat', {
+      data: {
+        message: `请直接帮我取消订单 ${marker} 并查询私有状态`,
+        userIdent: `triage-api-${marker}`,
+      },
+    });
+    expect(chat.status()).toBe(200);
+    const events = await parseSse(chat);
+    expect(events.some((event) => event.type === 'escalate')).toBe(true);
+    const done = events.find((event) => event.type === 'done')?.content;
+    expect(done.sessionId).toEqual(expect.any(String));
+
+    const list = await request.get('/api/admin/escalations', {
+      headers: authHeaders(token),
+      params: {
+        status: 'pending',
+        priority: 'high',
+        queue: 'order_support',
+        keyword: marker,
+      },
+    });
+    expect(list.status()).toBe(200);
+    const listData = (await readJson(list)).data;
+    expect(listData.total).toBe(1);
+    expect(listData.items[0].packet).toMatchObject({
+      category: 'order',
+      priority: 'high',
+      reasonCode: 'unsupported_business_action',
+      recommendedQueue: 'order_support',
+      extractionMode: 'deterministic',
+    });
+
+    const detail = await request.get(
+      `/api/admin/escalations/${listData.items[0].id}`,
+      { headers: authHeaders(token) },
+    );
+    expect(detail.status()).toBe(200);
+    const detailData = (await readJson(detail)).data;
+    expect(detailData.packet.escalationId).toBe(listData.items[0].id);
+    expect(detailData.referencedMessageIds.length).toBeGreaterThan(0);
+    expect(detailData.messages.some(
+      (message: any) => detailData.referencedMessageIds.includes(message.id),
+    )).toBe(true);
+
+    const conversation = await request.get(
+      `/api/admin/conversations/${done.sessionId}`,
+      { headers: authHeaders(token) },
+    );
+    expect((await readJson(conversation)).data.escalation.packet.escalationId)
+      .toBe(listData.items[0].id);
+
+    const invalidPageSize = await request.get('/api/admin/escalations', {
+      headers: authHeaders(token),
+      params: { pageSize: 101 },
+    });
+    expect(invalidPageSize.status()).toBe(400);
+  });
+
   test('model configuration never accepts or returns API keys', async ({ request }) => {
     const token = await login(request);
     const headers = authHeaders(token);

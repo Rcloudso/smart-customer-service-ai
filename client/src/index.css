@@ -656,6 +656,265 @@ select {
   color: inherit !important;
 }
 
+.app-triage-alert {
+  margin-bottom: 16px;
+}
+
+.app-triage-page {
+  --td-bg-color-container: var(--app-surface);
+  --td-bg-color-secondarycontainer: var(--app-surface-muted);
+  --td-bg-color-secondarycontainer-hover: var(--app-primary-muted);
+  --td-bg-color-specialcomponent: var(--app-surface-muted);
+  --td-text-color-primary: var(--app-text);
+  --td-text-color-secondary: var(--app-text-secondary);
+  --td-text-color-placeholder: var(--app-text-muted);
+}
+
+html[data-theme='dark'] .app-triage-page .t-input,
+html[data-theme='dark'] .app-triage-page .t-select__wrap {
+  background-color: var(--app-surface-muted) !important;
+  color: var(--app-text) !important;
+  transition: none !important;
+}
+
+html[data-theme='dark'] .app-triage-page .t-input__inner {
+  color: var(--app-text) !important;
+  -webkit-text-fill-color: var(--app-text);
+}
+
+html[data-theme='dark'] .app-triage-table .t-table--striped > .t-table__content > table > tbody > tr,
+html[data-theme='dark'] .app-triage-table .t-table__content td {
+  background-color: var(--app-surface) !important;
+  color: var(--app-text) !important;
+  transition: none !important;
+}
+
+html[data-theme='dark'] .app-triage-table .t-table--striped > .t-table__content > table > tbody > tr:nth-of-type(odd) {
+  background-color: var(--app-surface-muted) !important;
+}
+
+.app-triage-table .t-table {
+  min-width: 1180px;
+}
+
+.app-triage-summary-button {
+  width: 100%;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--app-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.app-triage-summary-button strong,
+.app-triage-summary-button span {
+  display: block;
+}
+
+.app-triage-summary-button strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-triage-summary-button span {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--app-text-muted);
+  font-family: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-triage-summary-button:focus-visible,
+.app-triage-fact:focus-visible {
+  outline: none;
+  box-shadow: var(--app-focus-ring);
+}
+
+.app-triage-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.app-triage-muted {
+  color: var(--app-text-muted);
+  font-size: 13px;
+}
+
+.app-triage-loading {
+  padding: 48px 16px;
+  color: var(--app-text-muted);
+  text-align: center;
+}
+
+.app-triage-detail {
+  max-height: min(72vh, 760px);
+  padding-right: 4px;
+  overflow-y: auto;
+  color: var(--app-text);
+}
+
+.app-triage-detail > section,
+.app-triage-detail-grid {
+  margin-top: 20px;
+}
+
+.app-triage-detail section > h4 {
+  margin: 0 0 9px;
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-triage-detail section > p,
+.app-triage-detail section > ul {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.app-triage-detail section > ul {
+  padding-left: 20px;
+}
+
+.app-triage-hero {
+  padding: 18px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background-color: var(--app-surface-muted);
+}
+
+.app-triage-hero__title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.app-triage-hero__title h3 {
+  margin: 0;
+  color: var(--app-text);
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.app-triage-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.app-triage-meta-grid > div {
+  min-width: 0;
+}
+
+.app-triage-meta-grid span,
+.app-triage-meta-grid strong {
+  display: block;
+}
+
+.app-triage-meta-grid span {
+  color: var(--app-text-muted);
+  font-size: 11px;
+}
+
+.app-triage-meta-grid strong {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.app-triage-next-step {
+  padding: 14px 16px;
+  border-left: 3px solid var(--app-primary);
+  background-color: var(--app-primary-muted);
+}
+
+.app-triage-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+  gap: 20px;
+}
+
+.app-triage-fact-list,
+.app-triage-evidence-list {
+  display: grid;
+  gap: 8px;
+}
+
+.app-triage-fact {
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background-color: var(--app-surface);
+  color: var(--app-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.app-triage-fact strong,
+.app-triage-fact span,
+.app-triage-fact small {
+  display: block;
+}
+
+.app-triage-fact strong {
+  font-size: 12px;
+}
+
+.app-triage-fact span {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.app-triage-fact small {
+  margin-top: 6px;
+  color: var(--app-link);
+}
+
+.app-triage-messages {
+  scroll-margin-top: 16px;
+}
+
+.app-triage-message--referenced {
+  border-color: var(--app-link);
+  box-shadow: inset 3px 0 0 var(--app-link);
+}
+
+.app-triage-evidence-list > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background-color: var(--app-surface-muted);
+}
+
+.app-triage-evidence-list strong {
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.app-triage-evidence-list span {
+  flex: 0 0 auto;
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+
 .app-stat-grid,
 .app-chart-grid {
   display: grid;
@@ -1593,6 +1852,21 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
 
   .app-document-meta {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-triage-meta-grid,
+  .app-triage-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-triage-hero__title,
+  .app-triage-evidence-list > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .app-triage-detail {
+    max-height: 68vh;
   }
 }
 
