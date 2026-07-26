@@ -1,6 +1,7 @@
 import {
   AnswerMode,
   EscalationStatus,
+  EscalationPacket,
   GroundingStatus,
   IntentCategory,
   KnowledgeRetrievalSnapshot,
@@ -201,5 +202,6 @@ export interface ConversationDetail {
     reason: string;
     status: EscalationStatus;
     createdAt: string;
+    packet?: EscalationPacket;
   } | null;
 }

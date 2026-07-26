@@ -89,6 +89,7 @@ export interface ChatCompletionOptions {
     schema: Record<string, unknown>;
   };
   maxRetries?: number;
+  timeoutMs?: number;
 }
 
 export interface EmbeddingResult {

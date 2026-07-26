@@ -2,8 +2,20 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { initSchema } from '../db';
 import { EscalationPacketRepo } from '../db/repos/escalation-packet.repo';
-import { buildDeterministicEscalationPacket } from '../services/escalation-triage';
-import { IntentCategory, MessageRole } from '../types/domain';
+import {
+  buildDeterministicEscalationPacket,
+  enrichEscalationPacket,
+} from '../services/escalation-triage';
+import {
+  EscalationStatus,
+  IntentCategory,
+  Message,
+  MessageRole,
+} from '../types/domain';
+import type { LLMClient } from '../ai/llm-client';
+import type { ChatCompletionOptions, LLMMessage } from '../types/ai';
+import { ConversationService } from '../services/conversation.service';
+import { EscalationService } from '../services/escalation.service';
 
 function testLegacyEscalationBackfillIsIdempotent(): void {
   const db = new Database(':memory:');
@@ -108,11 +120,235 @@ function testKnowledgeConflictHasHighPriority(): void {
   assert.ok(packet.riskFlags.includes('knowledge_conflict'));
 }
 
-function run(): void {
+async function testExtractionNegotiatesFormatsAndValidatesCitations(): Promise<void> {
+  const deterministic = buildDeterministicEscalationPacket({
+    escalationId: 'escalation-extraction',
+    sessionId: 'session-extraction',
+    reason: '用户要求转人工客服',
+    intent: IntentCategory.ORDER,
+    messages: [{
+      id: 'message-order',
+      sessionId: 'session-extraction',
+      role: MessageRole.USER,
+      content: '我的订单 A-123 还没有发货',
+      intent: null,
+      intentConf: null,
+      satisfaction: null,
+      escalated: 0,
+      replyToMessageId: null,
+      retrievalSnapshot: [],
+      answerMode: null,
+      groundingStatus: null,
+      groundingReason: null,
+      retrievalPolicyId: null,
+      createdAt: '2026-07-26T00:00:00.000Z',
+    }],
+    now: new Date('2026-07-26T00:00:01.000Z'),
+  });
+  const formats: Array<ChatCompletionOptions['responseFormat']> = [];
+  const llm: LLMClient = {
+    chat: async (_messages: LLMMessage[], options?: ChatCompletionOptions) => {
+      formats.push(options?.responseFormat);
+      assert.equal(options?.maxRetries, 1);
+      assert.ok((options?.timeoutMs ?? 0) > 0 && (options?.timeoutMs ?? 0) <= 2_000);
+      if (formats.length < 3) throw new Error('unsupported format');
+      return JSON.stringify({
+        summary: '客户订单 A-123 尚未发货',
+        facts: [{
+          label: 'order_id',
+          value: 'A-123',
+          sourceMessageId: 'message-order',
+          sourceExcerpt: '订单 A-123',
+        }],
+        missingInformation: ['purchase_time'],
+      });
+    },
+    chatStream: async () => '',
+    embed: async () => [],
+  };
+
+  const enriched = await enrichEscalationPacket(
+    deterministic,
+    [{
+      id: 'message-order',
+      sessionId: 'session-extraction',
+      role: MessageRole.USER,
+      content: '我的订单 A-123 还没有发货',
+      intent: null,
+      intentConf: null,
+      satisfaction: null,
+      escalated: 0,
+      replyToMessageId: null,
+      retrievalSnapshot: [],
+      answerMode: null,
+      groundingStatus: null,
+      groundingReason: null,
+      retrievalPolicyId: null,
+      createdAt: '2026-07-26T00:00:00.000Z',
+    }],
+    llm,
+  );
+
+  assert.deepEqual(formats, ['json_schema', 'json_object', 'text']);
+  assert.equal(enriched.extractionMode, 'llm_text');
+  assert.equal(enriched.summary, '客户订单 A-123 尚未发货');
+  assert.equal(enriched.priority, deterministic.priority);
+  assert.equal(enriched.recommendedQueue, deterministic.recommendedQueue);
+}
+
+async function testInvalidExtractionFallsBackCompletely(): Promise<void> {
+  const messages: Message[] = [{
+    id: 'message-safe',
+    sessionId: 'session-safe',
+    role: MessageRole.USER,
+    content: '账号被盗',
+    intent: null,
+    intentConf: null,
+    satisfaction: null,
+    escalated: 0,
+    replyToMessageId: null,
+    retrievalSnapshot: [],
+    answerMode: null,
+    groundingStatus: null,
+    groundingReason: null,
+    retrievalPolicyId: null,
+    createdAt: '2026-07-26T00:00:00.000Z',
+  }];
+  const deterministic = buildDeterministicEscalationPacket({
+    escalationId: 'escalation-safe',
+    sessionId: 'session-safe',
+    reason: '需要人工处理',
+    messages,
+  });
+  const llm: LLMClient = {
+    chat: async () => JSON.stringify({
+      summary: '降低优先级',
+      priority: 'normal',
+      facts: [{
+        label: 'invented',
+        value: 'x',
+        sourceMessageId: 'missing-message',
+        sourceExcerpt: '不存在',
+      }],
+      missingInformation: [],
+    }),
+    chatStream: async () => '',
+    embed: async () => [],
+  };
+
+  const enriched = await enrichEscalationPacket(deterministic, messages, llm);
+  assert.deepEqual(enriched, deterministic);
+}
+
+async function testEscalationTransactionRollsBackCompletely(): Promise<void> {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const service = new ConversationService(db, {
+      escalationService: new EscalationService(db, { enableModelExtraction: false }),
+    });
+    const session = service.createSession('transaction-user');
+    const userMessage = service.saveMessage({
+      sessionId: session.id,
+      role: MessageRole.USER,
+      content: '我要查询订单状态并转人工',
+    });
+    db.exec(`
+      CREATE TRIGGER fail_escalation_packet
+      BEFORE INSERT ON escalation_packets
+      BEGIN
+        SELECT RAISE(ABORT, 'packet insert failed');
+      END;
+    `);
+
+    await assert.rejects(
+      service.saveMessageAndEscalate({
+        sessionId: session.id,
+        role: MessageRole.ASSISTANT,
+        content: '需要人工处理',
+        intent: IntentCategory.ORDER,
+        replyToMessageId: userMessage.id,
+        groundingStatus: 'high_risk',
+      }, '当前请求涉及尚未授权的业务操作，需要人工处理'),
+      /packet insert failed/,
+    );
+
+    assert.equal(
+      (db.prepare("SELECT COUNT(*) AS total FROM messages WHERE role = 'assistant'").get() as { total: number }).total,
+      0,
+    );
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS total FROM escalation_log').get() as { total: number }).total,
+      0,
+    );
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS total FROM escalation_packets').get() as { total: number }).total,
+      0,
+    );
+    assert.equal(service.assertSessionOwnership(session.id, 'transaction-user').status, 'active');
+  } finally {
+    db.close();
+  }
+}
+
+async function testLatestPendingQueueCollapsesRepeatedSessionEscalations(): Promise<void> {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const escalationService = new EscalationService(db, {
+      enableModelExtraction: false,
+      now: () => new Date('2026-07-26T01:00:00.000Z'),
+    });
+    const service = new ConversationService(db, { escalationService });
+    const session = service.createSession('queue-user');
+    const userMessage = service.saveMessage({
+      sessionId: session.id,
+      role: MessageRole.USER,
+      content: '订单编号是 %_123，我要查询状态',
+    });
+
+    await service.saveMessageAndEscalate({
+      sessionId: session.id,
+      role: MessageRole.ASSISTANT,
+      content: '第一次转人工',
+      intent: IntentCategory.ORDER,
+      replyToMessageId: userMessage.id,
+      groundingStatus: 'high_risk',
+    }, '需要访问私有状态');
+    await service.saveMessageAndEscalate({
+      sessionId: session.id,
+      role: MessageRole.ASSISTANT,
+      content: '第二次转人工',
+      intent: IntentCategory.ORDER,
+      replyToMessageId: userMessage.id,
+      groundingStatus: 'high_risk',
+    }, '仍需人工处理 %_123');
+
+    const result = escalationService.listEscalations({
+      status: EscalationStatus.PENDING,
+      keyword: '%_123',
+      page: 1,
+      pageSize: 20,
+    });
+    assert.equal(result.total, 1);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].packet.priority, 'high');
+    assert.equal(result.items[0].packet.recommendedQueue, 'order_support');
+    assert.ok(result.items[0].packet.confirmedFacts.length > 0);
+  } finally {
+    db.close();
+  }
+}
+
+async function run(): Promise<void> {
   testLegacyEscalationBackfillIsIdempotent();
   testDeterministicRulesCannotBeDowngradedByConversationText();
   testKnowledgeConflictHasHighPriority();
+  await testExtractionNegotiatesFormatsAndValidatesCitations();
+  await testInvalidExtractionFallsBackCompletely();
+  await testEscalationTransactionRollsBackCompletely();
+  await testLatestPendingQueueCollapsesRepeatedSessionEscalations();
   console.log('Escalation triage tests passed');
 }
 
-run();
+void run();

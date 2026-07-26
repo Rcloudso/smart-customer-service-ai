@@ -5,6 +5,7 @@ export class EscalationRepo {
   private insertStmt: Database.Statement;
   private listPendingStmt: Database.Statement;
   private findBySessionStmt: Database.Statement;
+  private findByIdStmt: Database.Statement;
   private countPendingStmt: Database.Statement;
   private countResolvedStmt: Database.Statement;
   private countAllStmt: Database.Statement;
@@ -21,13 +22,14 @@ export class EscalationRepo {
     this.findBySessionStmt = db.prepare(
       'SELECT * FROM escalation_log WHERE session_id = ? ORDER BY created_at DESC LIMIT 1',
     );
+    this.findByIdStmt = db.prepare('SELECT * FROM escalation_log WHERE id = ?');
     this.countPendingStmt = db.prepare(
-      "SELECT COUNT(*) AS count FROM escalation_log WHERE status = 'pending'",
+      "SELECT COUNT(DISTINCT session_id) AS count FROM escalation_log WHERE status = 'pending'",
     );
     this.countResolvedStmt = db.prepare(
-      "SELECT COUNT(*) AS count FROM escalation_log WHERE status = 'resolved'",
+      "SELECT COUNT(DISTINCT session_id) AS count FROM escalation_log WHERE status = 'resolved'",
     );
-    this.countAllStmt = db.prepare('SELECT COUNT(*) AS count FROM escalation_log');
+    this.countAllStmt = db.prepare('SELECT COUNT(DISTINCT session_id) AS count FROM escalation_log');
   }
 
   create(escalation: EscalationLog): EscalationLog {
@@ -49,6 +51,11 @@ export class EscalationRepo {
 
   findBySession(sessionId: string): EscalationLog | null {
     const row = this.findBySessionStmt.get(sessionId) as Record<string, unknown> | undefined;
+    return row ? this.mapRow(row) : null;
+  }
+
+  findById(id: string): EscalationLog | null {
+    const row = this.findByIdStmt.get(id) as Record<string, unknown> | undefined;
     return row ? this.mapRow(row) : null;
   }
 

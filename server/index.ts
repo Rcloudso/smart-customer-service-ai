@@ -17,6 +17,7 @@ let adminConfigRoutes: express.Router;
 let adminKnowledgeReviewRoutes: express.Router;
 let adminDocumentRoutes: express.Router;
 let adminQualityRoutes: express.Router;
+let adminEscalationRoutes: express.Router;
 let ready = false;
 
 function createApp(): express.Application {
@@ -103,6 +104,13 @@ function createApp(): express.Application {
       adminQualityRoutes = require('./routes/admin/quality').default;
     }
     return adminQualityRoutes(_req, _res, next);
+  });
+
+  app.use('/api/admin/escalations', (_req, _res, next) => {
+    if (!adminEscalationRoutes) {
+      adminEscalationRoutes = require('./routes/admin/escalations').default;
+    }
+    return adminEscalationRoutes(_req, _res, next);
   });
 
   // ---- Health check ----

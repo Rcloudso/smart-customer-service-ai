@@ -188,7 +188,14 @@ export interface EscalationLog {
   createdAt: string;
 }
 
-export type EscalationCategory = IntentCategory | 'account_security' | 'complaint' | 'unknown';
+export type EscalationCategory =
+  | 'account_security'
+  | 'complaint'
+  | 'refund'
+  | 'order'
+  | 'technical'
+  | 'general'
+  | 'unknown';
 export type EscalationPriority = 'urgent' | 'high' | 'normal';
 export type EscalationQueue =
   | 'account_security'

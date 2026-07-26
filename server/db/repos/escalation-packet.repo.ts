@@ -9,14 +9,37 @@ import {
   EscalationQueue,
   EscalationReasonCode,
   EscalationRiskFlag,
+  EscalationStatus,
 } from '../../types/domain';
+import { escapeLikePattern } from '../../utils/sql';
+
+export interface EscalationListFilters {
+  status?: EscalationStatus;
+  category?: EscalationCategory;
+  priority?: EscalationPriority;
+  recommendedQueue?: EscalationQueue;
+  keyword?: string;
+}
+
+export interface EscalationListItem {
+  id: string;
+  sessionId: string;
+  userIdent: string;
+  reason: string;
+  status: EscalationStatus;
+  resolvedAt: string | null;
+  createdAt: string;
+  packet: EscalationPacket;
+}
 
 export class EscalationPacketRepo {
+  private db: Database.Database;
   private insertStmt: Database.Statement;
   private findByEscalationIdStmt: Database.Statement;
   private findBySessionStmt: Database.Statement;
 
   constructor(db: Database.Database) {
+    this.db = db;
     this.insertStmt = db.prepare(
       `INSERT INTO escalation_packets (
          escalation_id, session_id, schema_version, rule_version, summary,
@@ -67,6 +90,58 @@ export class EscalationPacketRepo {
     return row ? this.mapRow(row) : null;
   }
 
+  listLatestBySession(
+    filters: EscalationListFilters,
+    limit: number,
+    offset: number,
+  ): EscalationListItem[] {
+    const { whereClause, params } = this.buildFilterSql(filters);
+    const rows = this.db.prepare(
+      `WITH ranked AS (
+         SELECT
+           e.id, e.session_id, e.reason AS escalation_reason, e.status,
+           e.resolved_at, e.created_at AS escalation_created_at,
+           s.user_ident,
+           p.*,
+           ROW_NUMBER() OVER (
+             PARTITION BY e.session_id
+             ORDER BY e.created_at DESC, e.id DESC
+           ) AS row_number
+         FROM escalation_log e
+         JOIN escalation_packets p ON p.escalation_id = e.id
+         JOIN sessions s ON s.id = e.session_id
+         ${whereClause}
+       )
+       SELECT * FROM ranked
+       WHERE row_number = 1
+       ORDER BY
+         CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+         escalation_created_at ASC
+       LIMIT ? OFFSET ?`,
+    ).all(...params, limit, offset) as Record<string, unknown>[];
+    return rows.map((row) => this.mapListRow(row));
+  }
+
+  countLatestBySession(filters: EscalationListFilters): number {
+    const { whereClause, params } = this.buildFilterSql(filters);
+    const row = this.db.prepare(
+      `WITH ranked AS (
+         SELECT
+           e.session_id,
+           ROW_NUMBER() OVER (
+             PARTITION BY e.session_id
+             ORDER BY e.created_at DESC, e.id DESC
+           ) AS row_number
+         FROM escalation_log e
+         JOIN escalation_packets p ON p.escalation_id = e.id
+         JOIN sessions s ON s.id = e.session_id
+         ${whereClause}
+       )
+       SELECT COUNT(*) AS total FROM ranked WHERE row_number = 1`,
+    ).get(...params) as { total: number };
+    return row.total;
+  }
+
   private mapRow(row: Record<string, unknown>): EscalationPacket {
     return {
       escalationId: row.escalation_id as string,
@@ -87,6 +162,56 @@ export class EscalationPacketRepo {
       extractionMode: row.extraction_mode as EscalationExtractionMode,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
+    };
+  }
+
+  private mapListRow(row: Record<string, unknown>): EscalationListItem {
+    return {
+      id: row.id as string,
+      sessionId: row.session_id as string,
+      userIdent: row.user_ident as string,
+      reason: row.escalation_reason as string,
+      status: row.status as EscalationStatus,
+      resolvedAt: row.resolved_at as string | null,
+      createdAt: row.escalation_created_at as string,
+      packet: this.mapRow(row),
+    };
+  }
+
+  private buildFilterSql(filters: EscalationListFilters): {
+    whereClause: string;
+    params: unknown[];
+  } {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filters.status) {
+      clauses.push('e.status = ?');
+      params.push(filters.status);
+    }
+    if (filters.category) {
+      clauses.push('p.category = ?');
+      params.push(filters.category);
+    }
+    if (filters.priority) {
+      clauses.push('p.priority = ?');
+      params.push(filters.priority);
+    }
+    if (filters.recommendedQueue) {
+      clauses.push('p.recommended_queue = ?');
+      params.push(filters.recommendedQueue);
+    }
+    if (filters.keyword?.trim()) {
+      const keyword = `%${escapeLikePattern(filters.keyword.trim())}%`;
+      clauses.push(`(
+        p.summary LIKE ? ESCAPE '\\'
+        OR e.reason LIKE ? ESCAPE '\\'
+        OR e.session_id LIKE ? ESCAPE '\\'
+      )`);
+      params.push(keyword, keyword, keyword);
+    }
+    return {
+      whereClause: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+      params,
     };
   }
 }

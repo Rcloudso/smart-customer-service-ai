@@ -228,7 +228,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         retrievalPolicyId: retrievalPolicy.id,
       };
       const assistantMessage = escalationReason
-        ? conversationService.saveMessageAndEscalate(messageParams, escalationReason)
+        ? await conversationService.saveMessageAndEscalate(messageParams, escalationReason)
         : conversationService.saveMessage(messageParams);
 
       if (grounding.groundingStatus !== 'high_risk') {
@@ -330,7 +330,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     if (!fullContent.trim()) {
       if (escalationReason) {
-        escalationService.createEscalation(sessionId, escalationReason);
+        await escalationService.createEscalation(sessionId, escalationReason, {
+          intent: intentResult.intent.intent,
+          groundingStatus: grounding.groundingStatus,
+          messages: conversationService.getMessages(sessionId),
+          retrievalSnapshot: toRetrievalSnapshot(grounding.citations),
+        });
         sseSend({ type: 'escalate', content: escalationReason });
       }
       logger.error({ sessionId }, 'LLM stream completed without answer content');
@@ -354,7 +359,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       retrievalPolicyId: retrievalPolicy.id,
     };
     const assistantMessage = escalationReason
-      ? conversationService.saveMessageAndEscalate(messageParams, escalationReason)
+      ? await conversationService.saveMessageAndEscalate(messageParams, escalationReason)
       : conversationService.saveMessage(messageParams);
     assistantMessageId = assistantMessage.id;
 
