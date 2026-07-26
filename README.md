@@ -224,6 +224,14 @@ Docker exposes:
 
 The compose example uses `EMBED_PROVIDER=other`, so the project can start without paid model keys. The deterministic local path supports FAQ and document retrieval; document answers fall back to the highest-ranked source excerpt instead of inventing a summary.
 
+Compose uses the `resolve-weave` project name and builds the local image as
+`resolve-weave:local`. Its logical `resolve-weave-data` volume still maps to
+the standard legacy physical volume
+`smart-customer-service_smart-customer-service-data`, so databases created
+before the rename remain available. If the previous checkout used another
+Compose project name, set `RESOLVE_WEAVE_DATA_VOLUME` to that existing physical
+volume; fresh installations may set it to `resolve-weave-data`.
+
 ---
 
 ## Configuration

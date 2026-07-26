@@ -265,11 +265,26 @@ function testOpenSourceReadinessArtifactsExist(): void {
   const ciPath = path.resolve(process.cwd(), '.github/workflows/ci.yml');
   const readmeSource = fs.readFileSync(path.resolve(process.cwd(), 'README.md'), 'utf8');
   const readmeCnSource = fs.readFileSync(path.resolve(process.cwd(), 'README_CN.md'), 'utf8');
+  const dockerfileSource = fs.readFileSync(dockerfilePath, 'utf8');
+  const composeSource = fs.readFileSync(composePath, 'utf8');
 
   assert.ok(fs.existsSync(dockerfilePath), 'open-source project should include a Dockerfile');
   assert.ok(fs.existsSync(composePath), 'open-source project should include docker-compose.yml');
   assert.ok(fs.existsSync(dockerignorePath), 'open-source project should include .dockerignore');
   assert.ok(fs.existsSync(ciPath), 'open-source project should include GitHub Actions CI');
+  assert.match(composeSource, /^name: resolve-weave$/m, 'Docker Compose should use the ResolveWeave project name');
+  assert.match(composeSource, /^\s+image: resolve-weave:local$/m, 'Docker Compose should build a branded local image');
+  assert.match(composeSource, /resolve-weave-data:\/app\/data/, 'Docker Compose should expose a branded logical data volume');
+  assert.match(
+    composeSource,
+    /resolve-weave-data:\s*\n\s+#.*\n\s+name: \$\{RESOLVE_WEAVE_DATA_VOLUME:-smart-customer-service_smart-customer-service-data\}/,
+    'Docker Compose should keep the legacy physical volume name for existing local data',
+  );
+  assert.match(
+    dockerfileSource,
+    /org\.opencontainers\.image\.title="ResolveWeave"/,
+    'Docker image metadata should use the ResolveWeave brand',
+  );
 
   const ciSource = fs.readFileSync(ciPath, 'utf8');
   assert.match(ciSource, /npm ci/, 'CI should install dependencies reproducibly');
@@ -278,7 +293,7 @@ function testOpenSourceReadinessArtifactsExist(): void {
   assert.match(ciSource, /PLAYWRIGHT_CHANNEL=chromium npm run test:e2e/, 'CI should run Playwright E2E tests');
   assert.match(ciSource, /EMBED_PROVIDER=other npm run build/, 'CI should build the app');
   assert.match(
-    fs.readFileSync(composePath, 'utf8'),
+    composeSource,
     /npm run db:seed/,
     'Docker Compose should seed the default local admin before starting the demo',
   );

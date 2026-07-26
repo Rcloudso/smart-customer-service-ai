@@ -212,6 +212,13 @@ Docker 默认暴露：
 
 Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时也能启动。确定性本地路径支持 FAQ 与文档检索；文档回答会回退到最高分原文片段。
 
+Compose 使用 `resolve-weave` 项目名，并将本地镜像构建为
+`resolve-weave:local`。逻辑卷 `resolve-weave-data` 仍映射到旧物理卷
+`smart-customer-service_smart-customer-service-data`，因此标准目录下改名前
+创建的数据库可以继续使用。如果旧部署使用了其他 Compose 项目名，可通过
+`RESOLVE_WEAVE_DATA_VOLUME` 指向原物理卷；全新安装也可以把它设为
+`resolve-weave-data`。
+
 ---
 
 ## 配置项
