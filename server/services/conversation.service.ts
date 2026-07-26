@@ -25,6 +25,7 @@ interface ConversationServiceOptions {
   inactivityMinutes?: number;
   exportMaxMessages?: number;
   now?: () => Date;
+  escalationService?: EscalationService;
 }
 
 export interface AdminConversationQuery {
@@ -69,7 +70,7 @@ export class ConversationService {
     this.db = db;
     this.sessionRepo = new SessionRepo(db);
     this.messageRepo = new MessageRepo(db);
-    this.escalationService = new EscalationService(db);
+    this.escalationService = options.escalationService ?? new EscalationService(db);
     this.inactivityMinutes = options.inactivityMinutes ?? config.conversations.inactivityMinutes;
     this.exportMaxMessages = options.exportMaxMessages ?? config.conversations.exportMaxMessages;
     this.now = options.now ?? (() => new Date());
@@ -157,10 +158,21 @@ export class ConversationService {
     return message;
   }
 
-  saveMessageAndEscalate(params: SaveMessageParams, escalationReason: string): Message {
+  async saveMessageAndEscalate(
+    params: SaveMessageParams,
+    escalationReason: string,
+  ): Promise<Message> {
+    const prepared = await this.escalationService.prepareEscalation({
+      sessionId: params.sessionId,
+      reason: escalationReason,
+      intent: params.intent as IntentCategory | null,
+      groundingStatus: params.groundingStatus,
+      messages: this.messageRepo.findBySession(params.sessionId),
+      retrievalSnapshot: params.retrievalSnapshot,
+    });
     return this.db.transaction(() => {
       const message = this.saveMessage(params);
-      this.escalationService.createEscalation(params.sessionId, escalationReason);
+      this.escalationService.persistPreparedEscalation(prepared);
       this.messageRepo.markEscalated(message.id);
       return { ...message, escalated: 1 };
     })();

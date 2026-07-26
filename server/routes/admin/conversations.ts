@@ -141,6 +141,7 @@ router.get('/:sessionId', async (req: Request, res: Response, next: NextFunction
         reason: escalation.reason,
         status: escalation.status,
         createdAt: escalation.createdAt,
+        packet: escalationService.findPacketBySession(sessionId) ?? undefined,
       };
     }
 

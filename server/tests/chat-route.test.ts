@@ -99,6 +99,22 @@ async function main(): Promise<void> {
       reason: '用户明确要求转人工客服',
       status: 'pending',
     });
+    const escalationPacket = db.prepare(
+      `SELECT category, priority, recommended_queue AS recommendedQueue,
+              extraction_mode AS extractionMode
+       FROM escalation_packets ORDER BY created_at DESC LIMIT 1`,
+    ).get() as {
+      category: string;
+      priority: string;
+      recommendedQueue: string;
+      extractionMode: string;
+    };
+    assert.deepEqual(escalationPacket, {
+      category: 'general',
+      priority: 'normal',
+      recommendedQueue: 'general_support',
+      extractionMode: 'deterministic',
+    });
     const session = db.prepare('SELECT status FROM sessions LIMIT 1').get() as { status: string };
     assert.equal(session.status, 'escalated');
     const assistant = db.prepare(
@@ -166,6 +182,22 @@ async function main(): Promise<void> {
     assert.deepEqual(highRiskEscalation, {
       reason: '当前请求涉及尚未授权的业务操作，需要人工处理',
       status: 'pending',
+    });
+    const highRiskPacket = db.prepare(
+      `SELECT category, priority, reason_code AS reasonCode,
+              recommended_queue AS recommendedQueue
+       FROM escalation_packets ORDER BY created_at DESC LIMIT 1`,
+    ).get() as {
+      category: string;
+      priority: string;
+      reasonCode: string;
+      recommendedQueue: string;
+    };
+    assert.deepEqual(highRiskPacket, {
+      category: 'order',
+      priority: 'high',
+      reasonCode: 'unsupported_business_action',
+      recommendedQueue: 'order_support',
     });
     const highRiskAssistant = db.prepare(
       `SELECT answer_mode AS answerMode, grounding_status AS groundingStatus,

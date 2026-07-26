@@ -11,6 +11,7 @@ import {
   FileSearchIcon,
   FileIconIcon,
   SearchIcon,
+  QueueIcon,
 } from 'tdesign-icons-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from '../../hooks/usePreferences';
@@ -27,6 +28,7 @@ interface MenuItem {
 const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', labelKey: 'nav.dashboard', icon: <DashboardIcon /> },
   { path: '/admin/conversations', labelKey: 'nav.conversations', icon: <ChatIcon /> },
+  { path: '/admin/escalations', labelKey: 'nav.escalations', icon: <QueueIcon /> },
   { path: '/admin/faq', labelKey: 'nav.faq', icon: <HelpCircleIcon /> },
   { path: '/admin/documents', labelKey: 'nav.documents', icon: <FileIconIcon /> },
   { path: '/admin/knowledge-review', labelKey: 'nav.knowledgeReview', icon: <FileSearchIcon /> },
@@ -56,6 +58,7 @@ export function AdminLayout(): React.ReactElement {
   const activePath = (() => {
     if (location.pathname === '/admin') return '/admin';
     if (location.pathname.startsWith('/admin/conversations')) return '/admin/conversations';
+    if (location.pathname.startsWith('/admin/escalations')) return '/admin/escalations';
     if (location.pathname.startsWith('/admin/faq')) return '/admin/faq';
     if (location.pathname.startsWith('/admin/documents')) return '/admin/documents';
     if (location.pathname.startsWith('/admin/knowledge-review')) return '/admin/knowledge-review';

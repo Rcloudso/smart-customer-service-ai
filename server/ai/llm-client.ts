@@ -152,7 +152,7 @@ class OpenAIClientImpl implements LLMClient {
         throw new Error('Empty response from LLM');
       }
       return content;
-    }, options?.maxRetries);
+    }, options?.maxRetries, undefined, options?.timeoutMs);
   }
 
   async chatStream(
@@ -185,7 +185,7 @@ class OpenAIClientImpl implements LLMClient {
       }
 
       return fullContent;
-    }, options?.maxRetries, () => !emittedToken);
+    }, options?.maxRetries, () => !emittedToken, options?.timeoutMs);
   }
 
   async embed(texts: string[]): Promise<EmbeddingResult[]> {
@@ -210,9 +210,11 @@ class OpenAIClientImpl implements LLMClient {
     operation: (signal: AbortSignal) => Promise<T>,
     maxRetries: number = 3,
     shouldRetry?: (error: Error) => boolean,
+    timeoutMs?: number,
   ): Promise<T> {
     return runWithRetry(operation, {
       maxRetries,
+      timeoutMs,
       shouldRetry,
       onRetry: ({ attempt, maxRetries: attempts, delay, error }) => {
         logger.warn(

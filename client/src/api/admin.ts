@@ -38,6 +38,12 @@ import type {
   RetrievalPolicy,
   RetrievalPolicyEvent,
   RetrievalPolicyConfig,
+  EscalationCategory,
+  EscalationPriority,
+  EscalationQueue,
+  EscalationStatus,
+  EscalationListItem,
+  EscalationDetail,
 } from '../types';
 
 // Re-export types
@@ -68,6 +74,12 @@ export type {
   RetrievalPolicy,
   RetrievalPolicyEvent,
   RetrievalPolicyConfig,
+  EscalationCategory,
+  EscalationPriority,
+  EscalationQueue,
+  EscalationStatus,
+  EscalationListItem,
+  EscalationDetail,
 };
 
 function idempotentRequest(): { idempotencyKey: string } {
@@ -108,6 +120,22 @@ export async function getConversations(params: {
 
 export async function getConversationDetail(sessionId: string): Promise<ConversationDetail> {
   return get<ConversationDetail>(`/admin/conversations/${sessionId}`);
+}
+
+export async function listEscalations(params?: {
+  status?: EscalationStatus;
+  category?: EscalationCategory;
+  priority?: EscalationPriority;
+  queue?: EscalationQueue;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<PaginationResponse<EscalationListItem>> {
+  return get<PaginationResponse<EscalationListItem>>('/admin/escalations', params);
+}
+
+export async function getEscalationDetail(escalationId: string): Promise<EscalationDetail> {
+  return get<EscalationDetail>(`/admin/escalations/${escalationId}`);
 }
 
 export async function exportConversations(filters?: {

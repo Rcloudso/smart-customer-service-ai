@@ -187,3 +187,87 @@ export interface EscalationLog {
   resolvedAt: string | null;
   createdAt: string;
 }
+
+export type EscalationCategory =
+  | 'account_security'
+  | 'complaint'
+  | 'refund'
+  | 'order'
+  | 'technical'
+  | 'general'
+  | 'unknown';
+export type EscalationPriority = 'urgent' | 'high' | 'normal';
+export type EscalationQueue =
+  | 'account_security'
+  | 'complaints'
+  | 'after_sales'
+  | 'order_support'
+  | 'technical_support'
+  | 'general_support'
+  | 'manual_triage';
+export type EscalationReasonCode =
+  | 'account_security'
+  | 'unauthorized_transaction'
+  | 'safety_risk'
+  | 'complaint'
+  | 'knowledge_conflict'
+  | 'unsupported_business_action'
+  | 'user_requested_human'
+  | 'frustration'
+  | 'low_confidence_or_coverage_gap'
+  | 'model_requested_escalation'
+  | 'legacy_unstructured';
+export type EscalationRiskFlag =
+  | 'account_security'
+  | 'unauthorized_transaction'
+  | 'safety_risk'
+  | 'private_data_required'
+  | 'business_action_required'
+  | 'knowledge_conflict'
+  | 'complaint'
+  | 'low_confidence';
+export type EscalationExtractionMode =
+  | 'deterministic'
+  | 'llm_json_schema'
+  | 'llm_json_object'
+  | 'llm_text'
+  | 'legacy_unstructured';
+
+export interface EscalationFact {
+  label: string;
+  value: string;
+  sourceMessageId: string;
+  sourceExcerpt: string;
+}
+
+export interface EscalationEvidenceSource {
+  knowledgeType: 'faq' | 'document';
+  knowledgeId: string;
+  documentId?: string;
+  title: string;
+  similarity: number;
+  chunkIndex?: number;
+  pageStart?: number;
+  pageEnd?: number;
+}
+
+export interface EscalationPacket {
+  escalationId: string;
+  sessionId: string;
+  schemaVersion: number;
+  ruleVersion: string;
+  summary: string;
+  category: EscalationCategory;
+  priority: EscalationPriority;
+  reasonCode: EscalationReasonCode;
+  reason: string;
+  riskFlags: EscalationRiskFlag[];
+  confirmedFacts: EscalationFact[];
+  missingInformation: string[];
+  evidenceSources: EscalationEvidenceSource[];
+  recommendedQueue: EscalationQueue;
+  suggestedNextStep: string;
+  extractionMode: EscalationExtractionMode;
+  createdAt: string;
+  updatedAt: string;
+}

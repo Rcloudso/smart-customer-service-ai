@@ -144,6 +144,49 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_escalation_log_session_id ON escalation_log(session_id);
     CREATE INDEX IF NOT EXISTS idx_escalation_log_status ON escalation_log(status);
+    CREATE INDEX IF NOT EXISTS idx_escalation_log_session_created
+      ON escalation_log(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_escalation_log_status_created
+      ON escalation_log(status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS escalation_packets (
+      escalation_id TEXT PRIMARY KEY REFERENCES escalation_log(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      schema_version INTEGER NOT NULL,
+      rule_version TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN (
+        'account_security', 'complaint', 'refund', 'order', 'technical', 'general', 'unknown'
+      )),
+      priority TEXT NOT NULL CHECK(priority IN ('urgent', 'high', 'normal')),
+      reason_code TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      risk_flags TEXT NOT NULL DEFAULT '[]',
+      confirmed_facts TEXT NOT NULL DEFAULT '[]',
+      missing_information TEXT NOT NULL DEFAULT '[]',
+      evidence_sources TEXT NOT NULL DEFAULT '[]',
+      recommended_queue TEXT NOT NULL CHECK(recommended_queue IN (
+        'account_security', 'complaints', 'after_sales', 'order_support',
+        'technical_support', 'general_support', 'manual_triage'
+      )),
+      suggested_next_step TEXT NOT NULL,
+      extraction_mode TEXT NOT NULL CHECK(extraction_mode IN (
+        'deterministic', 'llm_json_schema', 'llm_json_object', 'llm_text', 'legacy_unstructured'
+      )),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_escalation_packets_category
+      ON escalation_packets(category);
+    CREATE INDEX IF NOT EXISTS idx_escalation_packets_priority
+      ON escalation_packets(priority);
+    CREATE INDEX IF NOT EXISTS idx_escalation_packets_queue
+      ON escalation_packets(recommended_queue);
+    CREATE INDEX IF NOT EXISTS idx_escalation_packets_session
+      ON escalation_packets(session_id);
+    CREATE INDEX IF NOT EXISTS idx_escalation_packets_created
+      ON escalation_packets(created_at DESC);
 
     CREATE TABLE IF NOT EXISTS knowledge_review_items (
       id TEXT PRIMARY KEY,
@@ -345,6 +388,24 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
+
+  // v0.2.9 migration: preserve historical free-text escalations without
+  // inventing facts that were not captured at the time.
+  database.prepare(
+    `INSERT OR IGNORE INTO escalation_packets (
+       escalation_id, session_id, schema_version, rule_version, summary,
+       category, priority, reason_code, reason, risk_flags, confirmed_facts,
+       missing_information, evidence_sources, recommended_queue,
+       suggested_next_step, extraction_mode, created_at, updated_at
+     )
+     SELECT
+       id, session_id, 1, 'triage_v1', reason,
+       'unknown', 'normal', 'legacy_unstructured', reason, '[]', '[]',
+       '[]', '[]', 'manual_triage',
+       'Review this historical escalation manually.',
+       'legacy_unstructured', created_at, created_at
+     FROM escalation_log`,
+  ).run();
 }
 
 function ensureColumn(
