@@ -53,7 +53,7 @@ export class EscalationPacketRepo {
       'SELECT * FROM escalation_packets WHERE escalation_id = ?',
     );
     this.findBySessionStmt = db.prepare(
-      'SELECT * FROM escalation_packets WHERE session_id = ? ORDER BY created_at DESC, escalation_id DESC LIMIT 1',
+      'SELECT * FROM escalation_packets WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
     );
   }
 
@@ -107,7 +107,7 @@ export class EscalationPacketRepo {
            p.*,
            ROW_NUMBER() OVER (
              PARTITION BY e.session_id
-             ORDER BY e.created_at DESC, e.id DESC
+             ORDER BY e.created_at DESC, e.rowid DESC
            ) AS row_number
          FROM escalation_log e
          JOIN escalation_packets p ON p.escalation_id = e.id
@@ -144,7 +144,7 @@ export class EscalationPacketRepo {
            p.recommended_queue,
            ROW_NUMBER() OVER (
              PARTITION BY e.session_id
-             ORDER BY e.created_at DESC, e.id DESC
+             ORDER BY e.created_at DESC, e.rowid DESC
            ) AS row_number
          FROM escalation_log e
          JOIN escalation_packets p ON p.escalation_id = e.id

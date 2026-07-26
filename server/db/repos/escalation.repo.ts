@@ -20,7 +20,7 @@ export class EscalationRepo {
       "SELECT * FROM escalation_log WHERE status = 'pending' ORDER BY created_at ASC",
     );
     this.findBySessionStmt = db.prepare(
-      'SELECT * FROM escalation_log WHERE session_id = ? ORDER BY created_at DESC LIMIT 1',
+      'SELECT * FROM escalation_log WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
     );
     this.findByIdStmt = db.prepare('SELECT * FROM escalation_log WHERE id = ?');
     this.countPendingStmt = db.prepare(

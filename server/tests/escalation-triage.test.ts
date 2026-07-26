@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { initSchema } from '../db';
 import { EscalationPacketRepo } from '../db/repos/escalation-packet.repo';
+import { EscalationRepo } from '../db/repos/escalation.repo';
 import {
   buildDeterministicEscalationPacket,
   enrichEscalationPacket,
@@ -431,9 +432,10 @@ async function testLatestPendingQueueCollapsesRepeatedSessionEscalations(): Prom
   const db = new Database(':memory:');
   try {
     initSchema(db);
+    let nowCall = 0;
     const escalationService = new EscalationService(db, {
       enableModelExtraction: false,
-      now: () => new Date('2026-07-26T01:00:00.000Z'),
+      now: () => new Date(Date.parse('2026-07-26T01:00:00.000Z') + nowCall++),
     });
     const service = new ConversationService(db, { escalationService });
     const session = service.createSession('queue-user');
@@ -488,6 +490,64 @@ async function testLatestPendingQueueCollapsesRepeatedSessionEscalations(): Prom
   }
 }
 
+function testLatestPendingTieUsesInsertionOrder(): void {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const escalationService = new EscalationService(db, {
+      enableModelExtraction: false,
+    });
+    const conversationService = new ConversationService(db, { escalationService });
+    const session = conversationService.createSession('same-timestamp-user');
+    const escalationRepo = new EscalationRepo(db);
+    const packetRepo = new EscalationPacketRepo(db);
+    const createdAt = '2026-07-26T02:00:00.000Z';
+    const oldId = 'zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz';
+    const newId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    const insertEscalation = (id: string, reason: string, summary: string) => {
+      escalationRepo.create({
+        id,
+        sessionId: session.id,
+        reason,
+        status: EscalationStatus.PENDING,
+        resolvedAt: null,
+        createdAt,
+      });
+      packetRepo.create({
+        ...buildDeterministicEscalationPacket({
+          escalationId: id,
+          sessionId: session.id,
+          reason,
+          messages: [],
+          now: new Date(createdAt),
+        }),
+        summary,
+      });
+    };
+
+    insertEscalation(oldId, '旧记录 %_123', '旧记录 %_123');
+    insertEscalation(newId, '最新记录', '最新记录');
+
+    const latest = escalationService.listEscalations({
+      status: EscalationStatus.PENDING,
+      page: 1,
+      pageSize: 20,
+    });
+    assert.equal(latest.items[0].id, newId);
+
+    const oldKeywordMatch = escalationService.listEscalations({
+      status: EscalationStatus.PENDING,
+      keyword: '%_123',
+      page: 1,
+      pageSize: 20,
+    });
+    assert.equal(oldKeywordMatch.total, 0);
+  } finally {
+    db.close();
+  }
+}
+
 async function run(): Promise<void> {
   testLegacyEscalationBackfillIsIdempotent();
   testDeterministicRulesCannotBeDowngradedByConversationText();
@@ -498,6 +558,7 @@ async function run(): Promise<void> {
   await testExtractionUsesBoundedMessagesAndEnforcesBudget();
   await testEscalationTransactionRollsBackCompletely();
   await testLatestPendingQueueCollapsesRepeatedSessionEscalations();
+  testLatestPendingTieUsesInsertionOrder();
   console.log('Escalation triage tests passed');
 }
 
