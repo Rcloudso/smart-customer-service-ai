@@ -475,6 +475,7 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     }
     await detail.getByRole('button', { name: /订单编号/ }).click();
     await expect(citedMessage).toHaveClass(/app-triage-message--referenced/);
+    await expect(citedMessage).toBeFocused();
 
     await page.locator('.t-dialog:visible .t-dialog__close').click();
     await page.getByTestId('language-toggle').click();
@@ -1742,11 +1743,12 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await page.keyboard.press('Tab');
     const focusedTag = await page.evaluate(() => document.activeElement?.tagName);
     expect(focusedTag).not.toBe('BODY');
-    const overflow = await page.evaluate(() => ({
-      clientWidth: document.documentElement.clientWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-    }));
-    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    await expect.poll(
+      () => page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+      { message: 'quality lab should settle without page-level mobile overflow' },
+    ).toBe(true);
     if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
       await page.screenshot({
         path: 'docs/releases/assets/v0.2.8-quality-lab-mobile-dark.png',

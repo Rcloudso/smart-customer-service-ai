@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { z } from 'zod';
 import {
   EscalationCategory,
   EscalationEvidenceSource,
@@ -95,7 +96,8 @@ export class EscalationPacketRepo {
     limit: number,
     offset: number,
   ): EscalationListItem[] {
-    const { whereClause, params } = this.buildFilterSql(filters);
+    const statusFilter = this.buildStatusFilterSql(filters);
+    const packetFilters = this.buildPacketFilterSql(filters);
     const rows = this.db.prepare(
       `WITH ranked AS (
          SELECT
@@ -110,24 +112,36 @@ export class EscalationPacketRepo {
          FROM escalation_log e
          JOIN escalation_packets p ON p.escalation_id = e.id
          JOIN sessions s ON s.id = e.session_id
-         ${whereClause}
+         ${statusFilter.whereClause}
        )
        SELECT * FROM ranked
        WHERE row_number = 1
+         ${packetFilters.andClause}
        ORDER BY
          CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
          escalation_created_at ASC
        LIMIT ? OFFSET ?`,
-    ).all(...params, limit, offset) as Record<string, unknown>[];
+    ).all(
+      ...statusFilter.params,
+      ...packetFilters.params,
+      limit,
+      offset,
+    ) as Record<string, unknown>[];
     return rows.map((row) => this.mapListRow(row));
   }
 
   countLatestBySession(filters: EscalationListFilters): number {
-    const { whereClause, params } = this.buildFilterSql(filters);
+    const statusFilter = this.buildStatusFilterSql(filters);
+    const packetFilters = this.buildPacketFilterSql(filters);
     const row = this.db.prepare(
       `WITH ranked AS (
          SELECT
            e.session_id,
+           e.reason AS escalation_reason,
+           p.summary,
+           p.category,
+           p.priority,
+           p.recommended_queue,
            ROW_NUMBER() OVER (
              PARTITION BY e.session_id
              ORDER BY e.created_at DESC, e.id DESC
@@ -135,10 +149,12 @@ export class EscalationPacketRepo {
          FROM escalation_log e
          JOIN escalation_packets p ON p.escalation_id = e.id
          JOIN sessions s ON s.id = e.session_id
-         ${whereClause}
+         ${statusFilter.whereClause}
        )
-       SELECT COUNT(*) AS total FROM ranked WHERE row_number = 1`,
-    ).get(...params) as { total: number };
+       SELECT COUNT(*) AS total FROM ranked
+       WHERE row_number = 1
+         ${packetFilters.andClause}`,
+    ).get(...statusFilter.params, ...packetFilters.params) as { total: number };
     return row.total;
   }
 
@@ -153,10 +169,10 @@ export class EscalationPacketRepo {
       priority: row.priority as EscalationPriority,
       reasonCode: row.reason_code as EscalationReasonCode,
       reason: row.reason as string,
-      riskFlags: parseJsonArray<EscalationRiskFlag>(row.risk_flags),
-      confirmedFacts: parseJsonArray<EscalationFact>(row.confirmed_facts),
-      missingInformation: parseJsonArray<string>(row.missing_information),
-      evidenceSources: parseJsonArray<EscalationEvidenceSource>(row.evidence_sources),
+      riskFlags: parseJsonArray(row.risk_flags, escalationRiskFlagSchema),
+      confirmedFacts: parseJsonArray(row.confirmed_facts, escalationFactSchema),
+      missingInformation: parseJsonArray(row.missing_information, missingInformationSchema),
+      evidenceSources: parseJsonArray(row.evidence_sources, escalationEvidenceSchema),
       recommendedQueue: row.recommended_queue as EscalationQueue,
       suggestedNextStep: row.suggested_next_step as string,
       extractionMode: row.extraction_mode as EscalationExtractionMode,
@@ -178,7 +194,7 @@ export class EscalationPacketRepo {
     };
   }
 
-  private buildFilterSql(filters: EscalationListFilters): {
+  private buildStatusFilterSql(filters: EscalationListFilters): {
     whereClause: string;
     params: unknown[];
   } {
@@ -188,41 +204,82 @@ export class EscalationPacketRepo {
       clauses.push('e.status = ?');
       params.push(filters.status);
     }
-    if (filters.category) {
-      clauses.push('p.category = ?');
-      params.push(filters.category);
-    }
-    if (filters.priority) {
-      clauses.push('p.priority = ?');
-      params.push(filters.priority);
-    }
-    if (filters.recommendedQueue) {
-      clauses.push('p.recommended_queue = ?');
-      params.push(filters.recommendedQueue);
-    }
-    if (filters.keyword?.trim()) {
-      const keyword = `%${escapeLikePattern(filters.keyword.trim())}%`;
-      clauses.push(`(
-        p.summary LIKE ? ESCAPE '\\'
-        OR e.reason LIKE ? ESCAPE '\\'
-        OR e.session_id LIKE ? ESCAPE '\\'
-      )`);
-      params.push(keyword, keyword, keyword);
-    }
     return {
       whereClause: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
       params,
     };
   }
+
+  private buildPacketFilterSql(filters: EscalationListFilters): {
+    andClause: string;
+    params: unknown[];
+  } {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filters.category) {
+      clauses.push('category = ?');
+      params.push(filters.category);
+    }
+    if (filters.priority) {
+      clauses.push('priority = ?');
+      params.push(filters.priority);
+    }
+    if (filters.recommendedQueue) {
+      clauses.push('recommended_queue = ?');
+      params.push(filters.recommendedQueue);
+    }
+    if (filters.keyword?.trim()) {
+      const keyword = `%${escapeLikePattern(filters.keyword.trim())}%`;
+      clauses.push(`(
+        summary LIKE ? ESCAPE '\\'
+        OR escalation_reason LIKE ? ESCAPE '\\'
+        OR session_id LIKE ? ESCAPE '\\'
+      )`);
+      params.push(keyword, keyword, keyword);
+    }
+    return {
+      andClause: clauses.length > 0 ? `AND ${clauses.join(' AND ')}` : '',
+      params,
+    };
+  }
 }
 
-function parseJsonArray<T>(value: unknown): T[] {
+const escalationRiskFlagSchema = z.enum([
+  'account_security',
+  'unauthorized_transaction',
+  'safety_risk',
+  'private_data_required',
+  'business_action_required',
+  'knowledge_conflict',
+  'complaint',
+  'low_confidence',
+]);
+const escalationFactSchema: z.ZodType<EscalationFact> = z.object({
+  label: z.string().trim().min(1).max(80),
+  value: z.string().trim().min(1).max(500),
+  sourceMessageId: z.string().trim().min(1),
+  sourceExcerpt: z.string().trim().min(1).max(300),
+}).strict();
+const missingInformationSchema = z.string().trim().min(1).max(120);
+const escalationEvidenceSchema: z.ZodType<EscalationEvidenceSource> = z.object({
+  knowledgeType: z.enum(['faq', 'document']),
+  knowledgeId: z.string().min(1),
+  documentId: z.string().optional(),
+  title: z.string(),
+  similarity: z.number(),
+  chunkIndex: z.number().int().optional(),
+  pageStart: z.number().int().optional(),
+  pageEnd: z.number().int().optional(),
+}).strict();
+
+function parseJsonArray<T>(value: unknown, itemSchema: z.ZodType<T>): T[] {
   if (typeof value !== 'string') {
     return [];
   }
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed as T[] : [];
+    const result = z.array(itemSchema).safeParse(parsed);
+    return result.success ? result.data : [];
   } catch {
     return [];
   }

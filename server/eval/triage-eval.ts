@@ -97,6 +97,12 @@ function messageFor(testCase: TriageCase, index: number): Message {
   };
 }
 
+let categoryMatches = 0;
+let priorityMatches = 0;
+let queueMatches = 0;
+let dangerousUnderPrioritization = 0;
+let accountSecurityMisroutes = 0;
+
 cases.forEach((testCase, index) => {
   const packet = buildDeterministicEscalationPacket({
     escalationId: `escalation-${index}`,
@@ -116,6 +122,28 @@ cases.forEach((testCase, index) => {
     testCase.expected,
     testCase.name,
   );
+  if (packet.category === testCase.expected.category) categoryMatches += 1;
+  if (packet.priority === testCase.expected.priority) priorityMatches += 1;
+  if (packet.recommendedQueue === testCase.expected.queue) queueMatches += 1;
+  if (
+    ['urgent', 'high'].includes(testCase.expected.priority)
+    && packet.priority === 'normal'
+  ) {
+    dangerousUnderPrioritization += 1;
+  }
+  if (
+    testCase.expected.category === 'account_security'
+    && packet.recommendedQueue !== 'account_security'
+  ) {
+    accountSecurityMisroutes += 1;
+  }
 });
 
-console.log(`Triage evaluation passed: ${cases.length}/${cases.length}`);
+const percentage = (matches: number) => `${((matches / cases.length) * 100).toFixed(1)}%`;
+console.log('Triage evaluation');
+console.log(`Cases: ${cases.length}`);
+console.log(`Category accuracy: ${percentage(categoryMatches)}`);
+console.log(`Priority accuracy: ${percentage(priorityMatches)}`);
+console.log(`Queue accuracy: ${percentage(queueMatches)}`);
+console.log(`Dangerous under-prioritization: ${dangerousUnderPrioritization}`);
+console.log(`Account-security misroutes: ${accountSecurityMisroutes}`);

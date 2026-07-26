@@ -59,6 +59,38 @@ function testLegacyEscalationBackfillIsIdempotent(): void {
       (db.prepare('SELECT COUNT(*) AS total FROM escalation_packets').get() as { total: number }).total,
       1,
     );
+    const indexNames = (db.prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'index'
+         AND name IN (
+           'idx_escalation_log_session_created',
+           'idx_escalation_log_status_created',
+           'idx_escalation_packets_category',
+           'idx_escalation_packets_priority',
+           'idx_escalation_packets_queue',
+           'idx_escalation_packets_session',
+           'idx_escalation_packets_created'
+         )`,
+    ).all() as Array<{ name: string }>).map((row) => row.name);
+    assert.equal(indexNames.length, 7);
+    db.prepare(
+      `UPDATE escalation_packets
+       SET risk_flags = ?, confirmed_facts = ?, missing_information = ?, evidence_sources = ?
+       WHERE escalation_id = ?`,
+    ).run(
+      '["account_security",42]',
+      '[{"label":1}]',
+      '{"not":"an array"}',
+      '[{"knowledgeType":"document"}]',
+      'escalation-legacy',
+    );
+    const malformedPacket = new EscalationPacketRepo(db)
+      .findByEscalationId('escalation-legacy');
+    assert.ok(malformedPacket);
+    assert.deepEqual(malformedPacket.riskFlags, []);
+    assert.deepEqual(malformedPacket.confirmedFacts, []);
+    assert.deepEqual(malformedPacket.missingInformation, []);
+    assert.deepEqual(malformedPacket.evidenceSources, []);
   } finally {
     db.close();
   }
@@ -240,6 +272,110 @@ async function testInvalidExtractionFallsBackCompletely(): Promise<void> {
   assert.deepEqual(enriched, deterministic);
 }
 
+async function testExtractionDiscardsOnlyUntraceableFacts(): Promise<void> {
+  const messages: Message[] = [{
+    id: 'message-valid-fact',
+    sessionId: 'session-valid-fact',
+    role: MessageRole.USER,
+    content: '订单号是 TRACE-100',
+    intent: null,
+    intentConf: null,
+    satisfaction: null,
+    escalated: 0,
+    replyToMessageId: null,
+    retrievalSnapshot: [],
+    answerMode: null,
+    groundingStatus: null,
+    groundingReason: null,
+    retrievalPolicyId: null,
+    createdAt: '2026-07-26T00:00:00.000Z',
+  }];
+  const deterministic = buildDeterministicEscalationPacket({
+    escalationId: 'escalation-valid-fact',
+    sessionId: 'session-valid-fact',
+    reason: '需要人工处理',
+    messages,
+  });
+  const llm: LLMClient = {
+    chat: async () => JSON.stringify({
+      summary: '客户提供了订单号',
+      facts: [
+        {
+          label: 'order_id',
+          value: 'TRACE-100',
+          sourceMessageId: 'message-valid-fact',
+          sourceExcerpt: '订单号是 TRACE-100',
+        },
+        {
+          label: 'invented',
+          value: 'not-supported',
+          sourceMessageId: 'missing-message',
+          sourceExcerpt: 'not-supported',
+        },
+      ],
+      missingInformation: [],
+    }),
+    chatStream: async () => '',
+    embed: async () => [],
+  };
+
+  const enriched = await enrichEscalationPacket(deterministic, messages, llm);
+  assert.equal(enriched.extractionMode, 'llm_json_schema');
+  assert.equal(enriched.confirmedFacts.length, 1);
+  assert.equal(enriched.confirmedFacts[0].value, 'TRACE-100');
+}
+
+async function testExtractionUsesBoundedMessagesAndEnforcesBudget(): Promise<void> {
+  const messages = Array.from({ length: 15 }, (_value, index): Message => ({
+    id: `message-${index}`,
+    sessionId: 'session-bounded',
+    role: MessageRole.USER,
+    content: `customer message ${index}`,
+    intent: null,
+    intentConf: null,
+    satisfaction: null,
+    escalated: 0,
+    replyToMessageId: null,
+    retrievalSnapshot: [],
+    answerMode: null,
+    groundingStatus: null,
+    groundingReason: null,
+    retrievalPolicyId: null,
+    createdAt: `2026-07-26T00:00:${String(index).padStart(2, '0')}.000Z`,
+  }));
+  const deterministic = buildDeterministicEscalationPacket({
+    escalationId: 'escalation-bounded',
+    sessionId: 'session-bounded',
+    reason: '需要人工处理',
+    messages,
+  });
+  let promptMessages: Array<{ id: string }> = [];
+  let attempts = 0;
+  const llm: LLMClient = {
+    chat: async (prompt) => {
+      attempts += 1;
+      const payload = JSON.parse(prompt[1].content) as {
+        messages: Array<{ id: string }>;
+      };
+      promptMessages = payload.messages;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return '{}';
+    },
+    chatStream: async () => '',
+    embed: async () => [],
+  };
+
+  const startedAt = Date.now();
+  const enriched = await enrichEscalationPacket(deterministic, messages, llm, 10);
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.deepEqual(enriched, deterministic);
+  assert.equal(attempts, 1);
+  assert.equal(promptMessages.length, 12);
+  assert.equal(promptMessages[0].id, 'message-3');
+  assert.ok(elapsedMs < 100, `expected the 10ms budget to stop extraction, got ${elapsedMs}ms`);
+}
+
 async function testEscalationTransactionRollsBackCompletely(): Promise<void> {
   const db = new Database(':memory:');
   try {
@@ -315,18 +451,22 @@ async function testLatestPendingQueueCollapsesRepeatedSessionEscalations(): Prom
       replyToMessageId: userMessage.id,
       groundingStatus: 'high_risk',
     }, '需要访问私有状态');
+    const latestUserMessage = service.saveMessage({
+      sessionId: session.id,
+      role: MessageRole.USER,
+      content: '请处理另一个订单问题',
+    });
     await service.saveMessageAndEscalate({
       sessionId: session.id,
       role: MessageRole.ASSISTANT,
       content: '第二次转人工',
       intent: IntentCategory.ORDER,
-      replyToMessageId: userMessage.id,
+      replyToMessageId: latestUserMessage.id,
       groundingStatus: 'high_risk',
-    }, '仍需人工处理 %_123');
+    }, '仍需人工处理');
 
     const result = escalationService.listEscalations({
       status: EscalationStatus.PENDING,
-      keyword: '%_123',
       page: 1,
       pageSize: 20,
     });
@@ -335,6 +475,14 @@ async function testLatestPendingQueueCollapsesRepeatedSessionEscalations(): Prom
     assert.equal(result.items[0].packet.priority, 'high');
     assert.equal(result.items[0].packet.recommendedQueue, 'order_support');
     assert.ok(result.items[0].packet.confirmedFacts.length > 0);
+    const oldMatch = escalationService.listEscalations({
+      status: EscalationStatus.PENDING,
+      keyword: '%_123',
+      page: 1,
+      pageSize: 20,
+    });
+    assert.equal(oldMatch.total, 0);
+    assert.equal(oldMatch.items.length, 0);
   } finally {
     db.close();
   }
@@ -346,6 +494,8 @@ async function run(): Promise<void> {
   testKnowledgeConflictHasHighPriority();
   await testExtractionNegotiatesFormatsAndValidatesCitations();
   await testInvalidExtractionFallsBackCompletely();
+  await testExtractionDiscardsOnlyUntraceableFacts();
+  await testExtractionUsesBoundedMessagesAndEnforcesBudget();
   await testEscalationTransactionRollsBackCompletely();
   await testLatestPendingQueueCollapsesRepeatedSessionEscalations();
   console.log('Escalation triage tests passed');

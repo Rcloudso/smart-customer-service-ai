@@ -169,6 +169,16 @@ export function EscalationTriagePage(): React.ReactElement {
 
   const columns = [
     {
+      colKey: 'priority',
+      title: t('triage.priority'),
+      width: 108,
+      cell: ({ row }: { row: EscalationListItem }) => (
+        <Tag theme={PRIORITY_THEME[row.packet.priority]} variant="light">
+          {t(`triage.priority.${row.packet.priority}`)}
+        </Tag>
+      ),
+    },
+    {
       colKey: 'summary',
       title: t('triage.summary'),
       width: 320,
@@ -181,16 +191,6 @@ export function EscalationTriagePage(): React.ReactElement {
           <strong>{row.packet.summary}</strong>
           <span>{row.sessionId.slice(0, 12)} · {row.userIdent}</span>
         </button>
-      ),
-    },
-    {
-      colKey: 'priority',
-      title: t('triage.priority'),
-      width: 108,
-      cell: ({ row }: { row: EscalationListItem }) => (
-        <Tag theme={PRIORITY_THEME[row.packet.priority]} variant="light">
-          {t(`triage.priority.${row.packet.priority}`)}
-        </Tag>
       ),
     },
     {
@@ -382,10 +382,12 @@ function TriageDetail({
   const packet = detail.packet;
   const referencedIds = new Set(detail.referencedMessageIds);
   const scrollToMessage = (messageId: string) => {
-    document.getElementById(`triage-message-${messageId}`)?.scrollIntoView({
+    const message = document.getElementById(`triage-message-${messageId}`);
+    message?.scrollIntoView({
       behavior: 'smooth',
       block: 'center',
     });
+    message?.focus({ preventScroll: true });
   };
 
   return (
@@ -473,6 +475,7 @@ function TriageDetail({
             <div
               id={`triage-message-${message.id}`}
               data-testid={`triage-message-${message.id}`}
+              tabIndex={-1}
               key={message.id}
               className={[
                 'app-conversation-message',

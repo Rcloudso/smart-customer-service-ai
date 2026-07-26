@@ -144,6 +144,10 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_escalation_log_session_id ON escalation_log(session_id);
     CREATE INDEX IF NOT EXISTS idx_escalation_log_status ON escalation_log(status);
+    CREATE INDEX IF NOT EXISTS idx_escalation_log_session_created
+      ON escalation_log(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_escalation_log_status_created
+      ON escalation_log(status, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS escalation_packets (
       escalation_id TEXT PRIMARY KEY REFERENCES escalation_log(id) ON DELETE CASCADE,

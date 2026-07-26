@@ -97,6 +97,7 @@ export class EscalationService {
 
   async prepareEscalation(input: PrepareEscalationInput): Promise<PreparedEscalation> {
     const now = this.now();
+    const messages = input.messages ?? this.messageRepo.findBySession(input.sessionId);
     const log: EscalationLog = {
       id: uuidv4(),
       sessionId: input.sessionId,
@@ -111,7 +112,7 @@ export class EscalationService {
       reason: input.reason,
       intent: input.intent,
       groundingStatus: input.groundingStatus,
-      messages: input.messages ?? this.messageRepo.findBySession(input.sessionId),
+      messages,
       retrievalSnapshot: input.retrievalSnapshot,
       now,
     });
@@ -121,7 +122,7 @@ export class EscalationService {
     const packet = llmClient
       ? await enrichEscalationPacket(
         deterministicPacket,
-        input.messages ?? this.messageRepo.findBySession(input.sessionId),
+        messages,
         llmClient,
       )
       : deterministicPacket;

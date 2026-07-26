@@ -19,6 +19,7 @@ import { logger } from '../utils/logger';
 
 export const ESCALATION_PACKET_SCHEMA_VERSION = 1;
 export const ESCALATION_RULE_VERSION = 'triage_v1';
+const EXTRACTION_MESSAGE_LIMIT = 12;
 
 export interface BuildEscalationPacketInput {
   escalationId: string;
@@ -139,7 +140,8 @@ export async function enrichEscalationPacket(
   budgetMs = 2_000,
 ): Promise<EscalationPacket> {
   const startedAt = Date.now();
-  const safeMessages = messages.map((message) => ({
+  const boundedMessages = messages.slice(-EXTRACTION_MESSAGE_LIMIT);
+  const safeMessages = boundedMessages.map((message) => ({
     id: message.id,
     role: message.role,
     content: message.content,
@@ -178,15 +180,20 @@ export async function enrichEscalationPacket(
           ? extractionResponseSchema
           : undefined,
       };
-      const response = await llmClient.chat(prompt, options);
+      const response = await withTimeout(
+        llmClient.chat(prompt, options),
+        remainingMs,
+      );
       const candidate = extractionCandidateSchema.parse(
         JSON.parse(stripJsonFence(response)),
       );
-      assertFactCitations(candidate.facts, messages);
+      const confirmedFacts = candidate.facts.filter(
+        (fact) => hasValidFactCitation(fact, boundedMessages),
+      );
       return {
         ...deterministicPacket,
         summary: candidate.summary,
-        confirmedFacts: candidate.facts,
+        confirmedFacts,
         missingInformation: candidate.missingInformation,
         extractionMode: responseFormat === 'json_schema'
           ? 'llm_json_schema'
@@ -200,7 +207,7 @@ export async function enrichEscalationPacket(
         {
           escalationId: deterministicPacket.escalationId,
           responseFormat,
-          error: error instanceof Error ? error.message : String(error),
+          errorName: error instanceof Error ? error.name : 'UnknownError',
         },
         'Escalation extraction format failed; deterministic packet remains authoritative',
       );
@@ -210,23 +217,31 @@ export async function enrichEscalationPacket(
   return deterministicPacket;
 }
 
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('Escalation extraction timed out')), timeoutMs);
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function stripJsonFence(response: string): string {
   return response.trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '');
 }
 
-function assertFactCitations(
-  facts: Array<{ sourceMessageId: string; sourceExcerpt: string }>,
+function hasValidFactCitation(
+  fact: { sourceMessageId: string; sourceExcerpt: string },
   messages: Message[],
-): void {
+): boolean {
   const byId = new Map(messages.map((message) => [message.id, message.content]));
-  for (const fact of facts) {
-    const content = byId.get(fact.sourceMessageId);
-    if (!content || !content.includes(fact.sourceExcerpt)) {
-      throw new Error('Escalation fact citation is not a verbatim message excerpt');
-    }
-  }
+  const content = byId.get(fact.sourceMessageId);
+  return Boolean(content?.includes(fact.sourceExcerpt));
 }
 
 function determineCategory(text: string, intent?: IntentCategory | null): EscalationCategory {

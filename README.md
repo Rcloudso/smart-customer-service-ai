@@ -11,7 +11,7 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Current version: **v0.2.8 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
+Current version: **v0.2.9 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -22,7 +22,7 @@ Current version: **v0.2.8 (pre-1.0)**. APIs and persisted data remain subject to
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the latest public product demo (v0.2.6)</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI-assisted development case study</a>
-  · <a href="docs/releases/v0.2.7-evidence.md">v0.2.7 release evidence</a>
+  · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 release evidence</a>
 </p>
 
 ## English
@@ -53,9 +53,9 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 
 ### Product evidence
 
-| Document-grounded chat | Document operations | Mobile dark theme |
+| Escalation triage queue | Structured handoff packet | Mobile dark theme |
 | --- | --- | --- |
-| ![Chat answer with document and chunk provenance](docs/releases/assets/v0.2.6-chat-document-source.png) | ![Document status and chunk inspection](docs/releases/assets/v0.2.6-document-rag-demo.png) | ![Responsive English document workflow in dark theme](docs/releases/assets/v0.2.6-documents-mobile-dark.png) |
+| ![Priority-ordered escalation triage queue](docs/releases/assets/v0.2.9-triage-desktop.png) | ![Structured handoff packet with facts and evidence](docs/releases/assets/v0.2.9-triage-detail.png) | ![Responsive English triage workflow in dark theme](docs/releases/assets/v0.2.9-triage-mobile-dark.png) |
 
 ---
 
@@ -74,6 +74,7 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 - **Retrieval debugging** - admin panel explains ranked matches, source, similarity, keyword score, vector score, and ranking reason.
 - **Retrieval evaluation** - repeatable FAQ and document evals report ranking metrics, score/source distributions, failures, and semantic-v1 versus structure-only comparison.
 - **RAG Quality Lab** - admins version evaluation sets, compare deterministic retrieval/Grounding strategies, inspect failures and safely publish or roll back an immutable runtime policy.
+- **Structured escalation and triage** - every new handoff persists a traceable packet with deterministic priority, risk flags, recommended queue, cited facts, missing information, and retrieval evidence; admins review it in a bilingual read-only queue.
 - **Language switching and bilingual dictionary** - fixed UI copy is read from an editable Chinese/English dictionary instead of being hard-coded across pages.
 - **Light/dark themes** - persisted theme preferences for both customer and admin workflows.
 - **Open-source readiness** - Docker, docker-compose, GitHub Actions CI, Playwright E2E, and bilingual docs are included.
@@ -193,9 +194,10 @@ EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
 EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
+npm run eval:triage
 ```
 
-The reports include FAQ Top1/Top3/no-match metrics and a 12-case document benchmark across TXT, Markdown, PDF, and DOCX. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
+The reports include FAQ Top1/Top3/no-match metrics, a 12-case document benchmark across TXT, Markdown, PDF, and DOCX, and deterministic triage coverage for bilingual security, complaint, refund, order, technical, explicit-human, knowledge-conflict, private-operation, and prompt-injection cases. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
 
 Document management is available at **Admin Console → Documents**. Uploads are limited to 10 MB, extracted text to 200,000 characters, semantic units to 2,000, and final chunks to 300. Exact duplicate content is rejected by SHA-256; storage paths, hashes, embeddings, and parser exceptions are not returned by the API.
 
@@ -230,6 +232,7 @@ EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
 EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
+npm run eval:triage
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
@@ -256,13 +259,18 @@ data/          Local SQLite database files
 - The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
 - Document parsing is synchronous inside the Express process. Encrypted, damaged, and scanned PDFs fail with a stable failure code; OCR, image knowledge, web ingestion, citation links, and page jumps are not included.
-- Document files are global to the deployment; v0.2.8 does not add tenant-separated knowledge bases, external workers, document versioning, or external vector storage.
+- Document files are global to the deployment; v0.2.9 does not add tenant-separated knowledge bases, external workers, document versioning, or external vector storage.
 - `VectorStore` isolates local vector operations, but a network vector database still requires asynchronous contracts, health handling, and consistency tests.
 - Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Grounding thresholds are governed through the versioned Quality Lab rather than changed automatically.
 - Intent classification falls back to keyword rules when the LLM call fails.
 - Idempotency replay is scoped to one deployment and retained for 24 hours;
   multipart uploads are protected by workflow-specific duplicate checks rather
   than generic response replay.
+- Escalation triage is read-only in v0.2.9. It does not add human assignment,
+  ownership, notes, resolution actions, live takeover, or business tools.
+- Optional LLM extraction has a two-second total budget and may improve only
+  summaries, cited facts, and missing-information candidates. Deterministic
+  priority, risk, queue, and next-step rules remain authoritative.
 - This is a pre-1.0 MVP foundation, not a production support platform. Add observability, stricter auth, backup strategy, and external vector storage before serious production use.
 
 ---
@@ -271,7 +279,6 @@ data/          Local SQLite database files
 
 The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
 
-- v0.2.9: structured escalation packets with validated priority and support-queue routing.
 - v0.3.0–v0.3.2: read-only order/logistics tools first, then human collaboration, then confirmed and audited write actions such as refund requests.
 - Later adapters: reviewed web ingestion, OCR/image knowledge, consent-based customer memory and a voice channel that reuses the same chat, retrieval, tool and escalation workflows.
 - v0.4.0: multi-knowledge-base and tenant boundaries, RBAC, audit, migration, backup, monitoring and evidence-driven external vector storage.
