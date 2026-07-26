@@ -522,11 +522,26 @@ function testChatPageExposesHistoryUi(): void {
 function testBilingualReadmeExists(): void {
   const readmeSource = fs.readFileSync(path.resolve(process.cwd(), 'README.md'), 'utf8');
 
-  assert.match(readmeSource, /# Smart Customer Service AI/, 'README should include an English title');
+  assert.match(readmeSource, /# ResolveWeave/, 'README should use the ResolveWeave product name');
   assert.match(readmeSource, /## English/, 'README should include an English section');
   assert.match(readmeSource, /## 中文/, 'README should include a Chinese section');
   assert.match(readmeSource, /中英文切换/, 'README should document Chinese-language features');
   assert.match(readmeSource, /Language switching/, 'README should document English-language features');
+}
+
+function testResolveWeaveBrandIdentity(): void {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
+  ) as { name?: string };
+  const indexSource = fs.readFileSync(path.resolve(process.cwd(), 'client/index.html'), 'utf8');
+  const dictionarySource = fs.readFileSync(
+    path.resolve(process.cwd(), 'client/src/i18n/dictionary.json'),
+    'utf8',
+  );
+
+  assert.equal(packageJson.name, 'resolve-weave', 'package name should match the ResolveWeave brand');
+  assert.match(indexSource, /<title>ResolveWeave<\/title>/, 'browser title should use the ResolveWeave brand');
+  assert.match(dictionarySource, /"chat\.title":\s*\{\s*"zh": "ResolveWeave",\s*"en": "ResolveWeave"/);
 }
 
 function testEndToEndAutomationArtifactsExist(): void {
@@ -659,6 +674,7 @@ async function main(): Promise<void> {
   testChatHistoryApiIsScopedToAnonymousUser();
   testChatPageExposesHistoryUi();
   testBilingualReadmeExists();
+  testResolveWeaveBrandIdentity();
   testEndToEndAutomationArtifactsExist();
   testRetrievalEvaluationAndDebuggingArtifactsExist();
   testKnowledgeReviewApiAndChatCompatibility();

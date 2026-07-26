@@ -1,6 +1,7 @@
-# Smart Customer Service AI
+# ResolveWeave
 
-> 开源 AI 智能客服 MVP：聊天、FAQ 与文档 RAG、后台运营、检索评测和调试，一套项目直接跑起来。
+> 证据优先的开源企业级 Agentic 智能客服平台：可信回答、文档 RAG、质量评测
+> 和结构化转人工，一套全栈项目直接跑起来。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20.16%2B%20%7C%2022.3%2B-green.svg)](https://nodejs.org/)
@@ -8,6 +9,8 @@
 [![SQLite](https://img.shields.io/badge/Storage-SQLite-044a64.svg)](https://www.sqlite.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-10a37f.svg)](https://platform.openai.com/docs/api-reference)
 [![Docker](https://img.shields.io/badge/Run-Docker-2496ed.svg)](Dockerfile)
+[![CI](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/smart-customer-service-ai?style=social)](https://github.com/Rcloudso/smart-customer-service-ai/stargazers)
 
 **English version**: [README.md](README.md)
 
@@ -20,14 +23,25 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看最新公开产品演示（v0.2.6）</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看文档 RAG 演示（v0.2.6）</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI 辅助开发复盘</a>
   · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 版本验证证据</a>
 </p>
 
-Smart Customer Service AI 是一个 AI 智能客服全栈示例项目。它把用户聊天页、FAQ 与文档知识库、混合检索、运行时模型配置、会话分析、中英文界面、暗/亮主题，以及检索评测工具放在同一个可运行工程里。
+ResolveWeave 是一个 pre-1.0 的企业级 Agentic 智能客服平台。它关注的
+不只是“能回答”，还包括为什么允许回答、证据不足时如何拒答，以及高风险问题
+怎样携带有效上下文交给人工。
 
-[快速开始](#快速开始) · [特性](#特性) · [架构](ARCHITECTURE.md) · [检索设计](#检索设计) · [评测与调试](#评测与调试) · [Docker](#docker)
+当前版本已经把用户聊天、FAQ 与文档知识、混合检索、来源持久化、确定性
+Grounding 决策、结构化转人工、运营后台和可重复质量评测放在同一工程内。
+没有付费模型 Key 也可以启动基础路径；后续将演进到受限 Agentic Retrieval，
+但不会把答案放行或业务操作权限交给模型。
+
+[快速开始](#快速开始) · [为什么做这个项目](#为什么做这个项目) · [特性](#特性) · [架构](ARCHITECTURE.md) · [评测与调试](#评测与调试) · [路线图](ROADMAP.md)
+
+如果你也认同这个方向，可以
+[给仓库一个 Star](https://github.com/Rcloudso/smart-customer-service-ai)，
+持续关注企业智能客服路线的实现过程。
 
 ---
 
@@ -38,7 +52,7 @@ Smart Customer Service AI 是一个 AI 智能客服全栈示例项目。它把�
 ```text
 用户：我想申请退款
 
-Smart Customer Service AI:
+ResolveWeave:
   Step 1: 识别问题意图
   Step 2: 用混合检索查找相关 FAQ 和文档切片
   Step 3: 判断证据支持 FAQ 直答、知识生成还是拒答
@@ -47,13 +61,40 @@ Smart Customer Service AI:
 
 管理员可以维护 FAQ，上传和管理文档，预览已索引切片，查看检索行为与会话记录，并在“知识审核”页面把答不好的问题沉淀成可复用 FAQ。
 
-这个项目适合 Demo、学习、开源 MVP 和小规模客服场景。它先保留 SQLite + 内存向量索引的低依赖方案，同时把未来接入向量数据库的接口边界留清楚。
+当前版本适合学习、评测、演示和小规模预生产试用。项目刻意保留
+SQLite + 内存向量索引作为零基础设施路径，同时明确列出正式生产仍需补齐的
+安全、备份、隔离和可观测能力。
 
 ### 产品证据
 
 | 转人工分流队列 | 结构化交接包 | 移动端深色主题 |
 | --- | --- | --- |
 | ![按优先级排列的转人工分流队列](docs/releases/assets/v0.2.9-triage-desktop.png) | ![包含事实与证据的结构化交接包](docs/releases/assets/v0.2.9-triage-detail.png) | ![移动端英文深色分流页面](docs/releases/assets/v0.2.9-triage-mobile-dark.png) |
+
+---
+
+## 为什么做这个项目
+
+很多 RAG Demo 停留在“检索几段文字，然后调用一次 LLM”。这个项目把可信度、
+运营闭环和验证能力也当成产品功能：
+
+- **先判断证据，再生成回答**——确定性策略先决定 FAQ 直答、基于证据生成、
+  拒答还是转人工。
+- **知识能够持续运营**——弱回答和负反馈进入知识审核，可以沉淀为可复用知识。
+- **转人工不丢上下文**——高风险或冲突问题携带事实、缺失信息、来源、优先级
+  和建议队列。
+- **用评测驱动改动**——检索与 Grounding 策略必须先通过版本化用例比较，
+  才能发布。
+- **没有付费模型 Key 也能运行**——fresh clone 可以先体验确定性基础路径，
+  再按需配置外部模型。
+- **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
+  Retrieval 分开交付，不进行一次性框架重写。
+
+| 当前可用 — v0.2.9 | 下一阶段 — v0.3.x |
+| --- | --- |
+| FAQ/文档 RAG、混合检索、来源持久化、质量实验室、结构化转人工、双语界面、Docker 和 CI | 结构化入库、OCR/表格/图片知识、可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
+
+完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
 
 ---
 
@@ -270,6 +311,9 @@ data/          本地 SQLite 数据库文件
 
 有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
 
-- v0.3.0–v0.3.2：先实现订单/物流只读工具，再补人工协作，最后在确认和审计下处理退款申请等写操作。
-- 后续适配器：经过审核的网页采集、OCR/图片知识、基于同意的客户记忆，以及复用现有聊天、检索、工具和转人工链路的语音通道。
-- v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份、监控，以及由规模证据驱动的外部向量存储。
+- v0.3.0：版本化文档表示、清洗与质量门禁、结构感知切片和入库可观测性。
+- v0.3.1–v0.3.3：OCR/表格/图片知识、带检索 Trace 的可选 Qdrant，
+  再实现由确定性 Grounding Gate 约束的 Agentic Retrieval。
+- v0.3.4–v0.3.8：企业知识运营、mock 优先的订单只读工具、人工协作、
+  客户身份/记忆和受控写操作。
+- v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份恢复与生产可观测性。

@@ -1,6 +1,6 @@
 # Architecture
 
-Smart Customer Service AI is a modular monolith for small, self-hosted support
+ResolveWeave is a modular monolith for small, self-hosted support
 workloads. React and Express are deployed as separate processes, while the API
 keeps business workflows, SQLite persistence, retrieval, and model adapters in
 one codebase. This is an intentional pre-1.0 tradeoff: the default installation

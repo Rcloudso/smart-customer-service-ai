@@ -1,6 +1,6 @@
 # 增量设计：LLM 非敏感配置用户自定义
 
-> **项目**：smart-customer-service
+> **项目**：ResolveWeave
 > **增量类型**：功能增强 — LLM/Embed 非敏感配置支持环境优先与 `.env` 动态回写
 > **设计原则**：最小修改范围，向后兼容，API Key 只允许环境变量或部署 Secret 注入
 
@@ -72,7 +72,7 @@ SSE 事件名称保持兼容：`faq` 仍只发送 FAQ；`done.content.knowledgeS
 ### 2. File List
 
 ```
-smart-customer-service/
+resolve-weave/
 ├── .env.example                          # [修改] 新增 LLM_API_BASE, EMBED_* 变量
 ├── server/
 │   ├── config.ts                         # [修改] env schema 扩展 + config.llm/embed 拆分

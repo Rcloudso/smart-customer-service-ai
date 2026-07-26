@@ -78,9 +78,9 @@ test.describe('Web automation: customer chat experience', () => {
   test('language and theme toggles update fixed copy and document theme', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { name: 'AI 智能客服' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'ResolveWeave' })).toBeVisible();
     await page.getByTestId('language-toggle').click();
-    await expect(page.getByRole('heading', { name: 'AI Customer Service' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'ResolveWeave' })).toBeVisible();
     await expect(page.getByTestId('new-chat-button')).toContainText('New chat');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 

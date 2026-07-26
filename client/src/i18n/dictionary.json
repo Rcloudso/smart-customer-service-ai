@@ -44,12 +44,12 @@
     "en": "Switch to light mode"
   },
   "chat.title": {
-    "zh": "AI 智能客服",
-    "en": "AI Customer Service"
+    "zh": "ResolveWeave",
+    "en": "ResolveWeave"
   },
   "chat.subtitle": {
-    "zh": "随时为您解答问题",
-    "en": "Ready to answer your questions"
+    "zh": "企业级 Agentic 智能客服",
+    "en": "Enterprise Agentic Customer Service"
   },
   "chat.history": {
     "zh": "历史记录",

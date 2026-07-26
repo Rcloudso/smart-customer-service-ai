@@ -1,6 +1,8 @@
-# Smart Customer Service AI
+# ResolveWeave
 
-> Open-source AI customer service starter: chat, FAQ and document RAG, admin operations, evaluation, and debugging in one runnable project.
+> Evidence-first open-source enterprise Agentic customer service: grounded
+> answers, document RAG, quality evaluation, and structured human escalation
+> in one runnable full-stack project.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20.16%2B%20%7C%2022.3%2B-green.svg)](https://nodejs.org/)
@@ -8,6 +10,8 @@
 [![SQLite](https://img.shields.io/badge/Storage-SQLite-044a64.svg)](https://www.sqlite.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-10a37f.svg)](https://platform.openai.com/docs/api-reference)
 [![Docker](https://img.shields.io/badge/Run-Docker-2496ed.svg)](Dockerfile)
+[![CI](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/smart-customer-service-ai?style=social)](https://github.com/Rcloudso/smart-customer-service-ai/stargazers)
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
@@ -20,16 +24,29 @@ Current version: **v0.2.9 (pre-1.0)**. APIs and persisted data remain subject to
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the latest public product demo (v0.2.6)</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the document RAG demo (v0.2.6)</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI-assisted development case study</a>
   · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 release evidence</a>
 </p>
 
 ## English
 
-Smart Customer Service AI is a full-stack demo for building an AI-assisted support system. It combines customer chat, FAQ and document knowledge management, hybrid retrieval, runtime model configuration, conversation analytics, bilingual UI, light/dark themes, and retrieval evaluation tooling.
+ResolveWeave is a pre-1.0 enterprise Agentic customer service platform for
+building support that can explain why it answered, refuse when evidence is
+weak, and hand risky cases to people with useful context.
 
-[Quick Start](#quick-start) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Retrieval Design](#retrieval-design) · [Evaluation](#evaluation-and-debugging) · [Docker](#docker)
+The current release combines customer chat, FAQ and document knowledge,
+hybrid retrieval, persisted sources, deterministic Grounding decisions,
+structured escalation, an operations console, and repeatable quality
+evaluation. It starts without a paid model key and is evolving toward a
+bounded Agentic Retrieval architecture without giving the model authority over
+answer release or business actions.
+
+[Quick Start](#quick-start) · [Why This Project](#why-this-project) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Evaluation](#evaluation-and-debugging) · [Roadmap](ROADMAP.md)
+
+If this direction is useful to you, consider
+[starring the repository](https://github.com/Rcloudso/smart-customer-service-ai)
+to follow the enterprise customer-service roadmap.
 
 ---
 
@@ -40,7 +57,7 @@ Type a customer question, and the system runs a support flow:
 ```text
 User: How can I request a refund?
 
-Smart Customer Service AI:
+ResolveWeave:
   Step 1: classify the question intent
   Step 2: retrieve related FAQ entries and document chunks with hybrid search
   Step 3: decide whether evidence supports a direct answer, generation, or refusal
@@ -49,13 +66,43 @@ Smart Customer Service AI:
 
 Admins can maintain FAQs, upload and manage documents, preview indexed chunks, inspect retrieval behavior, review conversations, and turn weak answers into reusable FAQs from the Knowledge Review page.
 
-This project is designed for demos, learning, and small open-source MVPs that need a clear customer-support foundation without introducing a dedicated vector database on day one.
+The current release is suitable for learning, evaluation, demonstrations and
+small pre-production pilots. It deliberately keeps SQLite and an in-memory
+vector index as the no-infrastructure path while documenting the controls
+still required for serious production deployment.
 
 ### Product evidence
 
 | Escalation triage queue | Structured handoff packet | Mobile dark theme |
 | --- | --- | --- |
 | ![Priority-ordered escalation triage queue](docs/releases/assets/v0.2.9-triage-desktop.png) | ![Structured handoff packet with facts and evidence](docs/releases/assets/v0.2.9-triage-detail.png) | ![Responsive English triage workflow in dark theme](docs/releases/assets/v0.2.9-triage-mobile-dark.png) |
+
+---
+
+## Why This Project
+
+Many RAG demos stop at “retrieve text and call an LLM.” This project treats
+trust, operations and verification as product features:
+
+- **Evidence before generation** — deterministic policy chooses FAQ direct
+  answer, grounded generation, refusal or escalation before releasing a reply.
+- **A knowledge operations loop** — weak answers and negative feedback become
+  review items that can be turned into reusable knowledge.
+- **Human escalation with context** — risky or conflicting cases carry facts,
+  missing information, sources, priority and a recommended queue.
+- **Evaluation-driven changes** — retrieval and Grounding policies are compared
+  against versioned cases before they are published.
+- **Runnable without a paid model key** — the local deterministic path keeps a
+  fresh clone useful before external AI infrastructure is configured.
+- **A focused enterprise path** — structure-aware ingestion, OCR, Qdrant and
+  bounded Agentic Retrieval are planned as separately testable releases rather
+  than one framework rewrite.
+
+| Available now — v0.2.9 | Next — v0.3.x |
+| --- | --- |
+| FAQ and document RAG, hybrid retrieval, persisted sources, Quality Lab, structured escalation, bilingual UI, Docker and CI | Structure-aware ingestion, OCR/table/image knowledge, optional Qdrant, retrieval traces, bounded Agentic Retrieval, then mock-first business tools |
+
+See [ROADMAP.md](ROADMAP.md) for release boundaries and non-goals.
 
 ---
 
@@ -279,12 +326,20 @@ data/          Local SQLite database files
 
 The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
 
-- v0.3.0–v0.3.2: read-only order/logistics tools first, then human collaboration, then confirmed and audited write actions such as refund requests.
-- Later adapters: reviewed web ingestion, OCR/image knowledge, consent-based customer memory and a voice channel that reuses the same chat, retrieval, tool and escalation workflows.
-- v0.4.0: multi-knowledge-base and tenant boundaries, RBAC, audit, migration, backup, monitoring and evidence-driven external vector storage.
+- v0.3.0: versioned document representation, cleaning/quality gates,
+  structure-aware chunking and ingestion observability.
+- v0.3.1–v0.3.3: OCR/table/image knowledge, optional Qdrant with retrieval
+  traces, then bounded Agentic Retrieval behind a deterministic Grounding Gate.
+- v0.3.4–v0.3.8: enterprise knowledge operations, mock-first read-only order
+  tools, human collaboration, customer identity/memory and guarded actions.
+- v0.4.0: multi-knowledge-base and tenant boundaries, RBAC, audit, migration,
+  backup, recovery and production observability.
 
 ---
 
 ## 中文
 
-Smart Customer Service AI 是一个开源 AI 智能客服 MVP，支持用户聊天、管理后台、FAQ 混合检索、检索评测、检索调试、中英文切换和暗/亮主题切换。完整中文说明请阅读 [README_CN.md](README_CN.md)。
+ResolveWeave 是一个证据优先的开源企业级 Agentic 智能客服平台，支持可信回答、
+文档 RAG、质量评测、结构化转人工和中英文切换，并将沿着可控的企业级
+Agentic Retrieval 路线持续演进。完整中文说明请阅读
+[README_CN.md](README_CN.md)。
