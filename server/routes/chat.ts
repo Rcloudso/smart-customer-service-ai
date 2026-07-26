@@ -18,6 +18,7 @@ import {
   selectDirectFaqCandidates,
 } from '../services/grounding-policy';
 import { idempotencyMiddleware } from '../middleware/idempotency';
+import { getQualityLabService } from '../services/quality-lab.service';
 
 const router = Router();
 router.use(idempotencyMiddleware);
@@ -47,8 +48,12 @@ const closeSessionSchema = z.object({
   userIdent: z.string().min(1, 'userIdent不能为空'),
 });
 
-function findDirectFaqAnswer(message: string, faqMatches: FaqMatch[]): FaqMatch | null {
-  return selectDirectFaqCandidates(message, faqMatches)[0] ?? null;
+function findDirectFaqAnswer(
+  message: string,
+  faqMatches: FaqMatch[],
+  threshold: number,
+): FaqMatch | null {
+  return selectDirectFaqCandidates(message, faqMatches, threshold)[0] ?? null;
 }
 
 function faqMatchesForClient(
@@ -109,6 +114,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const { message, sessionId: inputSessionId, userIdent: inputUserIdent } = parsed.data;
     const userIdent = inputUserIdent || req.ip || 'anonymous';
+    const retrievalPolicy = getQualityLabService().getCurrentPolicy();
 
     // Step 1: Get or create session
     const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent);
@@ -131,13 +137,18 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       }));
 
     // Step 4: Process intent
-    const intentResult = await intentService.processMessage(message, llmHistory);
+    const intentResult = await intentService.processMessage(
+      message,
+      llmHistory,
+      retrievalPolicy.config,
+    );
     const grounding = evaluateGrounding({
       message,
       intent: intentResult.intent.intent,
       faqMatches: intentResult.faqMatches,
       retrievalResults: intentResult.retrievalResults,
       explicitEscalation: intentResult.escalationType === 'explicit',
+      policy: retrievalPolicy.config,
     });
 
     // Set up SSE headers
@@ -192,7 +203,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     const directFaq = grounding.answerMode === 'direct_faq'
-      ? findDirectFaqAnswer(message, intentResult.faqMatches)
+      ? findDirectFaqAnswer(
+        message,
+        intentResult.faqMatches,
+        retrievalPolicy.config.directFaqThreshold,
+      )
       : null;
     if (!grounding.shouldGenerate) {
       const fullContent = directFaq?.answer ?? deterministicGroundingReply(grounding.groundingReason);
@@ -210,6 +225,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         answerMode: grounding.answerMode,
         groundingStatus: grounding.groundingStatus,
         groundingReason: grounding.groundingReason,
+        retrievalPolicyId: retrievalPolicy.id,
       };
       const assistantMessage = escalationReason
         ? conversationService.saveMessageAndEscalate(messageParams, escalationReason)
@@ -239,6 +255,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           answerMode: assistantMessage.answerMode,
           groundingStatus: assistantMessage.groundingStatus,
           groundingReason: assistantMessage.groundingReason,
+          retrievalPolicyId: retrievalPolicy.id,
         },
       });
 
@@ -334,6 +351,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       answerMode: grounding.answerMode,
       groundingStatus: grounding.groundingStatus,
       groundingReason: grounding.groundingReason,
+      retrievalPolicyId: retrievalPolicy.id,
     };
     const assistantMessage = escalationReason
       ? conversationService.saveMessageAndEscalate(messageParams, escalationReason)
@@ -363,6 +381,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         answerMode: assistantMessage.answerMode,
         groundingStatus: assistantMessage.groundingStatus,
         groundingReason: assistantMessage.groundingReason,
+        retrievalPolicyId: retrievalPolicy.id,
       },
     });
 

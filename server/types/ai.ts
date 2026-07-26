@@ -15,6 +15,7 @@ export interface RetrievalResult {
   fusionScore?: number;
   vectorRank?: number;
   keywordRank?: number;
+  rerankScore?: number;
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;

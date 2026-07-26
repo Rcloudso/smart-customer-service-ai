@@ -14,6 +14,7 @@ const FaqManagementPage = lazy(() => import('./pages/admin/FaqManagementPage'));
 const ModelConfigPage = lazy(() => import('./pages/admin/ModelConfigPage'));
 const KnowledgeReviewPage = lazy(() => import('./pages/admin/KnowledgeReviewPage'));
 const DocumentManagementPage = lazy(() => import('./pages/admin/DocumentManagementPage'));
+const QualityLabPage = lazy(() => import('./pages/admin/QualityLabPage'));
 const AuthGuard = lazy(() => import('./components/common/AuthGuard'));
 
 function PageFallback(): React.ReactElement {
@@ -49,6 +50,7 @@ export function App(): React.ReactElement {
               <Route path="faq" element={<FaqManagementPage />} />
               <Route path="knowledge-review" element={<KnowledgeReviewPage />} />
               <Route path="documents" element={<DocumentManagementPage />} />
+              <Route path="quality-lab" element={<QualityLabPage />} />
               <Route path="config" element={<ModelConfigPage />} />
             </Route>
           </Routes>

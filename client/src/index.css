@@ -1259,14 +1259,15 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
-    overflow-x: auto;
+    overflow-x: hidden;
     padding: 8px;
     transition: none;
-    white-space: nowrap;
+    white-space: normal;
+    flex-wrap: wrap;
   }
 
   .app-admin-sidebar .t-menu__item {
-    flex: 0 0 auto;
+    flex: 1 0 72px;
     width: auto;
     min-width: 64px;
     margin-right: 6px;

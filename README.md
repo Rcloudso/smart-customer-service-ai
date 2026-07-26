@@ -11,7 +11,7 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Current version: **v0.2.7 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
+Current version: **v0.2.8 (pre-1.0)**. APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -73,6 +73,7 @@ This project is designed for demos, learning, and small open-source MVPs that ne
 - **Index operations** - admin users can inspect indexed entries, active entries, missing embeddings, dimensions, rebuild time, and index errors.
 - **Retrieval debugging** - admin panel explains ranked matches, source, similarity, keyword score, vector score, and ranking reason.
 - **Retrieval evaluation** - repeatable FAQ and document evals report ranking metrics, score/source distributions, failures, and semantic-v1 versus structure-only comparison.
+- **RAG Quality Lab** - admins version evaluation sets, compare deterministic retrieval/Grounding strategies, inspect failures and safely publish or roll back an immutable runtime policy.
 - **Language switching and bilingual dictionary** - fixed UI copy is read from an editable Chinese/English dictionary instead of being hard-coded across pages.
 - **Light/dark themes** - persisted theme preferences for both customer and admin workflows.
 - **Open-source readiness** - Docker, docker-compose, GitHub Actions CI, Playwright E2E, and bilingual docs are included.
@@ -190,6 +191,8 @@ Run the repeatable FAQ retrieval benchmark:
 ```bash
 EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
+EMBED_PROVIDER=other npm run eval:mixed
+EMBED_PROVIDER=other npm run eval:quality
 ```
 
 The reports include FAQ Top1/Top3/no-match metrics and a 12-case document benchmark across TXT, Markdown, PDF, and DOCX. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
@@ -225,6 +228,8 @@ Satisfaction ratings remain backward compatible: clients may rate an exact assis
 EMBED_PROVIDER=other npm test
 EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
+EMBED_PROVIDER=other npm run eval:mixed
+EMBED_PROVIDER=other npm run eval:quality
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
@@ -251,9 +256,9 @@ data/          Local SQLite database files
 - The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
 - Document parsing is synchronous inside the Express process. Encrypted, damaged, and scanned PDFs fail with a stable failure code; OCR, image knowledge, web ingestion, citation links, and page jumps are not included.
-- Document files are global to the deployment; v0.2.7 does not add tenant-separated knowledge bases, background workers, document versioning, or external vector storage.
+- Document files are global to the deployment; v0.2.8 does not add tenant-separated knowledge bases, external workers, document versioning, or external vector storage.
 - `VectorStore` isolates local vector operations, but a network vector database still requires asynchronous contracts, health handling, and consistency tests.
-- Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Initial grounding thresholds will be calibrated in v0.2.8.
+- Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Grounding thresholds are governed through the versioned Quality Lab rather than changed automatically.
 - Intent classification falls back to keyword rules when the LLM call fails.
 - Idempotency replay is scoped to one deployment and retained for 24 hours;
   multipart uploads are protected by workflow-specific duplicate checks rather
@@ -266,7 +271,6 @@ data/          Local SQLite database files
 
 The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
 
-- v0.2.8: versioned retrieval-quality experiments, thresholds, failure cases and optional reranking.
 - v0.2.9: structured escalation packets with validated priority and support-queue routing.
 - v0.3.0–v0.3.2: read-only order/logistics tools first, then human collaboration, then confirmed and audited write actions such as refund requests.
 - Later adapters: reviewed web ingestion, OCR/image knowledge, consent-based customer memory and a voice channel that reuses the same chat, retrieval, tool and escalation workflows.

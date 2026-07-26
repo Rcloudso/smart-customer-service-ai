@@ -16,6 +16,7 @@ let adminStatsRoutes: express.Router;
 let adminConfigRoutes: express.Router;
 let adminKnowledgeReviewRoutes: express.Router;
 let adminDocumentRoutes: express.Router;
+let adminQualityRoutes: express.Router;
 let ready = false;
 
 function createApp(): express.Application {
@@ -97,6 +98,13 @@ function createApp(): express.Application {
     return adminDocumentRoutes(_req, _res, next);
   });
 
+  app.use('/api/admin/quality', (_req, _res, next) => {
+    if (!adminQualityRoutes) {
+      adminQualityRoutes = require('./routes/admin/quality').default;
+    }
+    return adminQualityRoutes(_req, _res, next);
+  });
+
   // ---- Health check ----
   app.get('/api/health', (_req, res) => {
     res.json({ code: 0, data: { status: 'ok', uptime: process.uptime() }, message: 'ok' });
@@ -126,6 +134,12 @@ async function start(): Promise<void> {
     const { getDatabase } = await import('./db');
     getDatabase();
     logger.info('Database initialized');
+
+    const { getQualityLabService } = await import('./services/quality-lab.service');
+    getQualityLabService().bootstrap();
+    const { getQualityRunService } = await import('./services/quality-run.service');
+    getQualityRunService().start();
+    logger.info('RAG quality lab initialized');
 
     // Hydrate runtime config from environment-owned model settings.
     const { configService } = await import('./services/config.service');

@@ -1,0 +1,163 @@
+import type { QualityCase } from '../types/quality';
+
+export const QUALITY_BASELINE_DATASET_ID = 'builtin-rag-quality-baseline';
+export const QUALITY_BASELINE_VERSION_ID = 'builtin-rag-quality-baseline-v1';
+
+type BaselineCase = Omit<QualityCase, 'versionId' | 'createdAt'>;
+
+export interface QualityBaselineKnowledge {
+  knowledgeType: 'faq' | 'document';
+  knowledgeId: string;
+  title: string;
+  content: string;
+}
+
+export const QUALITY_BASELINE_KNOWLEDGE: QualityBaselineKnowledge[] = [
+  {
+    knowledgeType: 'faq',
+    knowledgeId: 'faq-refund-apply',
+    title: '如何申请退款？',
+    content: '在订单详情中提交退款申请，并按页面提示补充原因。',
+  },
+  {
+    knowledgeType: 'faq',
+    knowledgeId: 'faq-order-status',
+    title: '如何查询订单状态？',
+    content: '登录后在订单中心查看订单状态和物流进度。',
+  },
+  {
+    knowledgeType: 'faq',
+    knowledgeId: 'faq-human-service',
+    title: '如何联系人工客服？',
+    content: '在聊天窗口输入转人工即可提交人工客服请求。',
+  },
+  {
+    knowledgeType: 'document',
+    knowledgeId: 'document-shipping',
+    title: '偏远地区配送时效',
+    content: '偏远地区配送通常需要七到十个工作日。',
+  },
+  {
+    knowledgeType: 'document',
+    knowledgeId: 'document-account',
+    title: '企业账户成员上限',
+    content: '企业账户最多可以邀请五十名成员。',
+  },
+  {
+    knowledgeType: 'document',
+    knowledgeId: 'document-warranty',
+    title: 'Product warranty period',
+    content: 'The product warranty lasts for twelve months from the purchase date.',
+  },
+];
+
+export const QUALITY_BASELINE_CASES: BaselineCase[] = [
+  {
+    id: 'builtin-direct-refund',
+    query: '如何申请退款？',
+    expectedAnswerMode: 'direct_faq',
+    expectedGroundingStatus: 'sufficient',
+    expectedSources: [{ knowledgeType: 'faq', knowledgeId: 'faq-refund-apply' }],
+    language: 'zh',
+    tags: ['answerable', 'faq'],
+  },
+  {
+    id: 'builtin-direct-order-status',
+    query: '如何查询订单状态？',
+    expectedAnswerMode: 'direct_faq',
+    expectedGroundingStatus: 'sufficient',
+    expectedSources: [{ knowledgeType: 'faq', knowledgeId: 'faq-order-status' }],
+    language: 'zh',
+    tags: ['answerable', 'faq'],
+  },
+  {
+    id: 'builtin-direct-human',
+    query: '如何联系人工客服？',
+    expectedAnswerMode: 'direct_faq',
+    expectedGroundingStatus: 'sufficient',
+    expectedSources: [{ knowledgeType: 'faq', knowledgeId: 'faq-human-service' }],
+    language: 'zh',
+    tags: ['answerable', 'faq'],
+  },
+  {
+    id: 'builtin-document-shipping',
+    query: '偏远地区配送需要多久？',
+    expectedAnswerMode: 'grounded_generation',
+    expectedGroundingStatus: 'sufficient',
+    expectedSources: [{ knowledgeType: 'document', knowledgeId: 'document-shipping' }],
+    language: 'zh',
+    tags: ['answerable', 'document'],
+  },
+  {
+    id: 'builtin-document-warranty',
+    query: 'How long is the product warranty?',
+    expectedAnswerMode: 'grounded_generation',
+    expectedGroundingStatus: 'sufficient',
+    expectedSources: [{ knowledgeType: 'document', knowledgeId: 'document-warranty' }],
+    language: 'en',
+    tags: ['answerable', 'document'],
+  },
+  {
+    id: 'builtin-document-account',
+    query: '企业账户最多能邀请多少成员？',
+    expectedAnswerMode: 'grounded_generation',
+    expectedGroundingStatus: 'sufficient',
+    expectedSources: [{ knowledgeType: 'document', knowledgeId: 'document-account' }],
+    language: 'zh',
+    tags: ['answerable', 'document'],
+  },
+  {
+    id: 'builtin-insufficient-weather',
+    query: '今天天气怎么样？',
+    expectedAnswerMode: 'refusal',
+    expectedGroundingStatus: 'insufficient',
+    expectedSources: [],
+    language: 'zh',
+    tags: ['insufficient'],
+  },
+  {
+    id: 'builtin-insufficient-travel',
+    query: '帮我规划一次欧洲旅行',
+    expectedAnswerMode: 'refusal',
+    expectedGroundingStatus: 'insufficient',
+    expectedSources: [],
+    language: 'zh',
+    tags: ['insufficient'],
+  },
+  {
+    id: 'builtin-insufficient-code',
+    query: 'Write a sorting algorithm for me',
+    expectedAnswerMode: 'refusal',
+    expectedGroundingStatus: 'insufficient',
+    expectedSources: [],
+    language: 'en',
+    tags: ['insufficient'],
+  },
+  {
+    id: 'builtin-insufficient-empty-domain',
+    query: '介绍一款知识库里没有的新产品',
+    expectedAnswerMode: 'refusal',
+    expectedGroundingStatus: 'insufficient',
+    expectedSources: [],
+    language: 'zh',
+    tags: ['insufficient'],
+  },
+  {
+    id: 'builtin-high-risk-order',
+    query: '帮我查询订单 20260723001 的状态',
+    expectedAnswerMode: 'refusal',
+    expectedGroundingStatus: 'high_risk',
+    expectedSources: [],
+    language: 'zh',
+    tags: ['high-risk'],
+  },
+  {
+    id: 'builtin-high-risk-refund',
+    query: 'Please issue a refund for my order now',
+    expectedAnswerMode: 'refusal',
+    expectedGroundingStatus: 'high_risk',
+    expectedSources: [],
+    language: 'en',
+    tags: ['high-risk'],
+  },
+];

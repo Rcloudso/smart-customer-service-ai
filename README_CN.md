@@ -11,7 +11,7 @@
 
 **English version**: [README.md](README.md)
 
-当前版本：**v0.2.7（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能调整。
+当前版本：**v0.2.8（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -71,6 +71,7 @@ Smart Customer Service AI:
 - **索引状态管理** - 后台展示启用条目、已索引条目、缺失 embedding、向量维度、上次重建时间和索引错误。
 - **检索调试面板** - 后台可以查看命中条目、source、similarity、keywordScore、vectorScore 和排序原因。
 - **检索评测能力** - FAQ 和文档固定评测集输出排序指标、分数/来源分布、失败样例，以及 semantic-v1 与仅结构切片的对比。
+- **RAG 质量实验室** - 管理员可维护版本化评测集、比较确定性检索与 Grounding 策略、下钻失败样例，并通过门禁发布或回滚不可变运行策略。
 - **中英文词典** - 固定 UI 文案从可编辑的中英文词典读取，减少硬编码散落在组件里。
 - **暗/亮主题切换** - 用户端和后台都支持持久化主题偏好。
 - **开源工程化** - 提供 Docker、docker-compose、GitHub Actions CI、Playwright E2E 和中英文文档。
@@ -185,6 +186,8 @@ Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时�
 ```bash
 EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
+EMBED_PROVIDER=other npm run eval:mixed
+EMBED_PROVIDER=other npm run eval:quality
 ```
 
 评测包含 FAQ 的 Top1/Top3/无匹配指标，以及覆盖 TXT、Markdown、PDF、DOCX 的 12 条文档用例。文档评测会对比 `semantic-v1` 与仅结构切片基线，并要求 Top3 100%、MRR 不下降。
@@ -220,6 +223,8 @@ FAQ 评测报告包含：
 EMBED_PROVIDER=other npm test
 EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
+EMBED_PROVIDER=other npm run eval:mixed
+EMBED_PROVIDER=other npm run eval:quality
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
@@ -246,9 +251,9 @@ data/          本地 SQLite 数据库文件
 - 默认向量索引在进程内存中，全量遍历 FAQ 与文档切片 embedding，适合 Demo 和小规模知识库，不适合大规模检索。
 - embedding 以 JSON 形式存储在 SQLite 中，没有使用专门的向量数据库。
 - 文档解析同步运行在 Express 进程内；加密、损坏和扫描 PDF 会返回稳定失败码，尚不支持 OCR、图片知识、网页采集、引用跳转和页码跳转。
-- 文档仍属于单一全局知识库；v0.2.7 不包含多租户分库、后台任务、文档版本或外部向量存储。
+- 文档仍属于单一全局知识库；v0.2.8 不包含多租户分库、外部 Worker、文档版本或外部向量存储。
 - `VectorStore` 隔离了本地向量操作，但接入网络向量数据库仍需异步契约、健康检查和一致性测试。
-- 冲突检测刻意限制为“归一化后问题相同、答案不同”的直达 FAQ；初始 grounding 阈值将在 v0.2.8 校准。
+- 冲突检测刻意限制为“归一化后问题相同、答案不同”的直达 FAQ；Grounding 阈值通过版本化质量实验室治理，不会自动切换。
 - LLM 意图识别失败时会回退到关键词规则。
 - 幂等响应仅在单个部署范围内保留 24 小时；multipart 上传依赖各自工作流的重复检查，
   不使用通用响应重放。
@@ -260,7 +265,6 @@ data/          本地 SQLite 数据库文件
 
 有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
 
-- v0.2.8：版本化检索质量实验、阈值、失败样例和可选重排。
 - v0.2.9：生成结构化转人工交接包，并对优先级和客服队列进行校验与路由。
 - v0.3.0–v0.3.2：先实现订单/物流只读工具，再补人工协作，最后在确认和审计下处理退款申请等写操作。
 - 后续适配器：经过审核的网页采集、OCR/图片知识、基于同意的客户记忆，以及复用现有聊天、检索、工具和转人工链路的语音通道。

@@ -31,6 +31,13 @@ import type {
   DocumentItem,
   DocumentChunk,
   DocumentStatus,
+  PolicyGateResult,
+  QualityCase,
+  QualityDatasetVersion,
+  QualityRun,
+  RetrievalPolicy,
+  RetrievalPolicyEvent,
+  RetrievalPolicyConfig,
 } from '../types';
 
 // Re-export types
@@ -54,6 +61,13 @@ export type {
   DocumentItem,
   DocumentChunk,
   DocumentStatus,
+  PolicyGateResult,
+  QualityCase,
+  QualityDatasetVersion,
+  QualityRun,
+  RetrievalPolicy,
+  RetrievalPolicyEvent,
+  RetrievalPolicyConfig,
 };
 
 function idempotentRequest(): { idempotencyKey: string } {
@@ -295,4 +309,94 @@ export async function updateModelConfig(updates: Partial<ModelConfigDTO>, resetK
     { ...updates, resetKeys },
     idempotentRequest(),
   );
+}
+
+// ── RAG Quality Lab ───────────────────────────────
+
+export async function listQualityDatasets(): Promise<QualityDatasetVersion[]> {
+  return get<QualityDatasetVersion[]>('/admin/quality/datasets');
+}
+
+export async function createQualityDataset(data: {
+  name: string;
+  description?: string;
+}): Promise<QualityDatasetVersion> {
+  return post('/admin/quality/datasets', data, idempotentRequest());
+}
+
+export async function listQualityCases(versionId: string): Promise<QualityCase[]> {
+  return get(`/admin/quality/datasets/versions/${versionId}/cases`);
+}
+
+export async function saveQualityCase(
+  versionId: string,
+  data: Omit<QualityCase, 'id' | 'versionId' | 'createdAt'> & { id?: string },
+): Promise<QualityCase> {
+  return put(`/admin/quality/datasets/versions/${versionId}/cases`, data, idempotentRequest());
+}
+
+export async function importQualityCases(
+  versionId: string,
+  cases: Array<Omit<QualityCase, 'id' | 'versionId' | 'createdAt'>>,
+): Promise<QualityCase[]> {
+  return post(`/admin/quality/datasets/versions/${versionId}/import`, { cases }, idempotentRequest());
+}
+
+export async function publishQualityVersion(versionId: string): Promise<QualityDatasetVersion> {
+  return post(`/admin/quality/datasets/versions/${versionId}/publish`, {}, idempotentRequest());
+}
+
+export async function deriveQualityVersion(versionId: string): Promise<QualityDatasetVersion> {
+  return post(`/admin/quality/datasets/versions/${versionId}/derive`, {}, idempotentRequest());
+}
+
+export async function listQualityRuns(): Promise<PaginationResponse<QualityRun>> {
+  return get('/admin/quality/runs', { page: 1, pageSize: 50 });
+}
+
+export async function getQualityRun(runId: string): Promise<QualityRun> {
+  return get(`/admin/quality/runs/${runId}`);
+}
+
+export async function createQualityRun(data: {
+  datasetVersionIds: string[];
+  policies: RetrievalPolicyConfig[];
+}): Promise<QualityRun> {
+  return post('/admin/quality/runs', data, idempotentRequest());
+}
+
+export async function cancelQualityRun(runId: string): Promise<QualityRun> {
+  return post(`/admin/quality/runs/${runId}/cancel`, {}, idempotentRequest());
+}
+
+export async function getQualityPolicies(): Promise<{
+  current: RetrievalPolicy;
+  history: RetrievalPolicy[];
+  events: RetrievalPolicyEvent[];
+}> {
+  return get('/admin/quality/policies');
+}
+
+export async function checkQualityPromotion(
+  runId: string,
+  candidateKey: string,
+): Promise<PolicyGateResult> {
+  return get('/admin/quality/policies/promotion-check', { runId, candidateKey });
+}
+
+export async function activateQualityPolicy(data: {
+  runId: string;
+  candidateKey: string;
+  expectedCurrentPolicyId: string;
+  confirmed: true;
+}): Promise<RetrievalPolicy> {
+  return post('/admin/quality/policies/activate', data, idempotentRequest());
+}
+
+export async function rollbackQualityPolicy(data: {
+  targetPolicyId: string;
+  expectedCurrentPolicyId: string;
+  confirmed: true;
+}): Promise<RetrievalPolicy> {
+  return post('/admin/quality/policies/rollback', data, idempotentRequest());
 }

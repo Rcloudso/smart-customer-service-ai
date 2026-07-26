@@ -1508,4 +1508,47 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       dismissReason: '重复或无业务价值',
     });
   });
+
+  test('quality lab supports bilingual theme and mobile keyboard navigation', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.getByText('质量实验室').click();
+    await expect(page).toHaveURL(/\/admin\/quality-lab$/);
+    await expect(page.getByTestId('quality-lab-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'RAG 质量实验室' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '请选择' })).toHaveValue(/RAG Quality Baseline/);
+    await expect(page.getByText('质量实验室加载失败')).toHaveCount(0);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.getByText('登录成功').waitFor({ state: 'hidden' });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.2.8-quality-lab-desktop.png',
+        fullPage: true,
+      });
+    }
+
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: 'RAG Quality Lab' })).toBeVisible();
+    await expect(page.getByText('Experiment runs')).toBeVisible();
+    await page.getByText('Experiment runs').click();
+    await expect(page.getByText(/Current matrix: 18 candidates/)).toBeVisible();
+    await page.getByText('Runtime policy').click();
+    await expect(page.getByRole('heading', { name: 'Policy audit events' })).toBeVisible();
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.keyboard.press('Tab');
+    const focusedTag = await page.evaluate(() => document.activeElement?.tagName);
+    expect(focusedTag).not.toBe('BODY');
+    const overflow = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.2.8-quality-lab-mobile-dark.png',
+        fullPage: true,
+      });
+    }
+  });
 });

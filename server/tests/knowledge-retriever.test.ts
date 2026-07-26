@@ -156,6 +156,36 @@ async function testHybridKnowledgeSearchUsesOneQueryEmbedding(): Promise<void> {
   assert.ok(afterFaqRefresh.some((result) => result.knowledgeType === 'document'));
 }
 
+async function testQualityBatchUsesOneEmbeddingCall(): Promise<void> {
+  let embedCalls = 0;
+  let embeddedTexts = 0;
+  const faqResult: RetrievalResult = {
+    knowledgeType: 'faq',
+    knowledgeId: 'batch-faq',
+    title: '退款说明',
+    content: '七天内可以退款',
+    similarity: 0,
+  };
+  const retriever = new KnowledgeRetriever(
+    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    async (texts) => {
+      embedCalls += 1;
+      embeddedTexts += texts.length;
+      return texts.map(() => [1, 0]);
+    },
+    [new FakeAdapter(
+      'faq',
+      [{ id: 'faq:batch-faq', result: faqResult, embedding: [1, 0] }],
+      [],
+    )],
+  );
+  const results = await retriever.searchCandidatesBatch(['退款', '退货', '退款期限']);
+  assert.equal(embedCalls, 1);
+  assert.equal(embeddedTexts, 3);
+  assert.equal(results.length, 3);
+  assert.ok(results.every((items) => items.some((item) => item.knowledgeId === 'batch-faq')));
+}
+
 async function testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(): Promise<void> {
   const keywordDocument: RetrievalResult = {
     knowledgeType: 'document', knowledgeId: 'keyword-chunk', documentId: 'document-1',
@@ -654,6 +684,7 @@ async function testRefreshValidationAndApplyFailuresPreserveLastGoodIndex(): Pro
 
 Promise.all([
   testHybridKnowledgeSearchUsesOneQueryEmbedding(),
+  testQualityBatchUsesOneEmbeddingCall(),
   testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(),
   testExactFaqCannotBeDisplacedByDocumentCandidates(),
   testMixedSearchKeepsRelevantDocumentCandidate(),

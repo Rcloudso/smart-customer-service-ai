@@ -32,8 +32,8 @@ export class MessageRepo {
       `INSERT INTO messages (
         id, session_id, role, content, intent, intent_conf, satisfaction, escalated,
         reply_to_message_id, retrieval_snapshot, answer_mode, grounding_status,
-        grounding_reason, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        grounding_reason, retrieval_policy_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.findBySessionStmt = db.prepare(
       'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC',
@@ -91,6 +91,7 @@ export class MessageRepo {
     answerMode?: AnswerMode | null;
     groundingStatus?: GroundingStatus | null;
     groundingReason?: string | null;
+    retrievalPolicyId?: string | null;
   }): Message {
     const now = new Date().toISOString();
     const message: Message = {
@@ -107,6 +108,7 @@ export class MessageRepo {
       answerMode: params.answerMode ?? null,
       groundingStatus: params.groundingStatus ?? null,
       groundingReason: params.groundingReason ?? null,
+      retrievalPolicyId: params.retrievalPolicyId ?? null,
       createdAt: now,
     };
 
@@ -115,7 +117,8 @@ export class MessageRepo {
       message.intent, message.intentConf, message.satisfaction,
       message.escalated, message.replyToMessageId,
       JSON.stringify(message.retrievalSnapshot), message.answerMode,
-      message.groundingStatus, message.groundingReason, message.createdAt,
+      message.groundingStatus, message.groundingReason,
+      message.retrievalPolicyId, message.createdAt,
     );
     return message;
   }
@@ -217,6 +220,7 @@ export class MessageRepo {
       answerMode: row.answer_mode as AnswerMode | null,
       groundingStatus: row.grounding_status as GroundingStatus | null,
       groundingReason: row.grounding_reason as string | null,
+      retrievalPolicyId: row.retrieval_policy_id as string | null,
       createdAt: row.created_at as string,
     };
   }

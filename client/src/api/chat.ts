@@ -60,6 +60,7 @@ export interface SSECallbacks {
     answerMode?: AnswerMode;
     groundingStatus?: GroundingStatus;
     groundingReason?: string;
+    retrievalPolicyId?: string;
   }) => void;
   onError?: (message: string) => void;
 }
@@ -192,6 +193,7 @@ export async function sendMessage(
               answerMode?: AnswerMode;
               groundingStatus?: GroundingStatus;
               groundingReason?: string;
+              retrievalPolicyId?: string;
             };
             resultSessionId = doneData.sessionId;
             resultMessageId = doneData.messageId;
