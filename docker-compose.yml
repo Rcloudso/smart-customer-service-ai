@@ -22,5 +22,4 @@ services:
 
 volumes:
   resolve-weave-data:
-    # Preserve the default volume created before the ResolveWeave rename.
-    name: ${RESOLVE_WEAVE_DATA_VOLUME:-smart-customer-service_smart-customer-service-data}
+    name: ${RESOLVE_WEAVE_DATA_VOLUME:-resolve-weave-data}

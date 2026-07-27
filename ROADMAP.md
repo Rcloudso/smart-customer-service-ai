@@ -14,6 +14,7 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.2.7 | Released | Grounding, Citations & Refusal | 在生成前确定 FAQ 直答、基于证据生成或拒答，持久化来源，并将冲突与高风险业务请求转人工。 |
 | v0.2.8 | Released | RAG Quality Lab | 用版本化评测集比较检索与 Grounding 策略，并通过质量门禁安全发布和回滚。 |
 | v0.2.9 | Current | Structured Escalation & Triage | 以结构化交接包、确定性优先级和只读双语分流页承接转人工流程。 |
+| v0.3.0 | Implemented; verification pending | Structure-Aware Ingestion Foundation | 统一结构表示、质量门禁、结构切片、处理时间线和显式影子重处理已在功能分支完成；公开发布前仍需完整门禁。 |
 
 v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、转人工记录、满意度、知识审核、会话分析、双语后台、
@@ -24,7 +25,6 @@ v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规�
 
 | Version | Theme | Intended outcome |
 | --- | --- | --- |
-| v0.3.0 | Structure-Aware Ingestion Foundation | 建立统一文档中间表示、脏文档质量门禁、结构化清洗与按内容类型切片，首版只承诺通用检索。 |
 | v0.3.1 | OCR, Tables & Image Knowledge | 支持扫描件、截图、表格和图片内容；OCR 与视觉理解分路处理并保留质量与来源。 |
 | v0.3.2 | Qdrant & Retrieval Observability | 将 Qdrant 作为可选生产向量后端，保留本地回退，并提供迁移、混合检索、检索预算和全链路 Trace。 |
 | v0.3.3 | Bounded Agentic Retrieval | LLM 在预算内选择、组合和重试检索工具；确定性 Grounding Gate 决定引用、拒答、转人工和答案放行。 |

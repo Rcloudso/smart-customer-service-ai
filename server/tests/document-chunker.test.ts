@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { semanticChunk } from '../ai/document-chunker';
+import {
+  DOCUMENT_CHUNKER_VERSION,
+  semanticChunk,
+  semanticChunkPlan,
+} from '../ai/document-chunker';
 
 async function testSemanticBreaksAndBatchEmbedding(): Promise<void> {
   const calls: string[][] = [];
@@ -40,7 +44,82 @@ async function testLongUnitsSplitBeforeEmbedding(): Promise<void> {
   assert.ok(calls[0].every((text) => text.length <= 1_200), 'provider inputs must respect the hard chunk limit');
 }
 
-Promise.all([testSemanticBreaksAndBatchEmbedding(), testLongUnitsSplitBeforeEmbedding()])
+async function testStructureBoundariesAndProvenanceSurviveChunking(): Promise<void> {
+  const plans = await semanticChunkPlan([
+    {
+      content: 'Refund policy details apply to every online order.',
+      title: 'Refunds',
+      headingPath: ['Policies', 'Refunds'],
+      sourceBlockIds: ['block-000001', 'block-000002'],
+      blockKind: 'paragraph',
+    },
+    {
+      content: '- Provide an order number\n- Keep the original receipt',
+      title: 'Refunds',
+      headingPath: ['Policies', 'Refunds'],
+      sourceBlockIds: ['block-000001', 'block-000003'],
+      blockKind: 'list',
+      structuralItems: ['- Provide an order number', '- Keep the original receipt'],
+      structuralHeader: null,
+    },
+    {
+      content: 'Method | Days\nCard | 7\nWallet | 2',
+      title: 'Refunds',
+      headingPath: ['Policies', 'Refunds'],
+      sourceBlockIds: ['block-000001', 'block-000004'],
+      blockKind: 'table',
+      structuralHeader: 'Method | Days',
+      structuralItems: ['Card | 7', 'Wallet | 2'],
+    },
+  ], async (texts) => texts.map(() => [1, 0]), 'policy.docx', {
+    representationVersion: 'document-ir-v1',
+    chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+  });
+
+  assert.equal(plans.length, 3, 'paragraph, list and table must retain structure boundaries');
+  assert.equal(plans[1].content, '- Provide an order number\n- Keep the original receipt');
+  assert.equal(plans[2].content, 'Method | Days\nCard | 7\nWallet | 2');
+  assert.deepEqual(plans[2].sourceBlockIds, ['block-000001', 'block-000004']);
+  assert.deepEqual(plans[2].headingPath, ['Policies', 'Refunds']);
+  assert.equal(plans[2].representationVersion, 'document-ir-v1');
+  assert.equal(plans[2].chunkerVersion, DOCUMENT_CHUNKER_VERSION);
+}
+
+async function testCharacterBoundariesKeepExactProvenance(): Promise<void> {
+  const plans = await semanticChunkPlan([
+    {
+      content: 'A'.repeat(800),
+      title: 'First',
+      pageStart: 1,
+      pageEnd: 1,
+      sourceBlockIds: ['block-000001'],
+      blockKind: 'paragraph',
+    },
+    {
+      content: 'B'.repeat(800),
+      title: 'Second',
+      pageStart: 2,
+      pageEnd: 2,
+      sourceBlockIds: ['block-000002'],
+      blockKind: 'paragraph',
+    },
+  ], async (texts) => texts.map(() => [1, 0]));
+
+  assert.equal(plans.length, 2);
+  assert.deepEqual(plans[0].sourceBlockIds, ['block-000001']);
+  assert.deepEqual(plans[1].sourceBlockIds, ['block-000002']);
+  assert.deepEqual(
+    plans.map((plan) => [plan.pageStart, plan.pageEnd]),
+    [[1, 1], [2, 2]],
+  );
+}
+
+Promise.all([
+  testSemanticBreaksAndBatchEmbedding(),
+  testLongUnitsSplitBeforeEmbedding(),
+  testStructureBoundariesAndProvenanceSurviveChunking(),
+  testCharacterBoundariesKeepExactProvenance(),
+])
   .then(() => console.log('document chunker tests passed'))
   .catch((error) => {
     console.error(error);

@@ -1292,6 +1292,10 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       await row.getByTestId('document-view').click();
       await expect(page.getByTestId('document-detail')).toBeVisible();
       await expect(page.getByTestId('document-detail')).toContainText('三个工作日');
+      await expect(page.getByTestId('document-quality-decision')).toContainText('质量通过');
+      await expect(page.getByTestId('document-processing-timeline')).toContainText('质量门禁');
+      await expect(page.getByTestId('document-processing-timeline')).toContainText('发布');
+      await expect(page.getByTestId('document-block-preview').filter({ hasText: '银杏计划' })).toBeVisible();
       await expect.poll(() => page.getByTestId('document-chunk-preview-text').first().evaluate((element) => (
         element.scrollWidth > element.clientWidth
       ))).toBe(true);
@@ -1318,6 +1322,8 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(page.getByTestId('documents-page')).toBeVisible();
       await row.getByTestId('document-view').click();
+      await expect(page.getByTestId('document-quality-decision')).toContainText('Quality passed');
+      await expect(page.getByTestId('document-processing-timeline')).toContainText('Quality gate');
       await page.getByTestId('document-chunk-view').first().click();
       await expect(page.getByText('Chunk source text', { exact: true })).toBeVisible();
       await expect(page.getByTestId('document-chunk-content')).toContainText('请联系人工客服处理');
@@ -1511,6 +1517,46 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
         body: JSON.stringify({
           code: 0,
           data: { items: [], total: 0, page: 1, pageSize: 10 },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/documents/failed-document/blocks?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 10, representationVersion: null },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route('**/api/admin/documents/failed-document', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            id: 'failed-document',
+            fileName: 'embedding-failure.txt',
+            format: 'txt',
+            mimeType: 'text/plain',
+            sizeBytes: 1024,
+            status: 'failed',
+            isActive: 1,
+            parserVersion: 'text-v1',
+            chunkerVersion: 'semantic-v1',
+            failureCode: 'embedding_failed',
+            characterCount: 0,
+            chunkCount: 0,
+            uploadedBy: 'admin-1',
+            createdAt: '2026-07-15T10:00:00.000Z',
+            updatedAt: '2026-07-15T10:00:00.000Z',
+            processingSummary: null,
+            representationSummary: null,
+          },
           message: 'ok',
         }),
       });

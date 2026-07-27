@@ -277,8 +277,8 @@ function testOpenSourceReadinessArtifactsExist(): void {
   assert.match(composeSource, /resolve-weave-data:\/app\/data/, 'Docker Compose should expose a branded logical data volume');
   assert.match(
     composeSource,
-    /resolve-weave-data:\s*\n\s+#.*\n\s+name: \$\{RESOLVE_WEAVE_DATA_VOLUME:-smart-customer-service_smart-customer-service-data\}/,
-    'Docker Compose should keep the legacy physical volume name for existing local data',
+    /resolve-weave-data:\s*\n\s+name: \$\{RESOLVE_WEAVE_DATA_VOLUME:-resolve-weave-data\}/,
+    'Docker Compose should use a branded physical volume unless an existing volume is supplied',
   );
   assert.match(
     dockerfileSource,

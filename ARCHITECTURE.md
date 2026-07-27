@@ -95,15 +95,35 @@ fields are optional in the final `done` event.
 ## Knowledge Ingestion And Consistency
 
 FAQ writes and document ingestion update both durable rows and the process
-index through application services. Document uploads validate file type,
-content, size, and counts before they become retrievable. Parsed documents are
-split into chunks; embeddings include title and section metadata and carry a
-profile derived from the active provider, model, endpoint, and input schema.
+index through application services. Document uploads run synchronously through
+the fixed, versioned pipeline:
+
+```text
+validate → parse → normalize → clean → quality_gate → chunk → embed → publish
+```
+
+TXT, Markdown, text-layer PDF, and DOCX adapters produce `DocumentIR v1`
+instead of writing chunks directly. Ordered Blocks preserve structure and
+provenance; deterministic cleaning and a separate quality decision prevent
+review-required or rejected content from entering retrieval. Structured
+representations, safe Block payloads, processing tasks, and per-stage counts
+are stored additively in SQLite. The original uploaded file remains source
+truth and its binary content is not duplicated in the representation tables.
+
+Chunks retain source Block ids, heading path, page range, representation
+version, and chunker version. Embeddings include title and section metadata and
+carry a profile derived from the active provider, model, endpoint, and input
+schema, while user-visible excerpts preserve source text.
 
 When an embedding profile changes, replacement vectors are generated before an
 atomic database update and index swap. A failed rebuild leaves the previous
-usable vectors in place. Delete and enable/disable workflows keep SQLite and
-the corresponding index namespace aligned.
+usable vectors in place. Explicit reprocessing of a published legacy document
+uses a shadow representation/chunk build and replaces live chunks only after
+all pre-publication stages succeed. A publication failure restores the previous
+database state and rebuilds the in-memory index; if convergence cannot be
+confirmed, the document is disabled with an index-failure state. Delete and
+enable/disable workflows keep SQLite and the corresponding index namespace
+aligned.
 
 ## Trust And Security Boundaries
 
@@ -164,13 +184,17 @@ switch today.
 
 - One deployment-wide knowledge base; no tenant isolation or fine-grained RBAC.
 - Document parsing and embedding remain inside the API request process.
-- Scanned PDFs, OCR, image knowledge, web ingestion, and document versioning are
-  not implemented.
+- Scan-only PDFs and image-only DOCX files are identified but not interpreted;
+  OCR, VLM extraction, web ingestion, and source-file version history are not
+  implemented.
+- Processing is synchronous with explicit retry/reprocess only. Durable
+  background recovery, schedules, and manual review approval remain future
+  work.
 - Conflict detection is intentionally narrow: it detects duplicate normalized
   direct-FAQ questions with different answers, not arbitrary contradictions
   across prose documents.
-- Grounding thresholds are initial deterministic safeguards. v0.2.8 will
-  version and evaluate them against mixed-source failure cases.
+- Grounding thresholds remain deterministic safeguards governed by the
+  versioned Quality Lab.
 - Escalation records exist, but real-time agent assignment and response are not
   yet implemented.
 - Idempotency is deployment-local and does not coordinate independent API

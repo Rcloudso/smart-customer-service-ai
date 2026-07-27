@@ -72,10 +72,35 @@ router.get('/:id/chunks', (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+router.get('/:id/blocks', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const documentId = parseDocumentId(req.params.id);
+    const parsed = chunkListSchema.safeParse(req.query);
+    if (!parsed.success) throw validationFrom(parsed.error);
+    const result = documentService.listBlocks(documentId, parsed.data);
+    res.json({
+      code: 0,
+      data: { ...result, ...parsed.data },
+      message: 'ok',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/:id/retry', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const document = await documentService.retry(parseDocumentId(req.params.id));
     res.json({ code: 0, data: document, message: 'Document retry completed' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id/reprocess', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const document = await documentService.reprocess(parseDocumentId(req.params.id));
+    res.json({ code: 0, data: document, message: 'Document reprocessing completed' });
   } catch (error) {
     next(error);
   }

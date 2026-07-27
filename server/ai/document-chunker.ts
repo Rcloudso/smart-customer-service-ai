@@ -3,6 +3,11 @@ export interface SemanticUnit {
   title?: string | null;
   pageStart?: number | null;
   pageEnd?: number | null;
+  sourceBlockIds?: string[];
+  headingPath?: string[];
+  blockKind?: string;
+  structuralHeader?: string | null;
+  structuralItems?: string[];
 }
 
 export interface SemanticChunk {
@@ -13,7 +18,15 @@ export interface SemanticChunk {
   pageEnd: number | null;
   characterCount: number;
   embedding: number[];
+  sourceBlockIds?: string[];
+  headingPath?: string[];
+  representationVersion?: string | null;
+  chunkerVersion?: string | null;
 }
+
+export type SemanticChunkPlan = Omit<SemanticChunk, 'embedding'>;
+
+export const DOCUMENT_CHUNKER_VERSION = 'structure-aware-v1';
 
 const MAX_UNITS = 2_000;
 const MAX_CHUNKS = 300;
@@ -32,6 +45,30 @@ export async function semanticChunk(
   embedTexts: (texts: string[]) => Promise<number[][]>,
   documentTitle: string = '',
 ): Promise<SemanticChunk[]> {
+  const plans = await semanticChunkPlan(inputUnits, embedTexts, documentTitle);
+  const chunkEmbeddings = await embedTexts(plans.map((chunk) => (
+    buildDocumentEmbeddingText({
+      documentTitle,
+      sectionTitle: chunk.title,
+      content: chunk.content,
+    })
+  )));
+  assertEmbeddingBatch(chunkEmbeddings, plans.length);
+  return plans.map((chunk, index) => ({
+    ...chunk,
+    embedding: chunkEmbeddings[index],
+  }));
+}
+
+export async function semanticChunkPlan(
+  inputUnits: SemanticUnit[],
+  embedTexts: (texts: string[]) => Promise<number[][]>,
+  _documentTitle: string = '',
+  metadata: {
+    representationVersion?: string | null;
+    chunkerVersion?: string | null;
+  } = {},
+): Promise<SemanticChunkPlan[]> {
   const units = inputUnits
     .map((unit) => ({ ...unit, content: normalizeText(unit.content) }))
     .filter((unit) => unit.content.length > 0)
@@ -48,34 +85,46 @@ export async function semanticChunk(
   const groups = formNaturalGroups(units, dissimilarities, threshold);
   mergeShortGroups(groups, dissimilarities);
 
-  const chunksWithoutEmbeddings = groups.flatMap((group) => {
-    const content = group.units.map((unit) => unit.content).join('\n\n');
-    const parts = hardSplit(content);
-    const first = group.units[0];
-    const last = group.units[group.units.length - 1];
-    return parts.map((part) => ({
-      content: part,
-      title: first.title ?? null,
-      pageStart: first.pageStart ?? null,
-      pageEnd: last.pageEnd ?? last.pageStart ?? null,
-    }));
+  const chunksWithoutEmbeddings: SemanticChunkPlan[] = groups.flatMap((group) => {
+    return splitGroupUnits(group.units).map((partUnits) => {
+      const content = partUnits.map((unit) => unit.content).join('\n\n');
+      const first = partUnits[0];
+      const last = partUnits[partUnits.length - 1];
+      return {
+        chunkIndex: 0,
+        content,
+        title: first.title ?? null,
+        pageStart: first.pageStart ?? null,
+        pageEnd: last.pageEnd ?? last.pageStart ?? null,
+        characterCount: content.length,
+        sourceBlockIds: [...new Set(partUnits.flatMap((unit) => unit.sourceBlockIds ?? []))],
+        headingPath: first.headingPath ?? [],
+        representationVersion: metadata.representationVersion ?? null,
+        chunkerVersion: metadata.chunkerVersion ?? 'semantic-v1',
+      };
+    });
   });
   if (chunksWithoutEmbeddings.length > MAX_CHUNKS) throw new ChunkingError('too_many_chunks');
+  return chunksWithoutEmbeddings.map((chunk, index) => ({ ...chunk, chunkIndex: index }));
+}
 
-  const chunkEmbeddings = await embedTexts(chunksWithoutEmbeddings.map((chunk) => (
-    buildDocumentEmbeddingText({
-      documentTitle,
-      sectionTitle: chunk.title,
-      content: chunk.content,
-    })
-  )));
-  assertEmbeddingBatch(chunkEmbeddings, chunksWithoutEmbeddings.length);
-  return chunksWithoutEmbeddings.map((chunk, index) => ({
-    chunkIndex: index,
-    ...chunk,
-    characterCount: chunk.content.length,
-    embedding: chunkEmbeddings[index],
-  }));
+function splitGroupUnits(units: SemanticUnit[]): SemanticUnit[][] {
+  const groups: SemanticUnit[][] = [];
+  let current: SemanticUnit[] = [];
+  let currentLength = 0;
+  for (const unit of units) {
+    const separatorLength = current.length > 0 ? 2 : 0;
+    if (current.length > 0
+      && currentLength + separatorLength + unit.content.length > MAX_CHUNK_CHARACTERS) {
+      groups.push(current);
+      current = [];
+      currentLength = 0;
+    }
+    current.push(unit);
+    currentLength += (current.length > 1 ? 2 : 0) + unit.content.length;
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
 }
 
 function formNaturalGroups(
@@ -86,7 +135,15 @@ function formNaturalGroups(
   const groups: Group[] = [];
   let start = 0;
   for (let index = 0; index < units.length - 1; index += 1) {
-    if (dissimilarities[index] >= threshold && dissimilarities[index] > 0) {
+    const current = units[index];
+    const next = units[index + 1];
+    const forcedBoundary = isStructuralUnit(current)
+      || isStructuralUnit(next)
+      || next.blockKind === 'heading';
+    const keepHeadingWithChild = current.blockKind === 'heading';
+    if (forcedBoundary || (!keepHeadingWithChild
+      && dissimilarities[index] >= threshold
+      && dissimilarities[index] > 0)) {
       groups.push({ units: units.slice(start, index + 1), start, end: index });
       start = index + 1;
     }
@@ -99,6 +156,10 @@ function mergeShortGroups(groups: Group[], dissimilarities: number[]): void {
   let index = 0;
   while (groups.length > 1 && index < groups.length) {
     const group = groups[index];
+    if (group.units.some(isStructuralUnit)) {
+      index += 1;
+      continue;
+    }
     const length = group.units.map((unit) => unit.content).join('\n\n').length;
     if (length >= MIN_NATURAL_CHUNK) {
       index += 1;
@@ -111,6 +172,10 @@ function mergeShortGroups(groups: Group[], dissimilarities: number[]): void {
     const nextDistance = next ? dissimilarities[group.end] : Number.POSITIVE_INFINITY;
     const targetIndex = previousDistance <= nextDistance ? index - 1 : index + 1;
     const target = groups[targetIndex];
+    if (!target || target.units.some(isStructuralUnit)) {
+      index += 1;
+      continue;
+    }
     const combinedUnits = targetIndex < index
       ? [...target.units, ...group.units]
       : [...group.units, ...target.units];
@@ -158,6 +223,7 @@ function hardSplit(text: string): string[] {
 
 function splitLongUnit(unit: SemanticUnit): SemanticUnit[] {
   if (unit.content.length <= MAX_CHUNK_CHARACTERS) return [unit];
+  if (isStructuralUnit(unit)) return splitStructuralUnit(unit);
   const sentences = unit.content.match(/[^。！？.!?]+[。！？.!?]?/g) ?? [unit.content];
   const parts: string[] = [];
   let current = '';
@@ -177,6 +243,39 @@ function splitLongUnit(unit: SemanticUnit): SemanticUnit[] {
   }
   if (current.trim()) parts.push(current.trim());
   return parts.map((content) => ({ ...unit, content }));
+}
+
+function splitStructuralUnit(unit: SemanticUnit): SemanticUnit[] {
+  const items = unit.structuralItems ?? [];
+  const header = unit.structuralHeader?.trim() ?? '';
+  if (items.length === 0) throw new ChunkingError('structural_unit_too_large');
+  if (items.some((item) => item.length + (header ? header.length + 1 : 0) > MAX_CHUNK_CHARACTERS)) {
+    throw new ChunkingError('structural_unit_too_large');
+  }
+  const parts: string[] = [];
+  let current = header;
+  for (const item of items) {
+    const candidate = current ? `${current}\n${item}` : item;
+    if (candidate.length > MAX_CHUNK_CHARACTERS && current !== header) {
+      parts.push(current);
+      current = header ? `${header}\n${item}` : item;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current && current !== header) parts.push(current);
+  return parts.map((content) => ({
+    ...unit,
+    content,
+    structuralItems: undefined,
+    structuralHeader: undefined,
+  }));
+}
+
+function isStructuralUnit(unit: SemanticUnit): boolean {
+  return unit.blockKind === 'list'
+    || unit.blockKind === 'table'
+    || unit.blockKind === 'key_value';
 }
 
 function normalizeText(text: string): string {

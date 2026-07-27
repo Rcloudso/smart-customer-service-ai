@@ -99,6 +99,15 @@ export function initSchema(database: Database.Database): void {
       failure_code TEXT,
       character_count INTEGER NOT NULL DEFAULT 0,
       chunk_count INTEGER NOT NULL DEFAULT 0,
+      source_version INTEGER NOT NULL DEFAULT 1,
+      representation_version TEXT,
+      cleaner_version TEXT,
+      quality_decision TEXT CHECK(quality_decision IN ('ready', 'review_required', 'rejected')),
+      quality_reasons TEXT NOT NULL DEFAULT '[]',
+      latest_task_id TEXT,
+      latest_representation_id TEXT,
+      index_status TEXT NOT NULL DEFAULT 'legacy'
+        CHECK(index_status IN ('legacy', 'not_indexed', 'published', 'failed')),
       uploaded_by TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -119,11 +128,96 @@ export function initSchema(database: Database.Database): void {
       character_count INTEGER NOT NULL,
       embedding TEXT NOT NULL,
       embedding_profile TEXT,
+      source_block_ids TEXT NOT NULL DEFAULT '[]',
+      heading_path TEXT NOT NULL DEFAULT '[]',
+      representation_version TEXT,
+      chunker_version TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(document_id, chunk_index)
     );
 
     CREATE INDEX IF NOT EXISTS idx_document_chunks_document ON document_chunks(document_id, chunk_index);
+
+    CREATE TABLE IF NOT EXISTS document_processing_tasks (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      source_version INTEGER NOT NULL,
+      retry_of TEXT,
+      status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed')),
+      representation_version TEXT,
+      parser_version TEXT,
+      cleaner_version TEXT,
+      chunker_version TEXT,
+      quality_decision TEXT CHECK(quality_decision IN ('ready', 'review_required', 'rejected')),
+      quality_reasons TEXT NOT NULL DEFAULT '[]',
+      failure_code TEXT,
+      index_status TEXT NOT NULL DEFAULT 'not_indexed'
+        CHECK(index_status IN ('legacy', 'not_indexed', 'published', 'failed')),
+      input_bytes INTEGER NOT NULL DEFAULT 0,
+      output_characters INTEGER NOT NULL DEFAULT 0,
+      block_count INTEGER NOT NULL DEFAULT 0,
+      chunk_count INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_processing_tasks_document
+      ON document_processing_tasks(document_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_document_processing_tasks_status
+      ON document_processing_tasks(status, started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_processing_stages (
+      task_id TEXT NOT NULL REFERENCES document_processing_tasks(id) ON DELETE CASCADE,
+      stage_name TEXT NOT NULL CHECK(stage_name IN (
+        'validate', 'parse', 'normalize', 'clean', 'quality_gate', 'chunk', 'embed', 'publish'
+      )),
+      stage_order INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed')),
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      input_count INTEGER,
+      output_count INTEGER,
+      error_code TEXT,
+      PRIMARY KEY(task_id, stage_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_processing_stages_task
+      ON document_processing_stages(task_id, stage_order);
+
+    CREATE TABLE IF NOT EXISTS document_representations (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL UNIQUE REFERENCES document_processing_tasks(id) ON DELETE CASCADE,
+      schema_version TEXT NOT NULL,
+      parser_name TEXT NOT NULL,
+      parser_version TEXT NOT NULL,
+      cleaner_version TEXT NOT NULL,
+      source TEXT NOT NULL,
+      warnings TEXT NOT NULL DEFAULT '[]',
+      metrics TEXT NOT NULL DEFAULT '{}',
+      block_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_representations_document
+      ON document_representations(document_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_representation_blocks (
+      representation_id TEXT NOT NULL REFERENCES document_representations(id) ON DELETE CASCADE,
+      block_id TEXT NOT NULL,
+      block_order INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      page_number INTEGER,
+      heading_path TEXT NOT NULL DEFAULT '[]',
+      excluded INTEGER NOT NULL DEFAULT 0 CHECK(excluded IN (0, 1)),
+      exclusion_reason TEXT,
+      payload TEXT NOT NULL,
+      PRIMARY KEY(representation_id, block_id),
+      UNIQUE(representation_id, block_order)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_representation_blocks_page
+      ON document_representation_blocks(representation_id, page_number, block_order);
 
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -387,6 +481,19 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
+  ensureColumn(database, 'documents', 'source_version', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(database, 'documents', 'representation_version', 'TEXT');
+  ensureColumn(database, 'documents', 'cleaner_version', 'TEXT');
+  ensureColumn(database, 'documents', 'quality_decision', 'TEXT');
+  ensureColumn(database, 'documents', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'documents', 'latest_task_id', 'TEXT');
+  ensureColumn(database, 'documents', 'latest_representation_id', 'TEXT');
+  ensureColumn(database, 'documents', 'index_status', "TEXT NOT NULL DEFAULT 'legacy'");
+  ensureColumn(database, 'document_chunks', 'source_block_ids', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'document_chunks', 'heading_path', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'document_chunks', 'representation_version', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'chunker_version', 'TEXT');
+  ensureColumn(database, 'document_processing_tasks', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
 
   // v0.2.9 migration: preserve historical free-text escalations without

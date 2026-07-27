@@ -52,7 +52,7 @@ async function main(): Promise<void> {
 
     assert.equal((await fetch(`${base}/api/admin/documents`)).status, 401);
     const form = new FormData();
-    form.append('file', new Blob(['退款政策\n\n签收后七天内可以申请退款。'], { type: 'text/plain' }), 'refund-policy.txt');
+    form.append('file', new Blob(['退款政策\n\n签收后七天内可以申请退款，并提供订单号。'], { type: 'text/plain' }), 'refund-policy.txt');
     const upload = await fetch(`${base}/api/admin/documents`, { method: 'POST', headers: auth, body: form });
     assert.equal(upload.status, 201);
     const uploadBody = await upload.json() as { data: Record<string, unknown> };
@@ -66,9 +66,74 @@ async function main(): Promise<void> {
     };
     assert.match(chunks.data.items[0].content as string, /七天内/);
     assert.equal('embedding' in chunks.data.items[0], false);
+    assert.deepEqual(chunks.data.items[0].sourceBlockIds, ['block-000001', 'block-000002']);
+
+    const detail = await (await fetch(`${base}/api/admin/documents/${documentId}`, { headers: auth })).json() as {
+      data: {
+        representationSummary: { schemaVersion: string; blockCount: number };
+        processingSummary: { status: string; stages: Array<{ name: string; status: string }> };
+      };
+    };
+    assert.equal(detail.data.representationSummary.schemaVersion, 'document-ir-v1');
+    assert.equal(detail.data.representationSummary.blockCount, 2);
+    assert.equal(detail.data.processingSummary.status, 'succeeded');
+    assert.equal(detail.data.processingSummary.stages.at(-1)?.name, 'publish');
+
+    const blocks = await (await fetch(
+      `${base}/api/admin/documents/${documentId}/blocks?page=1&pageSize=1`,
+      { headers: auth },
+    )).json() as {
+      data: { items: Array<Record<string, unknown>>; total: number; representationVersion: string };
+    };
+    assert.equal(blocks.data.total, 2);
+    assert.equal(blocks.data.items.length, 1);
+    assert.equal(blocks.data.items[0].kind, 'paragraph');
+    assert.equal(blocks.data.representationVersion, 'document-ir-v1');
+    assert.equal('embedding' in blocks.data.items[0], false);
+
+    const reprocess = await fetch(`${base}/api/admin/documents/${documentId}/reprocess`, {
+      method: 'POST',
+      headers: { ...auth, 'Idempotency-Key': 'document-reprocess-current-v1' },
+    });
+    assert.equal(reprocess.status, 200);
+    const reprocessBody = await reprocess.json() as { data: { id: string; status: string } };
+    assert.equal(reprocessBody.data.id, documentId);
+    assert.equal(reprocessBody.data.status, 'ready');
+
+    const shortForm = new FormData();
+    shortForm.append('file', new Blob(['Too short'], { type: 'text/plain' }), 'short.txt');
+    const shortUpload = await fetch(`${base}/api/admin/documents`, {
+      method: 'POST',
+      headers: auth,
+      body: shortForm,
+    });
+    assert.equal(shortUpload.status, 201);
+    const shortBody = await shortUpload.json() as {
+      data: {
+        id: string;
+        status: string;
+        qualityDecision: string;
+        qualityReasons: string[];
+        failureCode: string;
+        indexStatus: string;
+      };
+    };
+    assert.equal(shortBody.data.status, 'failed');
+    assert.equal(shortBody.data.qualityDecision, 'review_required');
+    assert.deepEqual(shortBody.data.qualityReasons, ['near_empty_content']);
+    assert.equal(shortBody.data.failureCode, 'quality_review_required');
+    assert.equal(shortBody.data.indexStatus, 'not_indexed');
+    assert.equal((await fetch(`${base}/api/admin/documents/${shortBody.data.id}/retry`, {
+      method: 'POST',
+      headers: { ...auth, 'Idempotency-Key': 'document-short-retry-v1' },
+    })).status, 200);
+    assert.equal((await fetch(`${base}/api/admin/documents/${shortBody.data.id}`, {
+      method: 'DELETE',
+      headers: auth,
+    })).status, 200);
 
     const duplicateForm = new FormData();
-    duplicateForm.append('file', new Blob(['退款政策\n\n签收后七天内可以申请退款。'], { type: 'text/plain' }), 'copy.txt');
+    duplicateForm.append('file', new Blob(['退款政策\n\n签收后七天内可以申请退款，并提供订单号。'], { type: 'text/plain' }), 'copy.txt');
     assert.equal((await fetch(`${base}/api/admin/documents`, { method: 'POST', headers: auth, body: duplicateForm })).status, 409);
 
     const invalidUpdate = await fetch(`${base}/api/admin/documents/${documentId}`, {

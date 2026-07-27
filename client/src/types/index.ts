@@ -113,6 +113,19 @@ export interface KnowledgeRetrievalSnapshot {
 
 export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
 export type DocumentStatus = 'pending' | 'ready' | 'failed';
+export type DocumentQualityDecision = 'ready' | 'review_required' | 'rejected';
+export type DocumentIndexStatus = 'legacy' | 'not_indexed' | 'published' | 'failed';
+export type DocumentProcessingStatus = 'running' | 'succeeded' | 'failed';
+export type DocumentProcessingStageStatus = 'running' | 'succeeded' | 'failed';
+export type DocumentProcessingStageName =
+  | 'validate'
+  | 'parse'
+  | 'normalize'
+  | 'clean'
+  | 'quality_gate'
+  | 'chunk'
+  | 'embed'
+  | 'publish';
 
 export interface DocumentItem {
   id: string;
@@ -127,6 +140,14 @@ export interface DocumentItem {
   failureCode: string | null;
   characterCount: number;
   chunkCount: number;
+  sourceVersion?: number;
+  representationVersion?: string | null;
+  cleanerVersion?: string | null;
+  qualityDecision?: DocumentQualityDecision | null;
+  qualityReasons?: string[];
+  latestTaskId?: string | null;
+  latestRepresentationId?: string | null;
+  indexStatus?: DocumentIndexStatus;
   uploadedBy: string;
   createdAt: string;
   updatedAt: string;
@@ -141,7 +162,86 @@ export interface DocumentChunk {
   pageStart: number | null;
   pageEnd: number | null;
   characterCount: number;
+  sourceBlockIds?: string[];
+  headingPath?: string[];
+  representationVersion?: string | null;
+  chunkerVersion?: string | null;
   createdAt: string;
+}
+
+export interface DocumentProcessingStage {
+  name: DocumentProcessingStageName;
+  order: number;
+  status: DocumentProcessingStageStatus;
+  startedAt: string;
+  completedAt: string | null;
+  inputCount: number | null;
+  outputCount: number | null;
+  errorCode: string | null;
+}
+
+export interface DocumentProcessingSummary {
+  taskId: string;
+  status: DocumentProcessingStatus;
+  retryOf: string | null;
+  representationVersion: string | null;
+  parserVersion: string | null;
+  cleanerVersion: string | null;
+  chunkerVersion: string | null;
+  qualityDecision: DocumentQualityDecision | null;
+  qualityReasons: string[];
+  failureCode: string | null;
+  indexStatus: DocumentIndexStatus;
+  startedAt: string;
+  completedAt: string | null;
+  inputBytes: number;
+  outputCharacters: number;
+  blockCount: number;
+  chunkCount: number;
+  stages: DocumentProcessingStage[];
+}
+
+export interface DocumentRepresentationSummary {
+  id: string;
+  schemaVersion: string;
+  parserName: string;
+  parserVersion: string;
+  cleanerVersion: string;
+  blockCount: number;
+  warningCodes: string[];
+  metrics: Record<string, number>;
+  createdAt: string;
+}
+
+export interface DocumentDetail extends DocumentItem {
+  processingSummary: DocumentProcessingSummary | null;
+  representationSummary: DocumentRepresentationSummary | null;
+}
+
+export type DocumentBlockKind =
+  | 'text'
+  | 'heading'
+  | 'paragraph'
+  | 'list'
+  | 'table'
+  | 'key_value'
+  | 'image_ref';
+
+export interface DocumentBlock {
+  id: string;
+  order: number;
+  kind: DocumentBlockKind;
+  pageNumber: number | null;
+  headingPath: string[];
+  confidence: number | null;
+  excluded: boolean;
+  exclusionReason: string | null;
+  text?: string;
+  items?: Array<{ ordinal: number; text: string }>;
+  cells?: Array<{ rowIndex: number; columnIndex: number; text: string; isHeader: boolean }>;
+  pairs?: Array<{ key: string; value: string }>;
+  altText?: string | null;
+  relationshipId?: string | null;
 }
 
 export interface KnowledgeReviewItem {
