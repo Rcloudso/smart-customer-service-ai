@@ -219,6 +219,72 @@ export function initSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_document_representation_blocks_page
       ON document_representation_blocks(representation_id, page_number, block_order);
 
+    CREATE TABLE IF NOT EXISTS document_extraction_jobs (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      source_version INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('authoritative', 'shadow')),
+      engine TEXT NOT NULL CHECK(engine IN (
+        'paddleocr_ppstructurev3', 'deepseek_ocr2'
+      )),
+      engine_version TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN (
+        'queued', 'running', 'succeeded', 'failed'
+      )),
+      retry_of TEXT REFERENCES document_extraction_jobs(id),
+      result_json TEXT,
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      CHECK(
+        (role = 'authoritative' AND engine = 'paddleocr_ppstructurev3')
+        OR (role = 'shadow' AND engine = 'deepseek_ocr2')
+      )
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_extraction_jobs_document
+      ON document_extraction_jobs(document_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_document_extraction_jobs_status
+      ON document_extraction_jobs(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS document_review_drafts (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      source_job_id TEXT NOT NULL UNIQUE
+        REFERENCES document_extraction_jobs(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'published', 'superseded')),
+      created_by TEXT NOT NULL,
+      updated_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      published_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_review_drafts_document
+      ON document_review_drafts(document_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_document_review_drafts_status
+      ON document_review_drafts(status, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_review_blocks (
+      draft_id TEXT NOT NULL
+        REFERENCES document_review_drafts(id) ON DELETE CASCADE,
+      block_id TEXT NOT NULL,
+      block_order INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      manually_edited INTEGER NOT NULL DEFAULT 0
+        CHECK(manually_edited IN (0, 1)),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(draft_id, block_id),
+      UNIQUE(draft_id, block_order)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_review_blocks_order
+      ON document_review_blocks(draft_id, block_order);
+
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
       username TEXT NOT NULL UNIQUE,

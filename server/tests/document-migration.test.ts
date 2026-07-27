@@ -90,10 +90,13 @@ try {
         'document_processing_tasks',
         'document_processing_stages',
         'document_representations',
-        'document_representation_blocks'
+        'document_representation_blocks',
+        'document_extraction_jobs',
+        'document_review_drafts',
+        'document_review_blocks'
       )
     `).get() as { total: number }).total,
-    4,
+    7,
   );
   db.close();
   console.log('document migration tests passed');

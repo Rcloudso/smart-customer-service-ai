@@ -1,0 +1,402 @@
+import Database from 'better-sqlite3';
+import { v4 as uuidv4 } from 'uuid';
+import { DocumentBlock, documentBlockSchema } from '../../ai/document-ir';
+import {
+  OcrEngineName,
+  OcrExtractionResult,
+  validateOcrDraftBlocks,
+  validateOcrExtractionResult,
+} from '../../ai/ocr-contract';
+
+export type OcrExtractionRole = 'authoritative' | 'shadow';
+export type OcrExtractionJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type DocumentReviewDraftStatus = 'open' | 'published' | 'superseded';
+
+export interface OcrExtractionJob {
+  id: string;
+  documentId: string;
+  sourceVersion: number;
+  role: OcrExtractionRole;
+  engine: OcrEngineName;
+  engineVersion: string;
+  status: OcrExtractionJobStatus;
+  retryOf: string | null;
+  result: OcrExtractionResult | null;
+  errorCode: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export type DocumentReviewBlock = DocumentBlock & {
+  manuallyEdited: boolean;
+};
+
+export interface DocumentReviewDraft {
+  id: string;
+  documentId: string;
+  sourceJobId: string;
+  revision: number;
+  status: DocumentReviewDraftStatus;
+  blocks: DocumentReviewBlock[];
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
+export class DocumentReviewRepo {
+  constructor(private readonly db: Database.Database) {}
+
+  createExtractionJob(params: {
+    documentId: string;
+    sourceVersion: number;
+    role: OcrExtractionRole;
+    engine: OcrEngineName;
+    engineVersion: string;
+    retryOf?: string | null;
+  }): OcrExtractionJob {
+    assertEngineRole(params.role, params.engine);
+    if (
+      !Number.isInteger(params.sourceVersion)
+      || params.sourceVersion < 1
+      || !params.engineVersion.trim()
+      || params.engineVersion.length > 80
+    ) {
+      throw new Error('Extraction job metadata is invalid');
+    }
+    if (params.retryOf) {
+      const retryOf = this.requireExtractionJob(params.retryOf);
+      if (
+        retryOf.documentId !== params.documentId
+        || retryOf.role !== params.role
+        || retryOf.engine !== params.engine
+        || !['failed', 'succeeded'].includes(retryOf.status)
+      ) {
+        throw new DocumentReviewConflictError('Extraction retry target is incompatible');
+      }
+    }
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO document_extraction_jobs (
+        id, document_id, source_version, role, engine, engine_version, status,
+        retry_of, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+    `).run(
+      id,
+      params.documentId,
+      params.sourceVersion,
+      params.role,
+      params.engine,
+      params.engineVersion.trim(),
+      params.retryOf ?? null,
+      now,
+    );
+    return this.requireExtractionJob(id);
+  }
+
+  startExtractionJob(id: string): OcrExtractionJob {
+    const result = this.db.prepare(`
+      UPDATE document_extraction_jobs
+      SET status = 'running', started_at = ?, completed_at = NULL,
+          result_json = NULL, error_code = NULL
+      WHERE id = ? AND status = 'queued'
+    `).run(new Date().toISOString(), id);
+    if (result.changes !== 1) {
+      throw new DocumentReviewConflictError('Extraction job is not queued');
+    }
+    return this.requireExtractionJob(id);
+  }
+
+  completeExtractionJob(id: string, input: unknown): OcrExtractionJob {
+    const job = this.requireExtractionJob(id);
+    const result = validateOcrExtractionResult(input);
+    if (
+      job.status !== 'running'
+      || result.engine.name !== job.engine
+      || result.engine.version !== job.engineVersion
+    ) {
+      throw new DocumentReviewConflictError('Extraction result does not match the running job');
+    }
+    const updated = this.db.prepare(`
+      UPDATE document_extraction_jobs
+      SET status = 'succeeded', result_json = ?, error_code = NULL,
+          completed_at = ?
+      WHERE id = ? AND status = 'running'
+    `).run(JSON.stringify(result), new Date().toISOString(), id);
+    if (updated.changes !== 1) {
+      throw new DocumentReviewConflictError('Extraction job is not running');
+    }
+    return this.requireExtractionJob(id);
+  }
+
+  failExtractionJob(id: string, errorCode: string): OcrExtractionJob {
+    if (!/^[a-z][a-z0-9_]{0,119}$/.test(errorCode)) {
+      throw new Error('Invalid extraction error code');
+    }
+    const updated = this.db.prepare(`
+      UPDATE document_extraction_jobs
+      SET status = 'failed', result_json = NULL, error_code = ?,
+          completed_at = ?
+      WHERE id = ? AND status IN ('queued', 'running')
+    `).run(errorCode, new Date().toISOString(), id);
+    if (updated.changes !== 1) {
+      throw new DocumentReviewConflictError('Extraction job is already complete');
+    }
+    return this.requireExtractionJob(id);
+  }
+
+  getExtractionJob(id: string): OcrExtractionJob | null {
+    const row = this.db.prepare(`
+      SELECT * FROM document_extraction_jobs WHERE id = ?
+    `).get(id) as Record<string, unknown> | undefined;
+    return row ? mapExtractionJob(row) : null;
+  }
+
+  createDraftFromAuthoritativeJob(jobId: string, createdBy: string): DocumentReviewDraft {
+    if (!createdBy.trim() || createdBy.length > 120) {
+      throw new Error('Review author is invalid');
+    }
+    const create = this.db.transaction(() => {
+      const job = this.requireExtractionJob(jobId);
+      if (job.role !== 'authoritative') {
+        throw new DocumentReviewConflictError('Only authoritative extraction can create a review draft');
+      }
+      if (job.status !== 'succeeded' || !job.result) {
+        throw new DocumentReviewConflictError('Authoritative extraction is not complete');
+      }
+      const existing = this.db.prepare(`
+        SELECT id FROM document_review_drafts WHERE source_job_id = ?
+      `).get(jobId) as { id: string } | undefined;
+      if (existing) return existing.id;
+
+      const id = uuidv4();
+      const now = new Date().toISOString();
+      this.db.prepare(`
+        INSERT INTO document_review_drafts (
+          id, document_id, source_job_id, revision, status, created_by,
+          updated_by, created_at, updated_at
+        ) VALUES (?, ?, ?, 1, 'open', ?, ?, ?, ?)
+      `).run(id, job.documentId, job.id, createdBy.trim(), createdBy.trim(), now, now);
+      insertDraftBlocks(this.db, id, job.result.blocks, new Set(), now);
+      return id;
+    });
+    return this.requireDraft(create());
+  }
+
+  getDraft(id: string): DocumentReviewDraft | null {
+    const row = this.db.prepare(`
+      SELECT * FROM document_review_drafts WHERE id = ?
+    `).get(id) as Record<string, unknown> | undefined;
+    return row ? this.mapDraft(row) : null;
+  }
+
+  replaceDraftBlocks(
+    id: string,
+    expectedRevision: number,
+    input: unknown,
+    updatedBy: string,
+  ): DocumentReviewDraft {
+    const blocks = validateOcrDraftBlocks(input);
+    if (!updatedBy.trim() || updatedBy.length > 120) {
+      throw new Error('Review author is invalid');
+    }
+    const replace = this.db.transaction(() => {
+      const draft = this.requireDraft(id);
+      if (draft.status !== 'open' || draft.revision !== expectedRevision) {
+        throw new DocumentReviewConflictError('Review draft revision is stale');
+      }
+      if (
+        blocks.length !== draft.blocks.length
+        || blocks.some((block, index) => (
+          block.id !== draft.blocks[index].id
+          || block.order !== draft.blocks[index].order
+          || block.kind !== draft.blocks[index].kind
+        ))
+      ) {
+        throw new DocumentReviewConflictError('Review draft block identity cannot change');
+      }
+      const previous = new Map(draft.blocks.map((block) => [
+        block.id,
+        {
+          payload: JSON.stringify(stripReviewMetadata(block)),
+          manuallyEdited: block.manuallyEdited,
+        },
+      ]));
+      const editedIds = new Set(blocks.flatMap((block) => {
+        const prior = previous.get(block.id);
+        return !prior || prior.manuallyEdited || prior.payload !== JSON.stringify(block)
+          ? [block.id]
+          : [];
+      }));
+      const now = new Date().toISOString();
+      this.db.prepare('DELETE FROM document_review_blocks WHERE draft_id = ?').run(id);
+      insertDraftBlocks(this.db, id, blocks, editedIds, now);
+      const updated = this.db.prepare(`
+        UPDATE document_review_drafts
+        SET revision = revision + 1, updated_by = ?, updated_at = ?
+        WHERE id = ? AND status = 'open' AND revision = ?
+      `).run(updatedBy.trim(), now, id, expectedRevision);
+      if (updated.changes !== 1) {
+        throw new DocumentReviewConflictError('Review draft revision is stale');
+      }
+    });
+    replace();
+    return this.requireDraft(id);
+  }
+
+  publishDraft(
+    id: string,
+    expectedRevision: number,
+    applyPublication: (blocks: DocumentBlock[]) => void,
+  ): DocumentReviewDraft {
+    const publish = this.db.transaction(() => {
+      const draft = this.requireDraft(id);
+      if (draft.status !== 'open' || draft.revision !== expectedRevision) {
+        throw new DocumentReviewConflictError('Review draft revision is stale');
+      }
+      const blocks = validateOcrDraftBlocks(
+        draft.blocks.map((block) => stripReviewMetadata(block)),
+      );
+      applyPublication(blocks);
+      const now = new Date().toISOString();
+      this.db.prepare(`
+        UPDATE document_review_drafts
+        SET status = 'superseded', updated_at = ?
+        WHERE document_id = ? AND status = 'open' AND id <> ?
+      `).run(now, draft.documentId, id);
+      const updated = this.db.prepare(`
+        UPDATE document_review_drafts
+        SET status = 'published', updated_at = ?, published_at = ?
+        WHERE id = ? AND status = 'open' AND revision = ?
+      `).run(now, now, id, expectedRevision);
+      if (updated.changes !== 1) {
+        throw new DocumentReviewConflictError('Review draft revision is stale');
+      }
+    });
+    publish();
+    return this.requireDraft(id);
+  }
+
+  private requireExtractionJob(id: string): OcrExtractionJob {
+    const job = this.getExtractionJob(id);
+    if (!job) throw new Error('Extraction job not found');
+    return job;
+  }
+
+  private requireDraft(id: string): DocumentReviewDraft {
+    const draft = this.getDraft(id);
+    if (!draft) throw new Error('Review draft not found');
+    return draft;
+  }
+
+  private mapDraft(row: Record<string, unknown>): DocumentReviewDraft {
+    const blockRows = this.db.prepare(`
+      SELECT * FROM document_review_blocks
+      WHERE draft_id = ? ORDER BY block_order
+    `).all(row.id) as Record<string, unknown>[];
+    const blocks = validateOcrDraftBlocks(blockRows.map((blockRow) => (
+      parseDraftBlock(blockRow.payload)
+    )));
+    if (blocks.some((block, index) => (
+      block.id !== blockRows[index].block_id
+      || block.order !== blockRows[index].block_order
+      || block.kind !== blockRows[index].kind
+    ))) {
+      throw new Error('Review draft block metadata is inconsistent');
+    }
+    return {
+      id: row.id as string,
+      documentId: row.document_id as string,
+      sourceJobId: row.source_job_id as string,
+      revision: row.revision as number,
+      status: row.status as DocumentReviewDraftStatus,
+      blocks: blocks.map((block, index) => ({
+        ...block,
+        manuallyEdited: Boolean(blockRows[index].manually_edited),
+      })) as DocumentReviewBlock[],
+      createdBy: row.created_by as string,
+      updatedBy: row.updated_by as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      publishedAt: row.published_at as string | null,
+    };
+  }
+}
+
+function assertEngineRole(role: OcrExtractionRole, engine: OcrEngineName): void {
+  if (
+    (role === 'authoritative' && engine !== 'paddleocr_ppstructurev3')
+    || (role === 'shadow' && engine !== 'deepseek_ocr2')
+  ) {
+    throw new Error('OCR engine is not allowed for this extraction role');
+  }
+}
+
+function mapExtractionJob(row: Record<string, unknown>): OcrExtractionJob {
+  let result: OcrExtractionResult | null = null;
+  if (typeof row.result_json === 'string') {
+    try {
+      result = validateOcrExtractionResult(JSON.parse(row.result_json));
+    } catch {
+      result = null;
+    }
+  }
+  return {
+    id: row.id as string,
+    documentId: row.document_id as string,
+    sourceVersion: row.source_version as number,
+    role: row.role as OcrExtractionRole,
+    engine: row.engine as OcrEngineName,
+    engineVersion: row.engine_version as string,
+    status: row.status as OcrExtractionJobStatus,
+    retryOf: row.retry_of as string | null,
+    result,
+    errorCode: row.error_code as string | null,
+    createdAt: row.created_at as string,
+    startedAt: row.started_at as string | null,
+    completedAt: row.completed_at as string | null,
+  };
+}
+
+function insertDraftBlocks(
+  db: Database.Database,
+  draftId: string,
+  blocks: DocumentBlock[],
+  editedIds: Set<string>,
+  now: string,
+): void {
+  const insert = db.prepare(`
+    INSERT INTO document_review_blocks (
+      draft_id, block_id, block_order, kind, payload, manually_edited, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const block of blocks) {
+    insert.run(
+      draftId,
+      block.id,
+      block.order,
+      block.kind,
+      JSON.stringify(block),
+      Number(editedIds.has(block.id)),
+      now,
+    );
+  }
+}
+
+function parseDraftBlock(value: unknown): DocumentBlock {
+  try {
+    return documentBlockSchema.parse(JSON.parse(value as string));
+  } catch {
+    throw new Error('Review draft block is invalid');
+  }
+}
+
+function stripReviewMetadata(block: DocumentReviewBlock): DocumentBlock {
+  const { manuallyEdited: _manuallyEdited, ...payload } = block;
+  return payload;
+}
+
+export class DocumentReviewConflictError extends Error {}
