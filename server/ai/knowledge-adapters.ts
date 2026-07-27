@@ -1,6 +1,6 @@
 import { DocumentRepo } from '../db/repos/document.repo';
 import { FaqRepo } from '../db/repos/faq.repo';
-import { FaqEntry } from '../types/domain';
+import { DocumentChunk, FaqEntry } from '../types/domain';
 import { RetrievalResult } from '../types/ai';
 import { getLLMClient } from './llm-client';
 import {
@@ -197,21 +197,9 @@ export class DocumentKnowledgeAdapter implements KnowledgeAdapter {
       });
     }
     if (updates.length > 0) this.repo.updateKnowledgeChunkEmbeddings(updates);
-    const items = this.repo.listAllActiveKnowledgeChunks().map((chunk): KnowledgeIndexItem => ({
-      id: `document:${chunk.id}`,
-      result: {
-        knowledgeType: 'document',
-        knowledgeId: chunk.id,
-        documentId: chunk.documentId,
-        title: chunk.documentTitle,
-        content: chunk.content,
-        similarity: 0,
-        chunkIndex: chunk.chunkIndex,
-        pageStart: chunk.pageStart ?? undefined,
-        pageEnd: chunk.pageEnd ?? undefined,
-      },
-      embedding: chunk.embedding,
-    }));
+    const items = this.repo.listAllActiveKnowledgeChunks().map((chunk) => (
+      this.toIndexItem(chunk, chunk.documentTitle)
+    ));
     return {
       items,
       rollbackPersisted: updates.length > 0
@@ -221,6 +209,27 @@ export class DocumentKnowledgeAdapter implements KnowledgeAdapter {
             embeddingProfile: chunk.embeddingProfile,
           })))
         : undefined,
+    };
+  }
+
+  toIndexItem(
+    chunk: DocumentChunk,
+    documentTitle: string,
+  ): KnowledgeIndexItem {
+    return {
+      id: `document:${chunk.id}`,
+      result: {
+        knowledgeType: 'document',
+        knowledgeId: chunk.id,
+        documentId: chunk.documentId,
+        title: documentTitle,
+        content: chunk.content,
+        similarity: 0,
+        chunkIndex: chunk.chunkIndex,
+        pageStart: chunk.pageStart ?? undefined,
+        pageEnd: chunk.pageEnd ?? undefined,
+      },
+      embedding: chunk.embedding,
     };
   }
 

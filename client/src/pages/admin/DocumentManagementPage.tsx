@@ -18,17 +18,31 @@ import {
   CloseIcon,
   DeleteIcon,
   FilterClearIcon,
+  RefreshIcon,
   SearchIcon,
   UploadIcon,
 } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
-import type { DocumentChunk, DocumentItem, DocumentStatus } from '../../api/admin';
+import type {
+  DocumentBlock,
+  DocumentChunk,
+  DocumentDetail,
+  DocumentItem,
+  DocumentQualityDecision,
+  DocumentStatus,
+} from '../../api/admin';
 import { useTranslation } from '../../hooks/usePreferences';
 
 const STATUS_THEMES: Record<DocumentStatus, 'default' | 'success' | 'danger'> = {
   pending: 'default',
   ready: 'success',
   failed: 'danger',
+};
+
+const QUALITY_THEMES: Record<DocumentQualityDecision, 'success' | 'warning' | 'danger'> = {
+  ready: 'success',
+  review_required: 'warning',
+  rejected: 'danger',
 };
 
 export function DocumentManagementPage(): React.ReactElement {
@@ -46,15 +60,22 @@ export function DocumentManagementPage(): React.ReactElement {
   const [appliedStatus, setAppliedStatus] = useState<DocumentStatus | ''>('');
   const [appliedActiveFilter, setAppliedActiveFilter] = useState<'' | 'true' | 'false'>('');
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
-  const [selected, setSelected] = useState<DocumentItem | null>(null);
+  const [selected, setSelected] = useState<DocumentDetail | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<DocumentChunk | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
   const [chunkPage, setChunkPage] = useState(1);
   const [chunkPageSize, setChunkPageSize] = useState(10);
   const [chunkTotal, setChunkTotal] = useState(0);
+  const [blocks, setBlocks] = useState<DocumentBlock[]>([]);
+  const [blocksLoading, setBlocksLoading] = useState(false);
+  const [blockPage, setBlockPage] = useState(1);
+  const [blockPageSize, setBlockPageSize] = useState(10);
+  const [blockTotal, setBlockTotal] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const detailRequestIdRef = useRef(0);
   const uploadingRef = useRef(false);
   const busyIdRef = useRef<string | null>(null);
 
@@ -92,25 +113,72 @@ export function DocumentManagementPage(): React.ReactElement {
     }
   }, [appliedStatus, appliedActiveFilter, appliedKeyword, page, pageSize, language]);
 
-  const fetchChunks = useCallback(async (documentId: string, targetPage: number, targetPageSize: number) => {
+  const fetchChunks = useCallback(async (
+    documentId: string,
+    targetPage: number,
+    targetPageSize: number,
+    requestId = detailRequestIdRef.current,
+  ) => {
     setChunksLoading(true);
     try {
       const result = await adminApi.listDocumentChunks(documentId, targetPage, targetPageSize);
+      if (requestId !== detailRequestIdRef.current) return;
       setChunks(result.items ?? []);
       setChunkTotal(result.total ?? 0);
     } catch {
+      if (requestId !== detailRequestIdRef.current) return;
       MessagePlugin.error(t('documents.chunksLoadFailed'));
     } finally {
-      setChunksLoading(false);
+      if (requestId === detailRequestIdRef.current) setChunksLoading(false);
+    }
+  }, [language]);
+
+  const fetchBlocks = useCallback(async (
+    documentId: string,
+    targetPage: number,
+    targetPageSize: number,
+    requestId = detailRequestIdRef.current,
+  ) => {
+    setBlocksLoading(true);
+    try {
+      const result = await adminApi.listDocumentBlocks(documentId, targetPage, targetPageSize);
+      if (requestId !== detailRequestIdRef.current) return;
+      setBlocks(result.items ?? []);
+      setBlockTotal(result.total ?? 0);
+    } catch {
+      if (requestId !== detailRequestIdRef.current) return;
+      MessagePlugin.error(t('documents.blocksLoadFailed'));
+    } finally {
+      if (requestId === detailRequestIdRef.current) setBlocksLoading(false);
     }
   }, [language]);
 
   useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
 
   const openDetails = async (document: DocumentItem) => {
-    setSelected(document);
+    const detailRequestId = ++detailRequestIdRef.current;
+    setSelected({ ...document, processingSummary: null, representationSummary: null });
+    setSelectedChunk(null);
+    setDetailsLoading(true);
+    setChunksLoading(true);
+    setBlocksLoading(true);
     setChunkPage(1);
-    await fetchChunks(document.id, 1, chunkPageSize);
+    setBlockPage(1);
+    try {
+      const [detail] = await Promise.all([
+        adminApi.getDocument(document.id),
+        fetchChunks(document.id, 1, chunkPageSize, detailRequestId),
+        fetchBlocks(document.id, 1, blockPageSize, detailRequestId),
+      ]);
+      if (detailRequestId !== detailRequestIdRef.current) return;
+      setSelected(detail);
+    } catch {
+      if (detailRequestId !== detailRequestIdRef.current) return;
+      MessagePlugin.error(t('documents.detailLoadFailed'));
+      setSelected(null);
+    } finally {
+      if (detailRequestId === detailRequestIdRef.current) setDetailsLoading(false);
+    }
   };
 
   const handleUpload = async (file: File) => {
@@ -174,6 +242,25 @@ export function DocumentManagementPage(): React.ReactElement {
     }
   };
 
+  const handleReprocess = async (document: DocumentItem) => {
+    if (busyIdRef.current) return;
+    busyIdRef.current = document.id;
+    setBusyId(document.id);
+    try {
+      const result = await adminApi.reprocessDocument(document.id);
+      MessagePlugin[result.status === 'ready' ? 'success' : 'warning'](
+        result.status === 'ready' ? t('documents.reprocessSucceeded') : t('documents.reprocessFailed'),
+      );
+      await fetchDocuments();
+      if (selected?.id === document.id) await openDetails(result);
+    } catch {
+      MessagePlugin.error(t('documents.reprocessFailed'));
+    } finally {
+      busyIdRef.current = null;
+      setBusyId(null);
+    }
+  };
+
   const handleToggle = async (document: DocumentItem, isActive: boolean) => {
     if (busyIdRef.current) return;
     busyIdRef.current = document.id;
@@ -227,6 +314,11 @@ export function DocumentManagementPage(): React.ReactElement {
           <Tag theme={STATUS_THEMES[row.status]} variant="light">
             {t(`documents.status.${row.status}`)}
           </Tag>
+          {row.qualityDecision && (
+            <Tag theme={QUALITY_THEMES[row.qualityDecision]} variant="light">
+              {t(`documents.quality.${row.qualityDecision}`)}
+            </Tag>
+          )}
           {row.failureCode && (
             <span>{t(`documents.failure.${row.failureCode}`)}</span>
           )}
@@ -261,6 +353,11 @@ export function DocumentManagementPage(): React.ReactElement {
               {t('documents.retry')}
             </Button>
           )}
+          {row.status === 'ready' && row.representationVersion !== 'document-ir-v1' && (
+            <Button variant="text" theme="primary" size="small" className="app-table-action-button" loading={busyId === row.id} onClick={() => handleReprocess(row)} data-testid="document-reprocess">
+              {t('documents.reprocess')}
+            </Button>
+          )}
           <Popconfirm content={t('documents.deleteConfirm')} onConfirm={() => handleDelete(row)}>
             <Button variant="text" theme="danger" size="small" className="app-table-action-button" icon={<DeleteIcon />} loading={busyId === row.id} aria-label={t('common.delete')} />
           </Popconfirm>
@@ -283,8 +380,47 @@ export function DocumentManagementPage(): React.ReactElement {
         </div>
       ),
     },
-    { colKey: 'pages', title: t('documents.pages'), width: 100, cell: ({ row }: { row: DocumentChunk }) => formatPages(row) },
+    {
+      colKey: 'headingPath', title: t('documents.headingPath'), width: 160, ellipsis: true,
+      cell: ({ row }: { row: DocumentChunk }) => row.headingPath?.join(' / ') || row.title || '—',
+    },
+    { colKey: 'pages', title: t('documents.pages'), width: 90, cell: ({ row }: { row: DocumentChunk }) => formatPages(row) },
     { colKey: 'characterCount', title: t('documents.characters'), width: 90 },
+  ];
+
+  const blockColumns = [
+    { colKey: 'order', title: t('documents.blockOrder'), width: 72 },
+    {
+      colKey: 'kind', title: t('documents.blockType'), width: 110,
+      cell: ({ row }: { row: DocumentBlock }) => <Tag variant="light">{t(`documents.blockType.${row.kind}`)}</Tag>,
+    },
+    {
+      colKey: 'headingPath', title: t('documents.headingPath'), width: 160, ellipsis: true,
+      cell: ({ row }: { row: DocumentBlock }) => row.headingPath.join(' / ') || '—',
+    },
+    {
+      colKey: 'pageNumber', title: t('documents.pages'), width: 72,
+      cell: ({ row }: { row: DocumentBlock }) => row.pageNumber ?? '—',
+    },
+    {
+      colKey: 'content', title: t('documents.blockContent'),
+      cell: ({ row }: { row: DocumentBlock }) => (
+        <span className="app-document-block-preview" data-testid="document-block-preview">
+          {formatBlockPreview(row)}
+        </span>
+      ),
+    },
+    {
+      colKey: 'excluded', title: t('documents.blockState'), width: 120,
+      cell: ({ row }: { row: DocumentBlock }) => (
+        <div className="app-document-status">
+          <Tag theme={row.excluded ? 'warning' : 'success'} variant="light">
+            {t(row.excluded ? 'documents.blockExcluded' : 'documents.blockIncluded')}
+          </Tag>
+          {row.exclusionReason && <span>{t(`documents.warning.${row.exclusionReason}`)}</span>}
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -345,18 +481,62 @@ export function DocumentManagementPage(): React.ReactElement {
         header={t('documents.detailTitle')}
         closeBtn={<Button data-testid="document-detail-close" variant="text" shape="square" aria-label={t('common.close')} icon={<CloseIcon />} />}
         footer={false}
-        width="min(840px, calc(100vw - 32px))"
-        onClose={() => { setSelected(null); setSelectedChunk(null); }}
+        width="min(1040px, calc(100vw - 32px))"
+        onClose={() => {
+          detailRequestIdRef.current += 1;
+          setSelected(null);
+          setSelectedChunk(null);
+          setBlocks([]);
+          setChunks([]);
+          setDetailsLoading(false);
+          setBlocksLoading(false);
+          setChunksLoading(false);
+        }}
       >
         {selected && (
-          <div className="app-document-detail" data-testid="document-detail">
+          <div className="app-document-detail" data-testid="document-detail" aria-busy={detailsLoading}>
             <div className="app-document-meta">
               <span><strong>{t('documents.fileName')}</strong>{selected.fileName}</span>
               <span><strong>{t('documents.format')}</strong>{selected.format.toUpperCase()}</span>
               <span><strong>{t('documents.size')}</strong>{formatBytes(selected.sizeBytes)}</span>
-              <span><strong>{t('common.status')}</strong>{t(`documents.status.${selected.status}`)}</span>
+              <span>
+                <strong>{t('common.status')}</strong>
+                <Tag theme={STATUS_THEMES[selected.status]} variant="light">
+                  {t(`documents.status.${selected.status}`)}
+                </Tag>
+              </span>
+              <span>
+                <strong>{t('documents.qualityDecision')}</strong>
+                {selected.qualityDecision
+                  ? (
+                    <Tag theme={QUALITY_THEMES[selected.qualityDecision]} variant="light" data-testid="document-quality-decision">
+                      {t(`documents.quality.${selected.qualityDecision}`)}
+                    </Tag>
+                  )
+                  : '—'}
+              </span>
+              <span>
+                <strong>{t('documents.indexStatus')}</strong>
+                {selected.indexStatus ? t(`documents.index.${selected.indexStatus}`) : '—'}
+              </span>
               <span><strong>{t('documents.characters')}</strong>{selected.characterCount}</span>
               <span><strong>{t('documents.chunkCount')}</strong>{selected.chunkCount}</span>
+              <span><strong>{t('documents.representationVersion')}</strong>{selected.representationVersion ?? '—'}</span>
+              <span><strong>{t('documents.parserVersion')}</strong>{selected.parserVersion || '—'}</span>
+              <span><strong>{t('documents.cleanerVersion')}</strong>{selected.cleanerVersion ?? '—'}</span>
+              <span><strong>{t('documents.chunkerVersion')}</strong>{selected.chunkerVersion || '—'}</span>
+              {selected.qualityReasons && selected.qualityReasons.length > 0 && (
+                <div className="app-document-quality-reasons" role="status">
+                  <strong>{t('documents.qualityReasons')}</strong>
+                  <div>
+                    {selected.qualityReasons.map((reason) => (
+                      <Tag key={reason} theme="warning" variant="light">
+                        {t(`documents.qualityReason.${reason}`)}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              )}
               {selected.failureCode && (
                 <div className="app-document-failure" role="status">
                   <strong>{t('documents.failureCode')}</strong>
@@ -377,6 +557,130 @@ export function DocumentManagementPage(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            {selected.status === 'ready' && selected.representationVersion !== 'document-ir-v1' && (
+              <div className="app-document-upgrade" role="status">
+                <div>
+                  <strong>{t('documents.legacyTitle')}</strong>
+                  <span>{t('documents.legacyDescription')}</span>
+                </div>
+                <Button
+                  theme="primary"
+                  variant="outline"
+                  icon={<RefreshIcon />}
+                  loading={busyId === selected.id}
+                  onClick={() => handleReprocess(selected)}
+                  data-testid="document-detail-reprocess"
+                >
+                  {t('documents.reprocess')}
+                </Button>
+              </div>
+            )}
+
+            <section className="app-document-section" aria-labelledby="document-structure-title">
+              <div className="app-document-section__header">
+                <div>
+                  <h3 id="document-structure-title">{t('documents.structureTitle')}</h3>
+                  <p>{t('documents.structureDescription')}</p>
+                </div>
+              </div>
+              {selected.representationSummary ? (
+                <>
+                  <div className="app-document-stats">
+                    <span><strong>{selected.representationSummary.blockCount}</strong>{t('documents.blocks')}</span>
+                    <span><strong>{selected.representationSummary.metrics.includedBlockCount ?? 0}</strong>{t('documents.includedBlocks')}</span>
+                    <span><strong>{selected.representationSummary.metrics.excludedBlockCount ?? 0}</strong>{t('documents.excludedBlocks')}</span>
+                    <span><strong>{selected.representationSummary.metrics.pageCount ?? 0}</strong>{t('documents.pageCount')}</span>
+                  </div>
+                  {selected.representationSummary.warningCodes.length > 0 && (
+                    <div className="app-document-warnings" role="status">
+                      <strong>{t('documents.warnings')}</strong>
+                      <div>
+                        {selected.representationSummary.warningCodes.map((warning) => (
+                          <Tag key={warning} theme="warning" variant="light">
+                            {t(`documents.warning.${warning}`)}
+                          </Tag>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="app-document-table-scroll">
+                    <Table
+                      rowKey="id"
+                      data={blocks}
+                      columns={blockColumns}
+                      loading={blocksLoading}
+                      empty={t('documents.blocksEmpty')}
+                      tableLayout="fixed"
+                      pagination={{ current: blockPage, pageSize: blockPageSize, total: blockTotal, showJumper: true }}
+                      onPageChange={(info) => {
+                        setBlockPage(info.current);
+                        setBlockPageSize(info.pageSize);
+                        fetchBlocks(selected.id, info.current, info.pageSize);
+                      }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="app-document-empty-note">{t('documents.noRepresentation')}</div>
+              )}
+            </section>
+
+            <section className="app-document-section" aria-labelledby="document-processing-title">
+              <div className="app-document-section__header">
+                <div>
+                  <h3 id="document-processing-title">{t('documents.processingTitle')}</h3>
+                  <p>{t('documents.processingDescription')}</p>
+                </div>
+                {selected.processingSummary && (
+                  <Tag
+                    theme={selected.processingSummary.status === 'succeeded'
+                      ? 'success'
+                      : selected.processingSummary.status === 'failed' ? 'danger' : 'default'}
+                    variant="light"
+                  >
+                    {t(`documents.processing.${selected.processingSummary.status}`)}
+                  </Tag>
+                )}
+              </div>
+              {selected.processingSummary ? (
+                <ol className="app-document-timeline" data-testid="document-processing-timeline">
+                  {selected.processingSummary.stages.map((stage) => (
+                    <li key={`${stage.order}-${stage.name}`} data-status={stage.status}>
+                      <span className="app-document-timeline__marker" aria-hidden="true" />
+                      <div>
+                        <strong>{t(`documents.stage.${stage.name}`)}</strong>
+                        <span>
+                          {t(`documents.processing.${stage.status}`)}
+                          {' · '}
+                          {formatStageDuration(stage.startedAt, stage.completedAt)}
+                        </span>
+                        {(stage.inputCount !== null || stage.outputCount !== null) && (
+                          <small>
+                            {t('documents.stageCounts', {
+                              input: stage.inputCount ?? '—',
+                              output: stage.outputCount ?? '—',
+                            })}
+                          </small>
+                        )}
+                        {stage.errorCode && <code>{stage.errorCode}</code>}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <div className="app-document-empty-note">{t('documents.noProcessingRecord')}</div>
+              )}
+            </section>
+
+            <section className="app-document-section" aria-labelledby="document-chunks-title">
+              <div className="app-document-section__header">
+                <div>
+                  <h3 id="document-chunks-title">{t('documents.chunksTitle')}</h3>
+                  <p>{t('documents.chunksDescription')}</p>
+                </div>
+              </div>
+              <div className="app-document-table-scroll">
             <Table
               rowKey="id"
               data={chunks}
@@ -391,6 +695,8 @@ export function DocumentManagementPage(): React.ReactElement {
                 fetchChunks(selected.id, info.current, info.pageSize);
               }}
             />
+              </div>
+            </section>
           </div>
         )}
       </Dialog>
@@ -425,6 +731,27 @@ function formatPages(chunk: DocumentChunk): string {
   return chunk.pageEnd && chunk.pageEnd !== chunk.pageStart
     ? `${chunk.pageStart}-${chunk.pageEnd}`
     : String(chunk.pageStart);
+}
+
+function formatBlockPreview(block: DocumentBlock): string {
+  if (block.text) return block.text;
+  if (block.items) return block.items.map((item) => item.text).join(' · ');
+  if (block.cells) {
+    return block.cells
+      .slice()
+      .sort((left, right) => left.rowIndex - right.rowIndex || left.columnIndex - right.columnIndex)
+      .map((cell) => cell.text)
+      .filter(Boolean)
+      .join(' | ');
+  }
+  if (block.pairs) return block.pairs.map((pair) => `${pair.key}: ${pair.value}`).join(' · ');
+  return block.altText || block.relationshipId || '—';
+}
+
+function formatStageDuration(startedAt: string, completedAt: string | null): string {
+  if (!completedAt) return '—';
+  const milliseconds = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
+  return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(2)} s`;
 }
 
 export default DocumentManagementPage;

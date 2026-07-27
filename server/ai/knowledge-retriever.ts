@@ -244,6 +244,41 @@ export class KnowledgeRetriever {
     this.indexedIds.set(item.result.knowledgeType, ids);
   }
 
+  replaceDocumentIndexItems(documentId: string, nextItems: KnowledgeIndexItem[]): void {
+    const knowledgeType: KnowledgeType = 'document';
+    const currentItems = this.indexedItems.get(knowledgeType) ?? new Map<string, KnowledgeIndexItem>();
+    const previousDocumentItems = [...currentItems.values()].filter(
+      (item) => item.result.documentId === documentId,
+    );
+    if (nextItems.some((item) => (
+      !item.id.startsWith('document:') || item.result.documentId !== documentId
+    ))) {
+      throw new Error('Replacement document index items must use the target document namespace');
+    }
+    try {
+      for (const item of previousDocumentItems) this.vectorStore.delete(item.id);
+      for (const item of nextItems) this.vectorStore.upsert(item, item.embedding);
+    } catch (error) {
+      try {
+        for (const item of nextItems) this.vectorStore.delete(item.id);
+        for (const item of previousDocumentItems) {
+          this.vectorStore.upsert(item, item.embedding);
+        }
+      } catch (rollbackError) {
+        logger.error({
+          documentId,
+          errorName: rollbackError instanceof Error ? rollbackError.name : 'UnknownError',
+        }, 'Document index replacement rollback failed');
+      }
+      throw error;
+    }
+    const replaced = new Map(currentItems);
+    for (const item of previousDocumentItems) replaced.delete(item.id);
+    for (const item of nextItems) replaced.set(item.id, item);
+    this.indexedItems.set(knowledgeType, replaced);
+    this.indexedIds.set(knowledgeType, new Set(replaced.keys()));
+  }
+
   deleteIndexItem(knowledgeType: KnowledgeType, namespacedId: string): void {
     this.vectorStore.delete(namespacedId);
     this.indexedItems.get(knowledgeType)?.delete(namespacedId);

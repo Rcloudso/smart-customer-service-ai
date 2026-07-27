@@ -1,8 +1,8 @@
-# Smart Customer Service AI Roadmap
+# ResolveWeave Roadmap
 
-This roadmap describes the product direction rather than fixed delivery dates. The project is evolving from an FAQ-based MVP into a deployable, traceable RAG customer-service platform and, later, a guarded customer-service agent.
+This roadmap describes the product direction rather than fixed delivery dates. The project is evolving from an FAQ-based MVP into an enterprise-ready, traceable Agentic RAG customer-service product with guarded business tools and human collaboration.
 
-本路线图描述产品演进方向，不承诺固定发布日期。项目将从 FAQ MVP 逐步发展为可部署、可追溯的 RAG 智能客服，并在具备安全边界后扩展为能够调用业务工具的客服 Agent。
+本路线图描述产品演进方向，不承诺固定发布日期。项目将从 FAQ MVP 逐步发展为面向企业场景、可部署、可追溯的 Agentic RAG 智能客服，并在具备安全边界后扩展业务工具和人工协作。
 
 ## Current Baseline / 已实现基线
 
@@ -14,24 +14,26 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.2.7 | Released | Grounding, Citations & Refusal | 在生成前确定 FAQ 直答、基于证据生成或拒答，持久化来源，并将冲突与高风险业务请求转人工。 |
 | v0.2.8 | Released | RAG Quality Lab | 用版本化评测集比较检索与 Grounding 策略，并通过质量门禁安全发布和回滚。 |
 | v0.2.9 | Current | Structured Escalation & Triage | 以结构化交接包、确定性优先级和只读双语分流页承接转人工流程。 |
+| v0.3.0 | Implemented; verification pending | Structure-Aware Ingestion Foundation | 统一结构表示、质量门禁、结构切片、处理时间线和显式影子重处理已在功能分支完成；公开发布前仍需完整门禁。 |
 
 v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、转人工记录、满意度、知识审核、会话分析、双语后台、
 可信回答决策、来源持久化、接口幂等、防重复提交、Docker、检索评测和 Playwright 回归在同一工程内闭环。后续版本不再以增加
-“另一个聊天 Demo”为目标，而是依次补齐可信度、业务处理和人工协作。
+“另一个聊天 Demo”为目标，而是先补齐企业知识工程与 Agentic Retrieval，再扩展业务处理和人工协作。
 
 ## Planned Sequence / 计划顺序
 
 | Version | Theme | Intended outcome |
 | --- | --- | --- |
-| v0.3.0 | Read-Only Customer Service Tools | 以订单/物流查询为首个受控工具闭环，只读接入真实或可替换的业务 API。 |
-| v0.3.1 | Human Collaboration | 增加人工接管、处理队列、分配、内部备注、解决结果和知识回流。 |
-| v0.3.2 | Controlled Business Actions | 在确认、权限、策略、幂等和审计边界内处理退款申请等写操作。 |
-| v0.3.3 | Web Knowledge Source | 通过白名单抓取、快照、审核、版本和来源追踪导入网页知识。 |
-| v0.3.4 | OCR & Image Knowledge | 支持扫描件和截图 OCR，并为必须视觉理解的图片建立独立处理路径。 |
-| v0.3.5 | Persistent Customer Identity & Memory | 在统一客户身份、明确同意、保留期限和删除能力之上提供结构化长期上下文。 |
-| v0.3.6 | Voice Channel | 增加语音输入输出适配器，复用现有会话、检索、工具和转人工链路。 |
-| v0.4.0 | Enterprise Readiness | 增加多知识库、角色权限、租户边界、审计、迁移、备份、监控和按规模选用外部向量存储。 |
+| v0.3.1 | OCR, Tables & Image Knowledge | 支持扫描件、截图、表格和图片内容；OCR 与视觉理解分路处理并保留质量与来源。 |
+| v0.3.2 | Qdrant & Retrieval Observability | 将 Qdrant 作为可选生产向量后端，保留本地回退，并提供迁移、混合检索、检索预算和全链路 Trace。 |
+| v0.3.3 | Bounded Agentic Retrieval | LLM 在预算内选择、组合和重试检索工具；确定性 Grounding Gate 决定引用、拒答、转人工和答案放行。 |
+| v0.3.4 | Enterprise Knowledge Operations | 增加可观测入库任务、文档版本、重建索引、失败恢复、白名单远程来源和定时刷新。 |
+| v0.3.5 | Read-Only Customer Service Tools | 以 mock 订单/物流查询验证类型化工具和外部订单系统接口，不执行业务写操作。 |
+| v0.3.6 | Human Collaboration | 增加人工接管、处理队列、分配、内部备注、解决结果和知识回流。 |
+| v0.3.7 | Persistent Customer Identity & Memory | 在统一身份、明确同意、保留期限和删除能力之上提供结构化长期上下文。 |
+| v0.3.8 | Controlled Business Actions | 在身份、确认、权限、策略、幂等和审计边界内处理退款申请等受控写操作。 |
+| v0.4.0 | Enterprise Control Plane | 增加多知识库、租户与 RBAC、完整审计、模型容错、备份恢复、迁移和生产监控证据。 |
 
 ## Release Outcomes And Boundaries
 
@@ -59,60 +61,128 @@ v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规�
 - 后台能够查看交接包和关联对话/检索证据，并保留现有 escalation 兼容字段。
 - 不增加多 Agent 专家团队，也不在本版本完成实时人工回复。
 
-### v0.3.0 — Read-Only Customer Service Tools
+### v0.3.0 — Structure-Aware Ingestion Foundation
+
+- 定义版本化的文档中间表示，至少覆盖文本、标题、列表、表格、键值、
+  图片引用、页码、阅读顺序、边界框和来源信息。
+- 按 MIME/内容能力路由解析器，经过规范化、清洗、质量评分后再进入切片，
+  不让每种格式直接生成互不兼容的 Chunk。
+- 按内容结构选择切片策略；表格保留表头与单元格关系，标题层级和图片引用
+  不因纯文本拍平而丢失。
+- 保存入库任务、阶段状态、错误码、解析器版本、文档表示版本和索引状态，
+  低质量内容进入复核或拒绝，不静默发布。
+- 首版只承诺通用知识检索，不承诺发票、合同等领域字段抽取。
+- 保持现有 TXT、Markdown、文本 PDF、DOCX、SQLite 和无 Key 路径兼容。
+
+### v0.3.1 — OCR, Tables & Image Knowledge
+
+- 扫描 PDF、截图和图片先做 OCR；保留原文件、页码、区域、识别置信度和
+  OCR 引擎版本。
+- 图片含义不能由 OCR 表达时，使用独立视觉理解结果，不把视觉描述冒充
+  原文。
+- 表格使用结构化提取和专用切片，避免跨行、跨页和合并单元格被破坏。
+- 失败、低置信和资源超限必须可观测、可重试或进入人工复核。
+
+### v0.3.2 — Qdrant & Retrieval Observability
+
+- Qdrant 作为 `VectorStore` 后的第一类生产后端；内存实现继续服务
+  fresh-clone 和无基础设施演示。
+- 保留关键词/结构化检索，明确向量、关键词、融合、重排和最终上下文预算。
+- 为已有 FAQ/文档向量提供可恢复迁移、幂等重建、健康检查和回滚。
+- 持久化来源、各阶段得分、延迟、失败原因和最终证据集，并通过 Quality Lab
+  做影子对比后再切换默认生产路径。
+
+### v0.3.3 — Bounded Agentic Retrieval
+
+- 将查询分析、改写、拆解、知识源选择、检索、重排和证据评估暴露为
+  类型化受限工具。
+- Agent 必须受最大轮数、模型调用数、候选数、上下文、延迟和成本预算约束。
+- 每一步记录输入摘要、工具、结果引用、分数和停止原因，支持回放与评测。
+- Agent 只能提出证据集合；确定性 Grounding Gate 继续决定证据是否充分、
+  是否引用、拒答、转人工和答案放行。
+- 无 Key 路径继续使用确定性单轮检索，不因 Agent 不可用而破坏基础问答。
+
+### v0.3.4 — Enterprise Knowledge Operations
+
+- 将固定、项目自有的入库阶段做成可观测任务，不先建设通用低代码编排器。
+- 支持文档版本、增量更新、重建索引、失败恢复、停用/回滚和来源新鲜度。
+- 网页与远程文档仅允许白名单来源，保存快照、审核状态、版本和刷新记录；
+  外部内容始终按不可信输入处理。
+
+### v0.3.5 — Read-Only Customer Service Tools
 
 - 只选择一个可验证的垂直场景：订单状态和物流查询。
+- 没有真实订单系统时使用可替换 mock adapter，同时冻结外部订单系统
+  request/result、错误、超时、授权和审计接口。
 - LLM 只生成类型化工具请求；服务端负责身份/归属、参数、权限、超时、
   重试、响应裁剪和审计。
-- 使用工具范围内的已验证客户令牌、一次性校验或本地演示身份适配器，
-  不把匿名浏览器状态当作查询真实订单的授权。
 - 工具失败或结果不确定时安全降级为解释、补充信息请求或结构化转人工。
-- 提供可替换的本地演示适配器，使没有第三方业务系统时仍能运行完整流程。
 - 不执行退款、取消订单、修改地址等写操作。
 
-### v0.3.1 — Human Collaboration
+### v0.3.6 — Human Collaboration
 
 - 提供待处理队列、分配/认领、内部备注、处理状态、解决结果和处理时长。
 - 人工坐席接收 v0.2.9 的结构化交接包，而不是重新阅读全部对话才能开始处理。
 - 人工解决结果可以转为知识审核输入，但必须经过管理员确认后才进入知识库。
 - 明确机器人回答、人工回复和系统事件的身份及审计边界。
 
-### v0.3.2 — Controlled Business Actions
+### v0.3.7 — Persistent Customer Identity & Memory
+
+- 在跨会话身份、同意、访问审计、保留期限和删除能力之上保存结构化客户事实。
+- 不把全部对话自动写入长期向量记忆，也不把匿名浏览器状态视为客户身份。
+- 客户能够查看、更正和删除长期记忆。
+
+### v0.3.8 — Controlled Business Actions
 
 - 从一个低风险、可回滚或需审批的动作开始，例如创建退款申请，而不是自动打款。
 - 执行前展示结构化确认，执行时校验业务规则、权限、幂等键和当前状态。
 - 保存请求、审批、执行结果和补偿动作审计；模型输出不得直接写数据库或调用支付。
 - 高金额、证据不足、状态冲突和重复请求必须停止并转人工。
 
-### v0.3.3–v0.3.6 — Knowledge, Memory And Channel Adapters
+### v0.4.0 — Enterprise Control Plane
 
-- 网页知识必须白名单抓取、内容快照、人工审核、版本化和保留来源；外部内容按不可信输入处理。
-- OCR 与图片理解独立于文本解析，保留原文件、页码和提取质量信息。
-- v0.3.5 将工具范围内的身份校验扩展为跨会话统一客户身份；客户记忆只保存
-  明确、结构化、可解释的客户事实，不把全部对话自动写入长期向量记忆。
-- 客户必须能够查看、更正和删除长期记忆，并由身份、同意、保留期限和访问审计保护。
-- 语音仅作为现有客服工作流的输入/输出适配器，不复制一套 RAG、工具或转人工实现。
-
-### v0.4.0 — Enterprise Readiness
-
-- 用测量结果决定是否接入 Qdrant、pgvector、后台任务或独立检索服务。
-- 增加多知识库、租户隔离、细粒度 RBAC、完整审计、备份恢复、迁移和可观测性。
-- 完成 fresh-clone、升级迁移、故障恢复和真实部署证据后，再评估 1.0 稳定性承诺。
+- 增加多知识库、租户隔离、细粒度 RBAC、完整审计、备份恢复、迁移和生产可观测性。
+- 在存在多个真实模型候选后增加健康检查、熔断和故障切换，不提前堆叠模型路由。
+- 完成 fresh-clone、升级迁移、租户隔离、故障恢复和真实部署证据后，
+  再评估 1.0 稳定性承诺。
+- 语音等新渠道作为现有会话、检索、工具和人工协作链路的适配器进入后续候选，
+  不复制平行产品栈。
 
 ## Adoption Rules / 借鉴原则
 
 - 借鉴“对话 → 结构化状态 → 确定性规则/工具 → 人工交接”的产品模式，
   不因示例使用某个 Agent 框架、记忆库或向量库就整体迁移技术栈。
+- 借鉴 RAGent 的结构化文档表示、可观测入库阶段、独立检索通道、后处理链、
+  检索预算和 Trace；不照搬其 Java 技术栈或 PostgreSQL、Redis、RocketMQ、
+  Milvus、Neo4j 等完整基础设施。
 - 优先扩展现有 service、repository、`KnowledgeRetriever` 和 `VectorStore`
   边界；只有出现第二个真实调用方或基础设施规模证据时才增加新抽象。
 - 一个类型化路由器或工具能够解决的问题，不引入多 Agent 团队。
 - 语音、网页和长期记忆都必须复用同一套安全、证据、会话和人工协作边界。
 
+## Open-Source Adoption Track / 开源采用路线
+
+Star 是关注度和传播结果，不是企业可用性的质量门禁。产品版本继续以用户结果
+和验证证据为准，同时独立推进以下采用工作：
+
+- 将 README 首屏从 “full-stack demo” 更新为清晰的企业客服价值主张，同时
+  保留 pre-1.0 和已知限制，不用“企业级”掩盖未完成能力。
+- 每个版本提供一个可识别的客服场景、最新短演示、关键截图、架构图、评测
+  结果和失败边界，避免演示长期停留在旧版本。
+- 提供一条无需外部 Key 的最短 quickstart、内置示例知识包和
+  “上传文档 → 提问 → 查看引用/转人工”的首次成功路径。
+- 维护适合首次贡献者的有边界 Issue、开发文档和架构决策，并补充准确的
+  GitHub topics 与中英文搜索关键词。
+- 同时观察 clone-to-first-answer 时间、安装失败率、Demo 完成率、Issue/PR
+  参与和 Star，而不是把 Star 作为唯一目标。
+
 ## Product Principles
 
 - FAQ is the first knowledge source, not the permanent RAG boundary.
-- SQLite and the local fallback remain the default low-dependency path until measured scale requires more infrastructure.
+- SQLite remains the business system of record and the local fallback remains
+  the default low-dependency path; Qdrant is an optional first-class production index.
 - RAG answers must become grounded and traceable before autonomous business actions are introduced.
+- Agentic Retrieval may choose and repeat retrieval tools, but it cannot bypass deterministic grounding, authorization or audit gates.
 - Read-only tools must be proven before write actions, and write actions require confirmation, idempotency and audit.
 - Long-term customer memory requires identity, consent, retention and deletion controls.
 - Human review, evaluation and guardrails are product features, not optional cleanup work.

@@ -1,9 +1,9 @@
 {
-  "name": "smart-customer-service",
-  "version": "0.2.9",
+  "name": "resolve-weave",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
-  "description": "AI-powered smart customer service system with admin panel",
+  "description": "Evidence-first open-source enterprise customer service platform",
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "NODE_OPTIONS=--use-bundled-ca tsx watch server/index.ts",
@@ -12,7 +12,7 @@
     "start": "node --use-bundled-ca dist/server/index.js",
     "db:init": "tsx server/db/index.ts",
     "db:seed": "tsx server/db/seed.ts",
-    "test": "DB_PATH=./data/chat-route-test.db JWT_SECRET=test-secret-123 tsx server/tests/chat-route.test.ts && tsx server/tests/idempotency.test.ts && tsx server/tests/grounding-policy.test.ts && tsx server/tests/quality-evaluator.test.ts && tsx server/tests/quality-lab.test.ts && tsx server/tests/escalation-triage.test.ts && tsx server/tests/escalation-api.test.ts && tsx server/tests/llm-retry.test.ts && tsx server/tests/server-lifecycle.test.ts && DB_PATH=./data/regression-test.db JWT_SECRET=test-secret-123 tsx server/tests/knowledge-review.test.ts && tsx server/tests/document-parser.test.ts && tsx server/tests/document-chunker.test.ts && JWT_SECRET=test-secret-123 tsx server/tests/document-rag.test.ts && JWT_SECRET=test-secret-123 tsx server/tests/knowledge-retriever.test.ts && DB_PATH=./data/conversation-lifecycle-test.db JWT_SECRET=test-secret-123 tsx server/tests/conversation-lifecycle.test.ts && tsx server/tests/prompt-knowledge.test.ts && tsx server/tests/intent-classifier.test.ts && tsx server/tests/document-api.test.ts && tsx server/tests/model-config-security.test.ts && tsx server/tests/regression.test.ts && tsc -p server/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit",
+    "test": "DB_PATH=./data/chat-route-test.db JWT_SECRET=test-secret-123 tsx server/tests/chat-route.test.ts && tsx server/tests/idempotency.test.ts && tsx server/tests/grounding-policy.test.ts && tsx server/tests/quality-evaluator.test.ts && tsx server/tests/quality-lab.test.ts && tsx server/tests/escalation-triage.test.ts && tsx server/tests/escalation-api.test.ts && tsx server/tests/llm-retry.test.ts && tsx server/tests/server-lifecycle.test.ts && DB_PATH=./data/regression-test.db JWT_SECRET=test-secret-123 tsx server/tests/knowledge-review.test.ts && tsx server/tests/document-ir.test.ts && tsx server/tests/document-parser.test.ts && tsx server/tests/document-quality.test.ts && tsx server/tests/document-chunker.test.ts && tsx server/tests/document-migration.test.ts && JWT_SECRET=test-secret-123 tsx server/tests/document-rag.test.ts && JWT_SECRET=test-secret-123 tsx server/tests/knowledge-retriever.test.ts && DB_PATH=./data/conversation-lifecycle-test.db JWT_SECRET=test-secret-123 tsx server/tests/conversation-lifecycle.test.ts && tsx server/tests/prompt-knowledge.test.ts && tsx server/tests/intent-classifier.test.ts && tsx server/tests/document-api.test.ts && tsx server/tests/model-config-security.test.ts && tsx server/tests/regression.test.ts && tsc -p server/tsconfig.json --noEmit && tsc -p tsconfig.json --noEmit",
     "eval:faq": "tsx server/eval/faq-eval.ts",
     "eval:document": "tsx server/eval/document-eval.ts",
     "eval:mixed": "REPORT_MIXED_EVAL=1 JWT_SECRET=test-secret-123 tsx server/tests/knowledge-retriever.test.ts",
@@ -23,6 +23,7 @@
     "test:e2e:dev-server": "tsx tests/e2e/setup-e2e-db.ts && npm run dev"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.8.13",
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",

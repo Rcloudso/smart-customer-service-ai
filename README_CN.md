@@ -1,6 +1,7 @@
-# Smart Customer Service AI
+# ResolveWeave
 
-> 开源 AI 智能客服 MVP：聊天、FAQ 与文档 RAG、后台运营、检索评测和调试，一套项目直接跑起来。
+> 证据优先的开源企业级智能客服平台：可信回答、文档 RAG、质量评测和
+> 结构化转人工，一套全栈项目直接跑起来。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20.16%2B%20%7C%2022.3%2B-green.svg)](https://nodejs.org/)
@@ -8,10 +9,13 @@
 [![SQLite](https://img.shields.io/badge/Storage-SQLite-044a64.svg)](https://www.sqlite.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-10a37f.svg)](https://platform.openai.com/docs/api-reference)
 [![Docker](https://img.shields.io/badge/Run-Docker-2496ed.svg)](Dockerfile)
+[![CI](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/smart-customer-service-ai?style=social)](https://github.com/Rcloudso/smart-customer-service-ai/stargazers)
 
 **English version**: [README.md](README.md)
 
-当前版本：**v0.2.9（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能调整。
+开发版本：**v0.3.0（pre-1.0）**。最新公开发布版仍为 v0.2.9；在 1.0
+之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -20,14 +24,26 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看最新公开产品演示（v0.2.6）</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看文档 RAG 演示（v0.2.6）</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI 辅助开发复盘</a>
+  · <a href="docs/releases/v0.3.0.md">v0.3.0 版本说明</a>
   · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 版本验证证据</a>
 </p>
 
-Smart Customer Service AI 是一个 AI 智能客服全栈示例项目。它把用户聊天页、FAQ 与文档知识库、混合检索、运行时模型配置、会话分析、中英文界面、暗/亮主题，以及检索评测工具放在同一个可运行工程里。
+ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
+不只是“能回答”，还包括为什么允许回答、证据不足时如何拒答，以及高风险问题
+怎样携带有效上下文交给人工。
 
-[快速开始](#快速开始) · [特性](#特性) · [架构](ARCHITECTURE.md) · [检索设计](#检索设计) · [评测与调试](#评测与调试) · [Docker](#docker)
+当前版本已经把用户聊天、FAQ 与文档知识、混合检索、来源持久化、确定性
+Grounding 决策、结构化转人工、运营后台和可重复质量评测放在同一工程内。
+没有付费模型 Key 也可以启动基础路径；后续将演进到受限 Agentic Retrieval，
+但不会把答案放行或业务操作权限交给模型。
+
+[快速开始](#快速开始) · [为什么做这个项目](#为什么做这个项目) · [特性](#特性) · [架构](ARCHITECTURE.md) · [评测与调试](#评测与调试) · [路线图](ROADMAP.md)
+
+如果你也认同这个方向，可以
+[给仓库一个 Star](https://github.com/Rcloudso/smart-customer-service-ai)，
+持续关注企业智能客服路线的实现过程。
 
 ---
 
@@ -38,7 +54,7 @@ Smart Customer Service AI 是一个 AI 智能客服全栈示例项目。它把�
 ```text
 用户：我想申请退款
 
-Smart Customer Service AI:
+ResolveWeave:
   Step 1: 识别问题意图
   Step 2: 用混合检索查找相关 FAQ 和文档切片
   Step 3: 判断证据支持 FAQ 直答、知识生成还是拒答
@@ -47,7 +63,9 @@ Smart Customer Service AI:
 
 管理员可以维护 FAQ，上传和管理文档，预览已索引切片，查看检索行为与会话记录，并在“知识审核”页面把答不好的问题沉淀成可复用 FAQ。
 
-这个项目适合 Demo、学习、开源 MVP 和小规模客服场景。它先保留 SQLite + 内存向量索引的低依赖方案，同时把未来接入向量数据库的接口边界留清楚。
+当前版本适合学习、评测、演示和小规模预生产试用。项目刻意保留
+SQLite + 内存向量索引作为零基础设施路径，同时明确列出正式生产仍需补齐的
+安全、备份、隔离和可观测能力。
 
 ### 产品证据
 
@@ -57,13 +75,51 @@ Smart Customer Service AI:
 
 ---
 
+## 为什么做这个项目
+
+很多 RAG Demo 停留在“检索几段文字，然后调用一次 LLM”。这个项目把可信度、
+运营闭环和验证能力也当成产品功能：
+
+**ResolveWeave** 代表项目的长期方向：把可信知识、受限模型推理、受控业务
+工具和人工判断编织成一条可追责的客户问题解决链路。
+
+- **先判断证据，再生成回答**——确定性策略先决定 FAQ 直答、基于证据生成、
+  拒答还是转人工。
+- **知识能够持续运营**——弱回答和负反馈进入知识审核，可以沉淀为可复用知识。
+- **转人工不丢上下文**——高风险或冲突问题携带事实、缺失信息、来源、优先级
+  和建议队列。
+- **用评测驱动改动**——检索与 Grounding 策略必须先通过版本化用例比较，
+  才能发布。
+- **没有付费模型 Key 也能运行**——fresh clone 可以先体验确定性基础路径，
+  再按需配置外部模型。
+- **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
+  Retrieval 分开交付，不进行一次性框架重写。
+
+| v0.3.0 分支已实现 | 下一阶段 — v0.3.1+ |
+| --- | --- |
+| 版本化结构入库，以及 v0.2.9 的 FAQ/RAG、质量实验室和结构化转人工基线 | OCR/图片知识、可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
+
+完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
+
+```mermaid
+flowchart LR
+  K["FAQ + 文档"] --> R["混合检索"]
+  R --> G["确定性 Grounding Gate"]
+  G --> A["可信回答"]
+  G --> H["结构化转人工"]
+  P["受限 Agentic Retrieval（规划）"] -.-> R
+  T["受控业务工具（规划）"] -.-> G
+```
+
+---
+
 ## 特性
 
 - **用户聊天体验** - 支持安全 Markdown 渲染、上下文对话、紧凑文档来源、FAQ 参考、满意度反馈和历史会话。
 - **可信回答策略** - 在模型生成前确定 FAQ 直答、基于证据生成或拒答，并持久化决策和来源证据。
 - **管理后台** - FAQ 管理、会话列表、数据看板和运行时模型配置。
 - **知识缺口反馈闭环** - 无匹配、低检索分和 1–2 星负反馈会进入知识审核，管理员可编辑、忽略或转换为已索引 FAQ。
-- **文档 RAG 基座** - 后台上传 TXT、Markdown、含文本层 PDF 和 DOCX，完成解析、语义切片、embedding、索引、重试、启停、预览和删除。
+- **结构感知文档入库** - 后台上传 TXT、Markdown、含文本层 PDF 和 DOCX，进入版本化 `DocumentIR`；保留标题、段落、列表、表格、页码和 Block 来源，检查质量与处理阶段，再原子发布结构感知切片。
 - **多知识源混合检索** - FAQ 与文档分别召回向量候选，再结合字段感知的关键词候选，由统一检索器通过分数感知的倒数排名融合（RRF）合并、去重并保持来源多样性。
 - **兼容意图分类** - 结构化输出依次尝试 `json_schema`、`json_object` 和经过严格校验的普通文本 JSON，最后才降级到确定性关键词规则。
 - **向量库接口抽象** - `VectorStore` 让默认部署保持简单，也方便后续接入 Qdrant 或 pgvector。
@@ -99,7 +155,12 @@ Query
 
 默认泛型 `VectorStore<KnowledgeIndexItem>` 是内存实现。FAQ 与文档切片 embedding 会序列化存入 SQLite，再以 `faq:<id>` 和 `document:<chunkId>` 命名空间加载到共享进程索引。每条向量同时保存由 provider、模型、endpoint 和输入结构版本生成的 embedding profile；发现旧 profile 时先原子重建持久化向量，再替换进程索引，避免不同模型配置的向量被静默混用。
 
-FAQ 仍然只是知识来源适配器，不是永久的 RAG 边界。TXT、Markdown、含文本层 PDF 与 DOCX 导入使用 `semantic-v1` 语义切片。文档 embedding 包含文档标题和章节标题，GPU 型号清单类问题会在关键词召回前执行确定性词汇扩展。聊天分别召回 FAQ 与文档候选，避免单一来源挤占全部结果。
+FAQ 仍然只是知识来源适配器，不是永久的 RAG 边界。TXT、Markdown、含文本层
+PDF 与 DOCX 现在统一进入
+`validate → parse → normalize → clean → quality_gate → chunk → embed → publish`
+管线。`DocumentIR v1` 与 `structure-aware-v1` 切片保留 Block、标题路径和页码
+来源；embedding 可以加入标题上下文，但后台展示的证据保持原文。聊天仍分别
+召回 FAQ 与文档候选，避免单一来源挤占全部结果。
 
 v0.2.7 在回答生成前评估检索依据。高置信关键词/混合 FAQ 匹配继续确定性直答；非直答证据达到初始检索阈值时，最多把前三条不可信知识材料注入 Prompt；没有证据或证据较弱时不调用回答生成流，直接拒答。答案存在实质差异的重复直达 FAQ，以及规则识别到的私有状态/业务操作请求会被拒绝并转人工。回答模式、阈值结果、原因与 FAQ/文档/切片/页码来源快照会随助手消息保存，恢复历史会话后仍可查看；这些是检索来源，不是逐条事实的引用对齐或蕴含校验。
 
@@ -158,6 +219,15 @@ Docker 默认暴露：
 
 Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时也能启动。确定性本地路径支持 FAQ 与文档检索；文档回答会回退到最高分原文片段。
 
+Compose 使用 `resolve-weave` 项目名，并将本地镜像构建为
+`resolve-weave:local`。全新安装默认使用 `resolve-weave-data` 数据卷。已有
+Docker 部署应先通过 `docker volume ls` 找到原物理卷，再在启动新 Compose
+项目前把 `RESOLVE_WEAVE_DATA_VOLUME` 设置为这个精确名称：
+
+```bash
+RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
+```
+
 ---
 
 ## 配置项
@@ -194,7 +264,11 @@ npm run eval:triage
 
 评测包含 FAQ 的 Top1/Top3/无匹配指标、覆盖 TXT/Markdown/PDF/DOCX 的 12 条文档用例，以及账户安全、投诉、退款、订单、技术、显式转人工、知识冲突、私有业务操作和提示注入的中英文确定性分流用例。文档评测会对比 `semantic-v1` 与仅结构切片基线，并要求 Top3 100%、MRR 不下降。
 
-文档管理入口位于 **管理后台 → 文档知识**。单文件上限 10 MB、提取文本上限 200,000 字符、语义单元上限 2,000、最终切片上限 300。完全重复内容按 SHA-256 拒绝；接口不返回存储路径、哈希、embedding 或解析器原始异常。
+文档管理入口位于 **管理后台 → 文档知识**。详情 Dialog 会展示质量/索引状态、
+结构指标、警告、分页 Block 检查、八个处理阶段和已发布切片。单文件上限
+10 MB、提取文本上限 200,000 字符、`DocumentIR` 上限 2 MiB/2,000 个 Block、
+最终切片上限 300。完全重复内容按 SHA-256 拒绝；接口不返回存储路径、哈希、
+embedding 或解析器原始异常。
 
 FAQ 评测报告包含：
 
@@ -253,8 +327,12 @@ data/          本地 SQLite 数据库文件
 
 - 默认向量索引在进程内存中，全量遍历 FAQ 与文档切片 embedding，适合 Demo 和小规模知识库，不适合大规模检索。
 - embedding 以 JSON 形式存储在 SQLite 中，没有使用专门的向量数据库。
-- 文档解析同步运行在 Express 进程内；加密、损坏和扫描 PDF 会返回稳定失败码，尚不支持 OCR、图片知识、网页采集、引用跳转和页码跳转。
-- 文档仍属于单一全局知识库；v0.2.9 不包含多租户分库、外部 Worker、文档版本或外部向量存储。
+- 文档解析仍同步运行在 Express 进程内；加密和损坏文件会被拒绝，扫描 PDF
+  与仅图片 DOCX 会进入复核且不建立索引。当前不包含 OCR、VLM 提取、网页采集、
+  引用跳转或页码跳转。
+- v0.3.0 会保存结构化表示和处理记录，但原文件仍是事实源；只提供显式重试/
+  重处理，不包含后台 Worker、定时任务或人工强制放行。
+- 文档仍属于单一全局知识库；v0.3.0 不包含多租户分库或外部向量存储。
 - `VectorStore` 隔离了本地向量操作，但接入网络向量数据库仍需异步契约、健康检查和一致性测试。
 - 冲突检测刻意限制为“归一化后问题相同、答案不同”的直达 FAQ；Grounding 阈值通过版本化质量实验室治理，不会自动切换。
 - LLM 意图识别失败时会回退到关键词规则。
@@ -270,6 +348,8 @@ data/          本地 SQLite 数据库文件
 
 有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
 
-- v0.3.0–v0.3.2：先实现订单/物流只读工具，再补人工协作，最后在确认和审计下处理退款申请等写操作。
-- 后续适配器：经过审核的网页采集、OCR/图片知识、基于同意的客户记忆，以及复用现有聊天、检索、工具和转人工链路的语音通道。
-- v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份、监控，以及由规模证据驱动的外部向量存储。
+- v0.3.1–v0.3.3：OCR/表格/图片知识、带检索 Trace 的可选 Qdrant，
+  再实现由确定性 Grounding Gate 约束的 Agentic Retrieval。
+- v0.3.4–v0.3.8：企业知识运营、mock 优先的订单只读工具、人工协作、
+  客户身份/记忆和受控写操作。
+- v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份恢复与生产可观测性。

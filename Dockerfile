@@ -1,5 +1,9 @@
 FROM node:20-bookworm-slim
 
+LABEL org.opencontainers.image.title="ResolveWeave" \
+  org.opencontainers.image.description="Evidence-first open-source enterprise customer service platform" \
+  org.opencontainers.image.source="https://github.com/Rcloudso/smart-customer-service-ai"
+
 WORKDIR /app
 
 RUN apt-get update \

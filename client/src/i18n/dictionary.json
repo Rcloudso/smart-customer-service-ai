@@ -44,12 +44,12 @@
     "en": "Switch to light mode"
   },
   "chat.title": {
-    "zh": "AI 智能客服",
-    "en": "AI Customer Service"
+    "zh": "ResolveWeave",
+    "en": "ResolveWeave"
   },
   "chat.subtitle": {
-    "zh": "随时为您解答问题",
-    "en": "Ready to answer your questions"
+    "zh": "企业级智能客服平台",
+    "en": "Enterprise Customer Service Platform"
   },
   "chat.history": {
     "zh": "历史记录",
@@ -1191,6 +1191,10 @@
     "zh": "PDF 页数超过处理上限",
     "en": "The PDF exceeds the page limit"
   },
+  "documents.failure.pdf_visual_inspection_limit": {
+    "zh": "无文本 PDF 超过安全视觉检查上限",
+    "en": "The textless PDF exceeds the safe visual-inspection limit"
+  },
   "documents.failure.invalid_docx": {
     "zh": "DOCX 文件损坏或无法解析",
     "en": "The DOCX is damaged or cannot be parsed"
@@ -1226,6 +1230,330 @@
   "documents.failure.source_file_missing": {
     "zh": "原文件缺失，无法重试",
     "en": "Source file is missing and cannot be retried"
+  },
+  "documents.detailLoadFailed": {
+    "zh": "文档详情加载失败",
+    "en": "Failed to load document details"
+  },
+  "documents.qualityDecision": {
+    "zh": "质量结论",
+    "en": "Quality decision"
+  },
+  "documents.quality.ready": {
+    "zh": "质量通过",
+    "en": "Quality passed"
+  },
+  "documents.quality.review_required": {
+    "zh": "需要复核",
+    "en": "Review required"
+  },
+  "documents.quality.rejected": {
+    "zh": "已拒绝",
+    "en": "Rejected"
+  },
+  "documents.qualityReasons": {
+    "zh": "质量依据",
+    "en": "Quality reasons"
+  },
+  "documents.qualityReason.empty_content": {
+    "zh": "清洗后无有效内容",
+    "en": "No usable content after cleaning"
+  },
+  "documents.qualityReason.near_empty_content": {
+    "zh": "有效文本少于 20 个字符",
+    "en": "Fewer than 20 usable characters"
+  },
+  "documents.qualityReason.ocr_required": {
+    "zh": "需要 OCR",
+    "en": "OCR required"
+  },
+  "documents.qualityReason.visual_processing_required": {
+    "zh": "需要视觉处理",
+    "en": "Visual processing required"
+  },
+  "documents.qualityReason.unsupported_structure": {
+    "zh": "存在无法安全处理的结构",
+    "en": "Contains structure that cannot be handled safely"
+  },
+  "documents.indexStatus": {
+    "zh": "索引状态",
+    "en": "Index status"
+  },
+  "documents.index.legacy": {
+    "zh": "历史索引",
+    "en": "Legacy index"
+  },
+  "documents.index.not_indexed": {
+    "zh": "未进入索引",
+    "en": "Not indexed"
+  },
+  "documents.index.published": {
+    "zh": "已发布",
+    "en": "Published"
+  },
+  "documents.index.failed": {
+    "zh": "一致性异常",
+    "en": "Consistency failed"
+  },
+  "documents.representationVersion": {
+    "zh": "表示版本",
+    "en": "Representation"
+  },
+  "documents.parserVersion": {
+    "zh": "解析器版本",
+    "en": "Parser"
+  },
+  "documents.cleanerVersion": {
+    "zh": "清洗器版本",
+    "en": "Cleaner"
+  },
+  "documents.chunkerVersion": {
+    "zh": "切片器版本",
+    "en": "Chunker"
+  },
+  "documents.reprocess": {
+    "zh": "升级处理",
+    "en": "Reprocess"
+  },
+  "documents.reprocessSucceeded": {
+    "zh": "文档已按当前处理版本发布",
+    "en": "Document published with the current processing versions"
+  },
+  "documents.reprocessFailed": {
+    "zh": "升级处理未完成，原有可用内容已保留",
+    "en": "Reprocessing did not complete; the previously published content was preserved"
+  },
+  "documents.legacyTitle": {
+    "zh": "这是历史版本文档",
+    "en": "This document uses a legacy representation"
+  },
+  "documents.legacyDescription": {
+    "zh": "升级处理会影子构建新切片，全部阶段成功后才替换现有索引。",
+    "en": "Reprocessing builds shadow chunks and replaces the live index only after every stage succeeds."
+  },
+  "documents.structureTitle": {
+    "zh": "结构与来源块",
+    "en": "Structure and source blocks"
+  },
+  "documents.structureDescription": {
+    "zh": "检查解析后的标题路径、页码、内容类型和排除依据。",
+    "en": "Inspect parsed heading paths, page numbers, content types, and exclusion reasons."
+  },
+  "documents.blocks": {
+    "zh": "总 Block",
+    "en": "Total blocks"
+  },
+  "documents.includedBlocks": {
+    "zh": "参与切片",
+    "en": "Included"
+  },
+  "documents.excludedBlocks": {
+    "zh": "已排除",
+    "en": "Excluded"
+  },
+  "documents.pageCount": {
+    "zh": "页",
+    "en": "Pages"
+  },
+  "documents.warnings": {
+    "zh": "解析警告",
+    "en": "Parsing warnings"
+  },
+  "documents.blockOrder": {
+    "zh": "顺序",
+    "en": "Order"
+  },
+  "documents.blockType": {
+    "zh": "类型",
+    "en": "Type"
+  },
+  "documents.headingPath": {
+    "zh": "标题路径",
+    "en": "Heading path"
+  },
+  "documents.blockContent": {
+    "zh": "来源内容",
+    "en": "Source content"
+  },
+  "documents.blockState": {
+    "zh": "处理状态",
+    "en": "Handling"
+  },
+  "documents.blockIncluded": {
+    "zh": "保留",
+    "en": "Included"
+  },
+  "documents.blockExcluded": {
+    "zh": "排除",
+    "en": "Excluded"
+  },
+  "documents.blockType.text": {
+    "zh": "文本",
+    "en": "Text"
+  },
+  "documents.blockType.heading": {
+    "zh": "标题",
+    "en": "Heading"
+  },
+  "documents.blockType.paragraph": {
+    "zh": "段落",
+    "en": "Paragraph"
+  },
+  "documents.blockType.list": {
+    "zh": "列表",
+    "en": "List"
+  },
+  "documents.blockType.table": {
+    "zh": "表格",
+    "en": "Table"
+  },
+  "documents.blockType.key_value": {
+    "zh": "键值",
+    "en": "Key value"
+  },
+  "documents.blockType.image_ref": {
+    "zh": "图片引用",
+    "en": "Image reference"
+  },
+  "documents.blocksEmpty": {
+    "zh": "暂无可检查的结构 Block",
+    "en": "No structure blocks available"
+  },
+  "documents.blocksLoadFailed": {
+    "zh": "结构 Block 加载失败",
+    "en": "Failed to load structure blocks"
+  },
+  "documents.noRepresentation": {
+    "zh": "该历史文档还没有结构化表示，可使用“升级处理”生成。",
+    "en": "This legacy document has no structured representation yet. Use Reprocess to generate one."
+  },
+  "documents.processingTitle": {
+    "zh": "处理时间线",
+    "en": "Processing timeline"
+  },
+  "documents.processingDescription": {
+    "zh": "记录每个同步处理阶段的状态、数量和耗时。",
+    "en": "Status, counts, and duration for each synchronous processing stage."
+  },
+  "documents.processing.running": {
+    "zh": "运行中",
+    "en": "Running"
+  },
+  "documents.processing.succeeded": {
+    "zh": "成功",
+    "en": "Succeeded"
+  },
+  "documents.processing.failed": {
+    "zh": "失败",
+    "en": "Failed"
+  },
+  "documents.noProcessingRecord": {
+    "zh": "该历史文档没有版本化处理记录。",
+    "en": "This legacy document has no versioned processing record."
+  },
+  "documents.stage.validate": {
+    "zh": "校验",
+    "en": "Validate"
+  },
+  "documents.stage.parse": {
+    "zh": "解析",
+    "en": "Parse"
+  },
+  "documents.stage.normalize": {
+    "zh": "规范化",
+    "en": "Normalize"
+  },
+  "documents.stage.clean": {
+    "zh": "清洗",
+    "en": "Clean"
+  },
+  "documents.stage.quality_gate": {
+    "zh": "质量门禁",
+    "en": "Quality gate"
+  },
+  "documents.stage.chunk": {
+    "zh": "结构切片",
+    "en": "Chunk"
+  },
+  "documents.stage.embed": {
+    "zh": "向量化",
+    "en": "Embed"
+  },
+  "documents.stage.publish": {
+    "zh": "发布",
+    "en": "Publish"
+  },
+  "documents.stageCounts": {
+    "zh": "输入 {{input}}，输出 {{output}}",
+    "en": "Input {{input}}, output {{output}}"
+  },
+  "documents.chunksTitle": {
+    "zh": "已发布切片",
+    "en": "Published chunks"
+  },
+  "documents.chunksDescription": {
+    "zh": "展示原文内容及其标题、页码和来源关系。",
+    "en": "Original chunk text with heading, page, and source relationships."
+  },
+  "documents.warning.ocr_required": {
+    "zh": "需要 OCR，当前版本未识别图片文字",
+    "en": "OCR is required; this version did not infer image text"
+  },
+  "documents.warning.visual_processing_required": {
+    "zh": "需要视觉处理",
+    "en": "Visual processing is required"
+  },
+  "documents.warning.table_vertical_merge_limited": {
+    "zh": "表格包含暂无法安全还原的纵向合并",
+    "en": "The table contains vertical merges that cannot be safely reconstructed"
+  },
+  "documents.warning.repeated_header_removed": {
+    "zh": "已按保守规则排除重复页眉",
+    "en": "Repeated headers were excluded using the conservative rule"
+  },
+  "documents.warning.repeated_footer_removed": {
+    "zh": "已按保守规则排除重复页脚",
+    "en": "Repeated footers were excluded using the conservative rule"
+  },
+  "documents.warning.possible_repeated_header_retained": {
+    "zh": "疑似重复页眉，但证据不足，已保留原文",
+    "en": "A possible repeated header was retained because the evidence was insufficient"
+  },
+  "documents.warning.possible_repeated_footer_retained": {
+    "zh": "疑似重复页脚，但证据不足，已保留原文",
+    "en": "A possible repeated footer was retained because the evidence was insufficient"
+  },
+  "documents.warning.duplicate_blocks_detected": {
+    "zh": "检测到重复 Block，未自动删除",
+    "en": "Duplicate blocks were detected and retained"
+  },
+  "documents.warning.repeated_header": {
+    "zh": "重复页眉",
+    "en": "Repeated header"
+  },
+  "documents.warning.repeated_footer": {
+    "zh": "重复页脚",
+    "en": "Repeated footer"
+  },
+  "documents.failure.quality_review_required": {
+    "zh": "内容需要人工复核，未进入索引",
+    "en": "Content requires review and was not indexed"
+  },
+  "documents.failure.quality_rejected_empty_content": {
+    "zh": "清洗后没有有效文本，已拒绝",
+    "en": "No usable text remained after cleaning"
+  },
+  "documents.failure.invalid_representation": {
+    "zh": "结构化表示校验失败",
+    "en": "Structured representation validation failed"
+  },
+  "documents.failure.representation_too_large": {
+    "zh": "结构化表示超过 2 MiB 上限",
+    "en": "Structured representation exceeds the 2 MiB limit"
+  },
+  "documents.failure.publish_failed": {
+    "zh": "索引发布失败，已执行一致性补偿",
+    "en": "Index publication failed and consistency compensation was applied"
   },
   "nav.qualityLab": {
     "zh": "质量实验室",

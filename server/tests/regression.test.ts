@@ -265,11 +265,26 @@ function testOpenSourceReadinessArtifactsExist(): void {
   const ciPath = path.resolve(process.cwd(), '.github/workflows/ci.yml');
   const readmeSource = fs.readFileSync(path.resolve(process.cwd(), 'README.md'), 'utf8');
   const readmeCnSource = fs.readFileSync(path.resolve(process.cwd(), 'README_CN.md'), 'utf8');
+  const dockerfileSource = fs.readFileSync(dockerfilePath, 'utf8');
+  const composeSource = fs.readFileSync(composePath, 'utf8');
 
   assert.ok(fs.existsSync(dockerfilePath), 'open-source project should include a Dockerfile');
   assert.ok(fs.existsSync(composePath), 'open-source project should include docker-compose.yml');
   assert.ok(fs.existsSync(dockerignorePath), 'open-source project should include .dockerignore');
   assert.ok(fs.existsSync(ciPath), 'open-source project should include GitHub Actions CI');
+  assert.match(composeSource, /^name: resolve-weave$/m, 'Docker Compose should use the ResolveWeave project name');
+  assert.match(composeSource, /^\s+image: resolve-weave:local$/m, 'Docker Compose should build a branded local image');
+  assert.match(composeSource, /resolve-weave-data:\/app\/data/, 'Docker Compose should expose a branded logical data volume');
+  assert.match(
+    composeSource,
+    /resolve-weave-data:\s*\n\s+name: \$\{RESOLVE_WEAVE_DATA_VOLUME:-resolve-weave-data\}/,
+    'Docker Compose should use a branded physical volume unless an existing volume is supplied',
+  );
+  assert.match(
+    dockerfileSource,
+    /org\.opencontainers\.image\.title="ResolveWeave"/,
+    'Docker image metadata should use the ResolveWeave brand',
+  );
 
   const ciSource = fs.readFileSync(ciPath, 'utf8');
   assert.match(ciSource, /npm ci/, 'CI should install dependencies reproducibly');
@@ -278,7 +293,7 @@ function testOpenSourceReadinessArtifactsExist(): void {
   assert.match(ciSource, /PLAYWRIGHT_CHANNEL=chromium npm run test:e2e/, 'CI should run Playwright E2E tests');
   assert.match(ciSource, /EMBED_PROVIDER=other npm run build/, 'CI should build the app');
   assert.match(
-    fs.readFileSync(composePath, 'utf8'),
+    composeSource,
     /npm run db:seed/,
     'Docker Compose should seed the default local admin before starting the demo',
   );
@@ -522,11 +537,31 @@ function testChatPageExposesHistoryUi(): void {
 function testBilingualReadmeExists(): void {
   const readmeSource = fs.readFileSync(path.resolve(process.cwd(), 'README.md'), 'utf8');
 
-  assert.match(readmeSource, /# Smart Customer Service AI/, 'README should include an English title');
+  assert.match(readmeSource, /# ResolveWeave/, 'README should use the ResolveWeave product name');
   assert.match(readmeSource, /## English/, 'README should include an English section');
   assert.match(readmeSource, /## 中文/, 'README should include a Chinese section');
   assert.match(readmeSource, /中英文切换/, 'README should document Chinese-language features');
   assert.match(readmeSource, /Language switching/, 'README should document English-language features');
+}
+
+function testResolveWeaveBrandIdentity(): void {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'),
+  ) as { name?: string };
+  const indexSource = fs.readFileSync(path.resolve(process.cwd(), 'client/index.html'), 'utf8');
+  const dictionarySource = fs.readFileSync(
+    path.resolve(process.cwd(), 'client/src/i18n/dictionary.json'),
+    'utf8',
+  );
+
+  assert.equal(packageJson.name, 'resolve-weave', 'package name should match the ResolveWeave brand');
+  assert.match(indexSource, /<title>ResolveWeave<\/title>/, 'browser title should use the ResolveWeave brand');
+  assert.match(dictionarySource, /"chat\.title":\s*\{\s*"zh": "ResolveWeave",\s*"en": "ResolveWeave"/);
+  assert.match(
+    dictionarySource,
+    /"chat\.subtitle":\s*\{\s*"zh": "企业级智能客服平台",\s*"en": "Enterprise Customer Service Platform"/,
+    'product subtitle should describe the current platform without claiming unshipped Agentic Retrieval',
+  );
 }
 
 function testEndToEndAutomationArtifactsExist(): void {
@@ -659,6 +694,7 @@ async function main(): Promise<void> {
   testChatHistoryApiIsScopedToAnonymousUser();
   testChatPageExposesHistoryUi();
   testBilingualReadmeExists();
+  testResolveWeaveBrandIdentity();
   testEndToEndAutomationArtifactsExist();
   testRetrievalEvaluationAndDebuggingArtifactsExist();
   testKnowledgeReviewApiAndChatCompatibility();

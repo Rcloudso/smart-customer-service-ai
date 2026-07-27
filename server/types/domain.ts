@@ -53,6 +53,19 @@ export type GroundingStatus = 'sufficient' | 'insufficient' | 'conflicting' | 'h
 
 export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
 export type DocumentStatus = 'pending' | 'ready' | 'failed';
+export type DocumentQualityDecision = 'ready' | 'review_required' | 'rejected';
+export type DocumentIndexStatus = 'legacy' | 'not_indexed' | 'published' | 'failed';
+export type DocumentProcessingStatus = 'running' | 'succeeded' | 'failed';
+export type DocumentProcessingStageStatus = 'running' | 'succeeded' | 'failed';
+export type DocumentProcessingStageName =
+  | 'validate'
+  | 'parse'
+  | 'normalize'
+  | 'clean'
+  | 'quality_gate'
+  | 'chunk'
+  | 'embed'
+  | 'publish';
 
 export interface DocumentRecord {
   id: string;
@@ -69,6 +82,14 @@ export interface DocumentRecord {
   failureCode: string | null;
   characterCount: number;
   chunkCount: number;
+  sourceVersion: number;
+  representationVersion: string | null;
+  cleanerVersion: string | null;
+  qualityDecision: DocumentQualityDecision | null;
+  qualityReasons: string[];
+  latestTaskId: string | null;
+  latestRepresentationId: string | null;
+  indexStatus: DocumentIndexStatus;
   uploadedBy: string;
   createdAt: string;
   updatedAt: string;
@@ -87,10 +108,63 @@ export interface DocumentChunk {
   characterCount: number;
   embedding: number[];
   embeddingProfile: string | null;
+  sourceBlockIds?: string[];
+  headingPath?: string[];
+  representationVersion?: string | null;
+  chunkerVersion?: string | null;
   createdAt: string;
 }
 
 export type DocumentChunkView = Omit<DocumentChunk, 'embedding' | 'embeddingProfile'>;
+
+export interface DocumentProcessingStage {
+  name: DocumentProcessingStageName;
+  order: number;
+  status: DocumentProcessingStageStatus;
+  startedAt: string;
+  completedAt: string | null;
+  inputCount: number | null;
+  outputCount: number | null;
+  errorCode: string | null;
+}
+
+export interface DocumentProcessingSummary {
+  taskId: string;
+  status: DocumentProcessingStatus;
+  retryOf: string | null;
+  representationVersion: string | null;
+  parserVersion: string | null;
+  cleanerVersion: string | null;
+  chunkerVersion: string | null;
+  qualityDecision: DocumentQualityDecision | null;
+  qualityReasons: string[];
+  failureCode: string | null;
+  indexStatus: DocumentIndexStatus;
+  startedAt: string;
+  completedAt: string | null;
+  inputBytes: number;
+  outputCharacters: number;
+  blockCount: number;
+  chunkCount: number;
+  stages: DocumentProcessingStage[];
+}
+
+export interface DocumentRepresentationSummary {
+  id: string;
+  schemaVersion: string;
+  parserName: string;
+  parserVersion: string;
+  cleanerVersion: string;
+  blockCount: number;
+  warningCodes: string[];
+  metrics: Record<string, number>;
+  createdAt: string;
+}
+
+export interface DocumentDetail extends Document {
+  processingSummary: DocumentProcessingSummary | null;
+  representationSummary: DocumentRepresentationSummary | null;
+}
 
 export interface KnowledgeRetrievalSnapshot {
   knowledgeType: 'faq' | 'document';

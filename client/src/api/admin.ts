@@ -29,8 +29,11 @@ import type {
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
   DocumentItem,
+  DocumentDetail,
+  DocumentBlock,
   DocumentChunk,
   DocumentStatus,
+  DocumentQualityDecision,
   PolicyGateResult,
   QualityCase,
   QualityDatasetVersion,
@@ -65,8 +68,11 @@ export type {
   KnowledgeReviewStatus,
   KnowledgeReviewTriggerReason,
   DocumentItem,
+  DocumentDetail,
+  DocumentBlock,
   DocumentChunk,
   DocumentStatus,
+  DocumentQualityDecision,
   PolicyGateResult,
   QualityCase,
   QualityDatasetVersion,
@@ -292,12 +298,16 @@ export async function uploadDocument(file: File): Promise<DocumentItem> {
   return uploadFile<DocumentItem>('/admin/documents', file);
 }
 
-export async function getDocument(id: string): Promise<DocumentItem> {
-  return get<DocumentItem>(`/admin/documents/${id}`);
+export async function getDocument(id: string): Promise<DocumentDetail> {
+  return get<DocumentDetail>(`/admin/documents/${id}`);
 }
 
 export async function listDocumentChunks(id: string, page: number, pageSize: number): Promise<PaginationResponse<DocumentChunk>> {
   return get<PaginationResponse<DocumentChunk>>(`/admin/documents/${id}/chunks`, { page, pageSize });
+}
+
+export async function listDocumentBlocks(id: string, page: number, pageSize: number): Promise<PaginationResponse<DocumentBlock>> {
+  return get<PaginationResponse<DocumentBlock>>(`/admin/documents/${id}/blocks`, { page, pageSize });
 }
 
 export async function updateDocument(id: string, isActive: boolean): Promise<DocumentItem> {
@@ -311,6 +321,14 @@ export async function updateDocument(id: string, isActive: boolean): Promise<Doc
 export async function retryDocument(id: string): Promise<DocumentItem> {
   return post<DocumentItem>(
     `/admin/documents/${id}/retry`,
+    {},
+    idempotentRequest(),
+  );
+}
+
+export async function reprocessDocument(id: string): Promise<DocumentItem> {
+  return post<DocumentItem>(
+    `/admin/documents/${id}/reprocess`,
     {},
     idempotentRequest(),
   );

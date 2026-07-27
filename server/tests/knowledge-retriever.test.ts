@@ -682,6 +682,68 @@ async function testRefreshValidationAndApplyFailuresPreserveLastGoodIndex(): Pro
   assert.equal(retriever.getIndexedCount('faq'), 1);
 }
 
+async function testDirectDocumentReplacementRollsBackAsOneIndexSet(): Promise<void> {
+  const oldItem: KnowledgeIndexItem = {
+    id: 'document:old-chunk',
+    result: {
+      knowledgeType: 'document',
+      knowledgeId: 'old-chunk',
+      documentId: 'document-1',
+      title: 'Old',
+      content: 'old',
+      similarity: 0,
+      chunkIndex: 0,
+    },
+    embedding: [1, 0],
+  };
+  const otherItem: KnowledgeIndexItem = {
+    id: 'document:other-chunk',
+    result: {
+      ...oldItem.result,
+      knowledgeId: 'other-chunk',
+      documentId: 'document-2',
+      title: 'Other',
+    },
+    embedding: [0, 1],
+  };
+  const store = new FailOnceVectorStore();
+  const adapter = new MutableAdapter('document', [oldItem, otherItem]);
+  const retriever = new KnowledgeRetriever(store, async () => [[1, 0]], [adapter]);
+  await retriever.initialize();
+
+  const replacement: KnowledgeIndexItem = {
+    id: 'document:new-chunk',
+    result: {
+      ...oldItem.result,
+      knowledgeId: 'new-chunk',
+      title: 'New',
+    },
+    embedding: [1, 0],
+  };
+  retriever.replaceDocumentIndexItems('document-1', [replacement]);
+  assert.deepEqual(
+    store.search([1, 0], 10).map((result) => result.id).sort(),
+    ['document:new-chunk', 'document:other-chunk'],
+  );
+
+  const failedReplacement: KnowledgeIndexItem = {
+    ...replacement,
+    id: 'document:failed-chunk',
+    result: { ...replacement.result, knowledgeId: 'failed-chunk' },
+  };
+  store.failOnId = failedReplacement.id;
+  assert.throws(
+    () => retriever.replaceDocumentIndexItems('document-1', [failedReplacement]),
+    /vector upsert failure/,
+  );
+  assert.deepEqual(
+    store.search([1, 0], 10).map((result) => result.id).sort(),
+    ['document:new-chunk', 'document:other-chunk'],
+    'a failed direct replacement must restore the previous document set',
+  );
+  assert.equal(retriever.getIndexedCount('document'), 2);
+}
+
 Promise.all([
   testHybridKnowledgeSearchUsesOneQueryEmbedding(),
   testQualityBatchUsesOneEmbeddingCall(),
@@ -697,6 +759,7 @@ Promise.all([
   testVectorPublishFailureRestoresPersistedEmbeddingProfile(),
   testSuccessfulManualRefreshClearsDegradedSource(),
   testRefreshValidationAndApplyFailuresPreserveLastGoodIndex(),
+  testDirectDocumentReplacementRollsBackAsOneIndexSet(),
 ])
   .then(() => {
     testDocumentKeywordTermsRemoveQuestionNoise();

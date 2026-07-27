@@ -12,29 +12,66 @@ async function testTextUploadPublishesOnlyReadyChunks(): Promise<void> {
   db.pragma('foreign_keys = ON');
   initSchema(db);
   const published: string[][] = [];
+  let publicationObservedPendingDatabase = false;
   const service = new DocumentService(db, {
     uploadDir,
     embedTexts: async (texts) => texts.map((_, index) => [1, index + 1]),
-    publishChunks: (chunks) => { published.push(chunks.map((chunk) => chunk.content)); },
+    publishChunks: (chunks) => {
+      published.push(chunks.map((chunk) => chunk.content));
+      const stored = db.prepare(`
+        SELECT status,
+          (SELECT COUNT(*) FROM document_chunks WHERE document_id = documents.id) AS chunk_count
+        FROM documents
+        WHERE id = ?
+      `).get(chunks[0].documentId) as { status: string; chunk_count: number };
+      publicationObservedPendingDatabase = stored.status === 'pending' && stored.chunk_count === 0;
+    },
   });
 
   try {
     const document = await service.upload({
       originalName: 'refund-policy.txt',
       mimeType: 'text/plain',
-      buffer: Buffer.from('退款政策\n\n签收后七天内可以申请退款。', 'utf8'),
+      buffer: Buffer.from('退款政策\n\n签收后七天内可以申请退款，并提供订单号。', 'utf8'),
       uploadedBy: 'admin-1',
     });
 
-    assert.equal(document.status, 'ready');
+    assert.equal(document.status, 'ready', JSON.stringify(document));
     assert.equal(document.fileName, 'refund-policy.txt');
     assert.equal(document.chunkCount, 1);
+    assert.equal(document.qualityDecision, 'ready');
+    assert.equal(document.representationVersion, 'document-ir-v1');
+    assert.equal(document.indexStatus, 'published');
     assert.equal('storagePath' in document, false, 'public document objects must not expose storage paths');
 
     const chunks = service.listChunks(document.id, { page: 1, pageSize: 20 });
     assert.equal(chunks.total, 1);
     assert.match(chunks.items[0].content, /七天内可以申请退款/);
-    assert.deepEqual(published, [['退款政策\n\n签收后七天内可以申请退款。']]);
+    assert.deepEqual(chunks.items[0].sourceBlockIds, ['block-000001', 'block-000002']);
+    assert.equal(chunks.items[0].chunkerVersion, 'structure-aware-v1');
+    assert.deepEqual(published, [['退款政策\n\n签收后七天内可以申请退款，并提供订单号。']]);
+    assert.equal(
+      publicationObservedPendingDatabase,
+      true,
+      'new chunks must not become queryable in SQLite before index publication succeeds',
+    );
+
+    const detail = service.get(document.id);
+    assert.equal(detail.representationSummary?.blockCount, 2);
+    assert.deepEqual(detail.processingSummary?.stages.map((stage) => stage.name), [
+      'validate',
+      'parse',
+      'normalize',
+      'clean',
+      'quality_gate',
+      'chunk',
+      'embed',
+      'publish',
+    ]);
+    assert.ok(detail.processingSummary?.stages.every((stage) => stage.status === 'succeeded'));
+    const blocks = service.listBlocks(document.id, { page: 1, pageSize: 1 });
+    assert.equal(blocks.total, 2);
+    assert.equal(blocks.items[0].kind, 'paragraph');
 
     const storedFiles = fs.readdirSync(uploadDir);
     assert.equal(storedFiles.length, 1);
@@ -45,6 +82,191 @@ async function testTextUploadPublishesOnlyReadyChunks(): Promise<void> {
       (db.prepare("SELECT COUNT(*) AS total FROM document_chunks WHERE document_id = ?").get(document.id) as { total: number }).total,
       1,
     );
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testLowQualityContentIsInspectableButNeverPublished(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-quality-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  let publishCount = 0;
+  const service = new DocumentService(db, {
+    uploadDir,
+    embedTexts: async (texts) => texts.map(() => [1, 0]),
+    publishChunks: () => { publishCount += 1; },
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'too-short.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Too short'),
+      uploadedBy: 'admin-1',
+    });
+    assert.equal(document.status, 'failed');
+    assert.equal(document.failureCode, 'quality_review_required');
+    assert.equal(document.qualityDecision, 'review_required');
+    assert.deepEqual(document.qualityReasons, ['near_empty_content']);
+    assert.equal(document.chunkCount, 0);
+    assert.equal(publishCount, 0);
+    assert.equal(service.listBlocks(document.id, { page: 1, pageSize: 20 }).total, 1);
+    assert.equal(service.get(document.id).processingSummary?.failureCode, 'quality_review_required');
+    assert.deepEqual(service.get(document.id).processingSummary?.qualityReasons, ['near_empty_content']);
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testUnsafeStructureRequiresReviewInsteadOfGenericFailure(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-structure-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  let publishCount = 0;
+  const service = new DocumentService(db, {
+    uploadDir,
+    embedTexts: async (texts) => texts.map(() => [1, 0]),
+    publishChunks: () => { publishCount += 1; },
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'unsafe-list.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(`- ${'x'.repeat(1_300)}`),
+      uploadedBy: 'admin-1',
+    });
+    assert.equal(document.status, 'failed');
+    assert.equal(document.failureCode, 'quality_review_required');
+    assert.equal(document.qualityDecision, 'review_required');
+    assert.deepEqual(document.qualityReasons, ['unsupported_structure']);
+    assert.equal(document.indexStatus, 'failed');
+    assert.equal(document.chunkCount, 0);
+    assert.equal(publishCount, 0);
+    assert.equal(
+      service.get(document.id).processingSummary?.stages.find((stage) => stage.name === 'chunk')?.errorCode,
+      'structural_unit_too_large',
+    );
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testParserFailureDoesNotLeakRawCodesIntoQualityReasons(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-parser-failure-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const service = new DocumentService(db, {
+    uploadDir,
+    embedTexts: async (texts) => texts.map(() => [1, 0]),
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'broken.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-not-a-valid-document'),
+      uploadedBy: 'admin-1',
+    });
+    assert.equal(document.status, 'failed');
+    assert.equal(document.qualityDecision, 'rejected');
+    assert.deepEqual(document.qualityReasons, []);
+    assert.equal(document.failureCode, 'invalid_pdf');
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testReadyReprocessingKeepsPublishedStateWhenReplacementPublishFails(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-reprocess-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  let failPublish = false;
+  let synchronizeCount = 0;
+  const service = new DocumentService(db, {
+    uploadDir,
+    embedTexts: async (texts) => texts.map(() => [1, 0]),
+    publishChunks: () => {
+      if (failPublish) throw new Error('replacement index unavailable');
+    },
+    synchronizeIndex: () => { synchronizeCount += 1; },
+  });
+
+  try {
+    const original = await service.upload({
+      originalName: 'published.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Published policy\n\nThis content must remain searchable after a failed replacement.'),
+      uploadedBy: 'admin-1',
+    });
+    const originalChunks = service.listChunks(original.id, { page: 1, pageSize: 20 }).items;
+    const originalRepresentationId = service.get(original.id).representationSummary?.id;
+    db.prepare(`
+      UPDATE documents
+      SET representation_version = NULL, cleaner_version = NULL, chunker_version = 'semantic-v1'
+      WHERE id = ?
+    `).run(original.id);
+
+    failPublish = true;
+    const afterFailure = await service.reprocess(original.id);
+    assert.equal(afterFailure.status, 'ready');
+    assert.equal(afterFailure.representationSummary?.id, originalRepresentationId);
+    assert.equal(afterFailure.processingSummary?.status, 'failed');
+    assert.equal(afterFailure.processingSummary?.failureCode, 'publish_failed');
+    assert.equal(synchronizeCount, 1);
+    assert.deepEqual(
+      service.listChunks(original.id, { page: 1, pageSize: 20 }).items.map((chunk) => chunk.content),
+      originalChunks.map((chunk) => chunk.content),
+    );
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testUnknownIndexConvergenceDisablesShadowDocument(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-index-unknown-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  let failPublish = false;
+  const service = new DocumentService(db, {
+    uploadDir,
+    embedTexts: async (texts) => texts.map(() => [1, 0]),
+    publishChunks: () => {
+      if (failPublish) throw new Error('index state unknown');
+    },
+  });
+
+  try {
+    const original = await service.upload({
+      originalName: 'unknown-index.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Published source\n\nThis original content remains in the database.'),
+      uploadedBy: 'admin-1',
+    });
+    db.prepare(`
+      UPDATE documents
+      SET representation_version = NULL, cleaner_version = NULL, chunker_version = 'semantic-v1'
+      WHERE id = ?
+    `).run(original.id);
+
+    failPublish = true;
+    const result = await service.reprocess(original.id);
+    assert.equal(result.status, 'ready');
+    assert.equal(result.isActive, 0);
+    assert.equal(result.indexStatus, 'failed');
+    assert.equal(result.processingSummary?.failureCode, 'publish_failed');
+    assert.ok(service.listChunks(original.id, { page: 1, pageSize: 20 }).total > 0);
   } finally {
     db.close();
     fs.rmSync(uploadDir, { recursive: true, force: true });
@@ -66,7 +288,7 @@ async function testFailureRetryLifecycleAndDuplicateProtection(): Promise<void> 
     },
     removeDocumentFromIndex: (documentId) => { removed.push(documentId); },
   });
-  const buffer = Buffer.from('物流政策\n\n包裹通常三个工作日送达。');
+  const buffer = Buffer.from('物流政策\n\n包裹通常三个工作日送达，如有延迟请联系人工客服。');
 
   try {
     const failed = await service.upload({
@@ -80,6 +302,28 @@ async function testFailureRetryLifecycleAndDuplicateProtection(): Promise<void> 
     assert.equal(service.listChunks(failed.id, { page: 1, pageSize: 20 }).total, 0);
     assert.equal(fs.readdirSync(uploadDir).length, 1, 'accepted failed uploads remain available for retry');
     await assert.rejects(service.setActive(failed.id, false), /Only ready documents/);
+
+    const missingSource = await service.upload({
+      originalName: 'missing-source.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Missing source retry\n\nThis document records a failed validation stage.'),
+      uploadedBy: 'admin-1',
+    });
+    const storedPath = (db.prepare('SELECT storage_path AS storagePath FROM documents WHERE id = ?')
+      .get(missingSource.id) as { storagePath: string }).storagePath;
+    fs.unlinkSync(path.join(uploadDir, storedPath));
+    const missingRetry = await service.retry(missingSource.id);
+    assert.equal(missingRetry.failureCode, 'source_file_missing');
+    assert.equal(service.get(missingSource.id).processingSummary?.retryOf, missingSource.latestTaskId);
+    assert.deepEqual(service.get(missingSource.id).processingSummary?.stages.map((stage) => ({
+      name: stage.name,
+      status: stage.status,
+      errorCode: stage.errorCode,
+    })), [{
+      name: 'validate',
+      status: 'failed',
+      errorCode: 'source_file_missing',
+    }]);
 
     await assert.rejects(
       service.upload({
@@ -165,11 +409,13 @@ async function testDeleteRestoresFileAndDatabaseWhenIndexRemovalFails(): Promise
     const document = await service.upload({
       originalName: 'delete.txt',
       mimeType: 'text/plain',
-      buffer: Buffer.from('删除一致性\n\n索引失败时必须保留原始状态。'),
+      buffer: Buffer.from('删除一致性\n\n索引失败时必须保留原始状态，并等待安全恢复。'),
       uploadedBy: 'admin-1',
     });
     await assert.rejects(service.delete(document.id), /could not be completed/);
     assert.equal(service.get(document.id).status, 'ready');
+    assert.equal(service.get(document.id).representationSummary?.schemaVersion, 'document-ir-v1');
+    assert.equal(service.get(document.id).processingSummary?.status, 'succeeded');
     assert.equal(fs.readdirSync(uploadDir).filter((name) => name.endsWith('.txt')).length, 1);
     assert.equal(fs.readdirSync(uploadDir).some((name) => name.endsWith('.deleting')), false);
 
@@ -182,7 +428,7 @@ async function testDeleteRestoresFileAndDatabaseWhenIndexRemovalFails(): Promise
   }
 }
 
-async function testDeleteDoesNotRepublishWhenDatabaseCompensationFails(): Promise<void> {
+async function testDeleteRollsBackDatabaseWhenFileRemovalFails(): Promise<void> {
   const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-rag-delete-compensation-'));
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
@@ -202,8 +448,6 @@ async function testDeleteDoesNotRepublishWhenDatabaseCompensationFails(): Promis
       buffer: Buffer.from('补偿失败\n\n数据库恢复失败时不能重新发布孤立索引。'),
       uploadedBy: 'admin-1',
     });
-    db.exec("CREATE TRIGGER block_document_restore BEFORE INSERT ON documents WHEN NEW.id = '" + document.id
-      + "' BEGIN SELECT RAISE(FAIL, 'restore blocked'); END;");
     let failedRemoval = false;
     fs.rmSync = ((target, options) => {
       if (!failedRemoval && String(target).endsWith('.deleting')) {
@@ -214,9 +458,9 @@ async function testDeleteDoesNotRepublishWhenDatabaseCompensationFails(): Promis
     }) as typeof fs.rmSync;
 
     await assert.rejects(service.delete(document.id), /could not be completed/);
-    assert.throws(() => service.get(document.id), /Document not found/);
-    assert.equal(publishCount, 1, 'failed database restore must not republish orphan chunks');
-    assert.equal(fs.readdirSync(uploadDir).length, 0);
+    assert.equal(service.get(document.id).status, 'ready');
+    assert.equal(publishCount, 2, 'the preserved database record should restore its index state');
+    assert.equal(fs.readdirSync(uploadDir).filter((name) => name.endsWith('.txt')).length, 1);
   } finally {
     fs.rmSync = originalRmSync;
     db.close();
@@ -287,7 +531,7 @@ async function testDeleteDisablesDocumentWhenFileRollbackFails(): Promise<void> 
     const document = await service.upload({
       originalName: 'file-rollback.txt',
       mimeType: 'text/plain',
-      buffer: Buffer.from('文件补偿\n\n原文件恢复失败时文档必须停用。'),
+      buffer: Buffer.from('文件补偿\n\n原文件恢复失败时文档必须停用并等待人工处理。'),
       uploadedBy: 'admin-1',
     });
     let triggerCreated = false;
@@ -363,10 +607,15 @@ async function testDeleteRestoresRecordWhenIndexConvergenceFails(): Promise<void
 
 async function main(): Promise<void> {
   await testTextUploadPublishesOnlyReadyChunks();
+  await testLowQualityContentIsInspectableButNeverPublished();
+  await testUnsafeStructureRequiresReviewInsteadOfGenericFailure();
+  await testParserFailureDoesNotLeakRawCodesIntoQualityReasons();
+  await testReadyReprocessingKeepsPublishedStateWhenReplacementPublishFails();
+  await testUnknownIndexConvergenceDisablesShadowDocument();
   await testFailureRetryLifecycleAndDuplicateProtection();
   await testActivationRollsBackWhenIndexRefreshFails();
   await testDeleteRestoresFileAndDatabaseWhenIndexRemovalFails();
-  await testDeleteDoesNotRepublishWhenDatabaseCompensationFails();
+  await testDeleteRollsBackDatabaseWhenFileRemovalFails();
   await testDeleteKeepsSourceWhenFinalDatabaseRemovalFails();
   await testDeleteDisablesDocumentWhenFileRollbackFails();
   await testDeleteRestoresRecordWhenIndexConvergenceFails();

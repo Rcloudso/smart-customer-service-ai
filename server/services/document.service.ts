@@ -3,33 +3,65 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { ChunkingError, semanticChunk } from '../ai/document-chunker';
+import {
+  ChunkingError,
+  DOCUMENT_CHUNKER_VERSION,
+  SemanticChunkPlan,
+  semanticChunkPlan,
+} from '../ai/document-chunker';
+import {
+  DOCUMENT_CLEANER_VERSION,
+  cleanNormalizedStructuredDocument,
+  evaluateDocumentQuality,
+  normalizeStructuredDocument,
+} from '../ai/document-cleaner';
+import {
+  DOCUMENT_IR_VERSION,
+  DocumentBlock,
+  DocumentIRValidationError,
+  StructuredDocument,
+} from '../ai/document-ir';
 import { DocumentParserError, parseDocument } from '../ai/document-parser';
+import { structuredDocumentToSemanticUnits } from '../ai/document-parser-adapter';
 import {
   DOCUMENT_EMBEDDING_INPUT_VERSION,
+  buildDocumentEmbeddingText,
   currentEmbeddingProfile,
 } from '../ai/embedding-profile';
 import { DocumentRepo } from '../db/repos/document.repo';
 import {
   Document,
+  DocumentDetail,
   DocumentChunk,
   DocumentChunkView,
   DocumentFormat,
   DocumentRecord,
   DocumentStatus,
+  DocumentProcessingStageName,
 } from '../types/domain';
 import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 200_000;
-
-type ReadyChunk = Omit<DocumentChunk, 'id' | 'documentId' | 'createdAt'>;
+const PROCESSING_STAGES: Record<DocumentProcessingStageName, number> = {
+  validate: 0,
+  parse: 1,
+  normalize: 2,
+  clean: 3,
+  quality_gate: 4,
+  chunk: 5,
+  embed: 6,
+  publish: 7,
+};
 
 export interface DocumentServiceDependencies {
   uploadDir: string;
   embedTexts: (texts: string[]) => Promise<number[][]>;
-  publishChunks?: (chunks: DocumentChunk[]) => void | Promise<void>;
+  publishChunks?: (
+    chunks: DocumentChunk[],
+    document: Pick<DocumentRecord, 'id' | 'fileName'>,
+  ) => void | Promise<void>;
   removeDocumentFromIndex?: (documentId: string, chunks: DocumentChunk[]) => void | Promise<void>;
   synchronizeIndex?: () => void | Promise<void>;
 }
@@ -91,8 +123,13 @@ export class DocumentService {
     return this.toPublicDocument(await this.process(record, params.buffer));
   }
 
-  get(documentId: string): Document {
-    return this.toPublicDocument(this.requireDocument(documentId));
+  get(documentId: string): DocumentDetail {
+    const record = this.requireDocument(documentId);
+    return {
+      ...this.toPublicDocument(record),
+      processingSummary: this.repo.getProcessingSummary(record.latestTaskId),
+      representationSummary: this.repo.getRepresentationSummary(record.latestRepresentationId),
+    };
   }
 
   list(params: {
@@ -128,19 +165,98 @@ export class DocumentService {
     };
   }
 
+  listBlocks(documentId: string, params: { page: number; pageSize: number }): {
+    items: DocumentBlock[];
+    total: number;
+    representationVersion: string | null;
+  } {
+    const record = this.requireDocument(documentId);
+    if (!record.latestRepresentationId) {
+      return { items: [], total: 0, representationVersion: record.representationVersion };
+    }
+    const result = this.repo.listRepresentationBlocks(
+      record.latestRepresentationId,
+      params.pageSize,
+      (params.page - 1) * params.pageSize,
+    );
+    return {
+      ...result,
+      representationVersion: record.representationVersion,
+    };
+  }
+
   async retry(documentId: string): Promise<Document> {
     let record = this.requireDocument(documentId);
     if (record.status !== 'failed') throw new ConflictError('Only failed documents can be retried');
+    const retryOf = record.latestTaskId;
     let buffer: Buffer;
     try {
       buffer = fs.readFileSync(this.resolveStoragePath(record.storagePath));
     } catch {
-      return this.toPublicDocument(this.db.transaction(() => (
-        this.repo.markFailed(documentId, 'source_file_missing')
-      ))());
+      const taskId = this.repo.createProcessingTask({
+        documentId,
+        sourceVersion: record.sourceVersion,
+        retryOf,
+        inputBytes: 0,
+      });
+      this.repo.startProcessingStage(taskId, 'validate', PROCESSING_STAGES.validate, 0);
+      this.repo.failProcessingStage(taskId, 'validate', 'source_file_missing');
+      this.db.transaction(() => this.repo.markFailed(documentId, 'source_file_missing', {
+        taskId,
+        representationId: record.latestRepresentationId,
+        representationVersion: record.representationVersion,
+        parserVersion: record.parserVersion,
+        cleanerVersion: record.cleanerVersion,
+        chunkerVersion: record.chunkerVersion,
+        qualityDecision: record.qualityDecision,
+        qualityReasons: record.qualityReasons,
+        indexStatus: 'failed',
+      }))();
+      this.repo.completeProcessingTask({
+        taskId,
+        representationVersion: record.representationVersion,
+        parserVersion: record.parserVersion,
+        cleanerVersion: record.cleanerVersion,
+        chunkerVersion: record.chunkerVersion,
+        qualityDecision: record.qualityDecision,
+        qualityReasons: record.qualityReasons,
+        failureCode: 'source_file_missing',
+        indexStatus: 'failed',
+        outputCharacters: 0,
+        blockCount: 0,
+        chunkCount: 0,
+        succeeded: false,
+      });
+      return this.toPublicDocument(this.requireDocument(documentId));
     }
     record = this.repo.markPending(documentId);
-    return this.toPublicDocument(await this.process(record, buffer));
+    return this.toPublicDocument(await this.process(record, buffer, { retryOf }));
+  }
+
+  async reprocess(documentId: string): Promise<DocumentDetail> {
+    const record = this.requireDocument(documentId);
+    if (record.status !== 'ready') {
+      throw new ConflictError('Only ready documents can be reprocessed');
+    }
+    if (
+      record.representationVersion === DOCUMENT_IR_VERSION
+      && record.cleanerVersion === DOCUMENT_CLEANER_VERSION
+      && record.chunkerVersion === DOCUMENT_CHUNKER_VERSION
+      && record.indexStatus === 'published'
+    ) {
+      return this.get(documentId);
+    }
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(this.resolveStoragePath(record.storagePath));
+    } catch {
+      throw new ServiceUnavailableError('Document source file is unavailable');
+    }
+    await this.process(record, buffer, {
+      shadow: true,
+      retryOf: record.latestTaskId,
+    });
+    return this.get(documentId);
   }
 
   async setActive(documentId: string, isActive: boolean): Promise<Document> {
@@ -150,7 +266,7 @@ export class DocumentService {
     const chunks = this.repo.listChunks(documentId, 300, 0).items;
     try {
       if (isActive) {
-        await this.dependencies.publishChunks?.(chunks);
+        await this.dependencies.publishChunks?.(chunks, record);
       } else {
         await this.dependencies.removeDocumentFromIndex?.(documentId, chunks);
       }
@@ -158,7 +274,7 @@ export class DocumentService {
       this.repo.setActive(documentId, record.isActive);
       try {
         if (record.isActive) {
-          await this.dependencies.publishChunks?.(chunks);
+          await this.dependencies.publishChunks?.(chunks, record);
         } else {
           await this.dependencies.removeDocumentFromIndex?.(documentId, chunks);
         }
@@ -183,10 +299,12 @@ export class DocumentService {
         fs.renameSync(filePath, temporaryPath);
         renamed = true;
       }
-      if (!this.repo.delete(documentId)) throw new Error('Document delete did not change a row');
-      databaseDeleted = true;
       await this.synchronizeDocumentIndex('remove', record, chunks);
-      if (renamed) fs.rmSync(temporaryPath);
+      this.db.transaction(() => {
+        if (!this.repo.delete(documentId)) throw new Error('Document delete did not change a row');
+        if (renamed) fs.rmSync(temporaryPath);
+      })();
+      databaseDeleted = true;
     } catch (error) {
       let databaseRestored = !databaseDeleted;
       if (databaseDeleted) {
@@ -243,40 +361,394 @@ export class DocumentService {
     }
   }
 
-  private async process(record: DocumentRecord, buffer: Buffer): Promise<DocumentRecord> {
+  private async process(
+    record: DocumentRecord,
+    buffer: Buffer,
+    options: { shadow?: boolean; retryOf?: string | null } = {},
+  ): Promise<DocumentRecord> {
+    const previousChunks = options.shadow
+      ? this.repo.listChunks(record.id, 300, 0).items
+      : [];
+    const taskId = this.repo.createProcessingTask({
+      documentId: record.id,
+      sourceVersion: record.sourceVersion,
+      retryOf: options.retryOf,
+      inputBytes: buffer.byteLength,
+    });
+    let representation: StructuredDocument | null = null;
+    let representationId: string | null = null;
+    let qualityDecision: 'ready' | 'review_required' | 'rejected' | null = null;
+    let qualityReasons: string[] = [];
+    let plans: SemanticChunkPlan[] = [];
+    let databaseReplaced = false;
     try {
-      const parsed = await parseDocument(buffer, record.format);
-      if (parsed.characterCount > MAX_EXTRACTED_CHARACTERS) {
+      await this.runStage(taskId, 'validate', buffer.byteLength, async () => {
+        const format = this.validateUpload(record.fileName, record.mimeType, buffer);
+        if (format !== record.format) throw new DocumentProcessingError('format_changed');
+        return 1;
+      }, (count) => count);
+
+      const parsed = await this.runStage(taskId, 'parse', buffer.byteLength, () => (
+        parseDocument(buffer, record.format, {
+          documentId: record.id,
+          sourceVersion: record.sourceVersion,
+          fileName: record.fileName,
+          mimeType: record.mimeType,
+          sha256: record.sha256,
+        })
+      ), (result) => result.representation.blocks.length);
+      if (parsed.representation.metrics.inputCharacters > MAX_EXTRACTED_CHARACTERS) {
         throw new DocumentProcessingError('text_too_large');
       }
-      const chunks = (await semanticChunk(parsed.units, async (texts) => {
-        try {
-          return await this.dependencies.embedTexts(texts);
-        } catch (error) {
-          logger.warn({
-            documentId: record.id,
-            format: record.format,
-            errorName: error instanceof Error ? error.name : 'UnknownError',
-          }, 'Document embedding failed');
-          throw new ChunkingError('embedding_failed');
+
+      const normalized = await this.runStage(
+        taskId,
+        'normalize',
+        parsed.representation.metrics.inputCharacters,
+        () => normalizeStructuredDocument(parsed.representation),
+        (result) => result.metrics.normalizedCharacters,
+      );
+
+      const cleaned = await this.runStage(
+        taskId,
+        'clean',
+        normalized.blocks.length,
+        () => {
+          const result = cleanNormalizedStructuredDocument(normalized);
+          const id = this.repo.saveRepresentation(
+            record.id,
+            taskId,
+            DOCUMENT_CLEANER_VERSION,
+            result,
+          );
+          return { result, id };
+        },
+        ({ result }) => result.metrics.includedBlockCount,
+      );
+      representation = cleaned.result;
+      representationId = cleaned.id;
+
+      const quality = await this.runStage(
+        taskId,
+        'quality_gate',
+        representation.metrics.includedCharacters,
+        () => evaluateDocumentQuality(representation as StructuredDocument),
+        () => 1,
+      );
+      qualityDecision = quality.decision;
+      qualityReasons = quality.reasons;
+      if (quality.decision !== 'ready') {
+        const failureCode = quality.decision === 'review_required'
+          ? 'quality_review_required'
+          : `quality_rejected_${quality.reasons[0] ?? 'empty_content'}`;
+        if (!options.shadow) {
+          this.db.transaction(() => this.repo.markFailed(record.id, failureCode, {
+            taskId,
+            representationId,
+            representationVersion: representation?.schemaVersion ?? null,
+            parserVersion: representation?.parser.version ?? null,
+            cleanerVersion: DOCUMENT_CLEANER_VERSION,
+            chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+            qualityDecision,
+            qualityReasons,
+            indexStatus: 'not_indexed',
+          }))();
         }
-      }, record.fileName)).map((chunk): ReadyChunk => ({
-        ...chunk,
+        this.repo.completeProcessingTask({
+          taskId,
+          representationVersion: representation.schemaVersion,
+          parserVersion: representation.parser.version,
+          cleanerVersion: DOCUMENT_CLEANER_VERSION,
+          chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+          qualityDecision,
+          qualityReasons,
+          failureCode,
+          indexStatus: 'not_indexed',
+          outputCharacters: representation.metrics.includedCharacters,
+          blockCount: representation.blocks.length,
+          chunkCount: 0,
+          succeeded: false,
+        });
+        return this.requireDocument(record.id);
+      }
+
+      const units = chunkableUnits(representation);
+      plans = await this.runStage(
+        taskId,
+        'chunk',
+        units.length,
+        () => semanticChunkPlan(
+          units,
+          (texts) => this.embedTextsSafely(record, texts),
+          record.fileName,
+          {
+            representationVersion: DOCUMENT_IR_VERSION,
+            chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+          },
+        ),
+        (result) => result.length,
+      );
+
+      const embeddings = await this.runStage(
+        taskId,
+        'embed',
+        plans.length,
+        () => this.embedTextsSafely(record, plans.map((chunk) => (
+          buildDocumentEmbeddingText({
+            documentTitle: record.fileName,
+            sectionTitle: chunk.title,
+            content: chunk.content,
+          })
+        ))),
+        (result) => result.length,
+      );
+      if (
+        embeddings.length !== plans.length
+        || embeddings.some((embedding) => embedding.length === 0)
+      ) {
+        throw new ChunkingError('embedding_failed');
+      }
+      const now = new Date().toISOString();
+      const chunks: DocumentChunk[] = plans.map((plan, index) => ({
+        ...plan,
+        id: uuidv4(),
+        documentId: record.id,
+        embedding: embeddings[index],
         embeddingProfile: currentEmbeddingProfile(DOCUMENT_EMBEDDING_INPUT_VERSION),
+        createdAt: now,
       }));
-      const updated = this.db.transaction(() => (
-        this.repo.replaceChunksAndMarkReady(record.id, chunks, parsed.characterCount)
-      ))();
-      await this.dependencies.publishChunks?.(this.repo.listChunks(record.id, 300, 0).items);
-      return updated;
+
+      try {
+        await this.runStage(
+          taskId,
+          'publish',
+          chunks.length,
+          async () => {
+            const publication = this.dependencies.publishChunks?.(chunks, record);
+            if (publication && typeof publication.then === 'function') {
+              await publication;
+            }
+            this.db.transaction(() => this.repo.replaceChunksAndMarkReady(
+              record.id,
+              chunks,
+              representation?.metrics.includedCharacters ?? 0,
+              {
+                taskId,
+                representationId: representationId as string,
+                representationVersion: DOCUMENT_IR_VERSION,
+                parserVersion: representation?.parser.version ?? 'unknown',
+                cleanerVersion: DOCUMENT_CLEANER_VERSION,
+                chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+                qualityDecision: 'ready',
+                qualityReasons: [],
+                indexStatus: 'published',
+              },
+            ))();
+            databaseReplaced = true;
+            return chunks.length;
+          },
+          (count) => count,
+        );
+        this.repo.completeProcessingTask({
+          taskId,
+          representationVersion: representation.schemaVersion,
+          parserVersion: representation.parser.version,
+          cleanerVersion: DOCUMENT_CLEANER_VERSION,
+          chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+          qualityDecision: 'ready',
+          qualityReasons: [],
+          failureCode: null,
+          indexStatus: 'published',
+          outputCharacters: representation.metrics.includedCharacters,
+          blockCount: representation.blocks.length,
+          chunkCount: chunks.length,
+          succeeded: true,
+        });
+      } catch (error) {
+        await this.compensatePublishFailure({
+          record,
+          previousChunks,
+          taskId,
+          representationId,
+          representation,
+          qualityDecision,
+          qualityReasons,
+          shadow: Boolean(options.shadow),
+          databaseReplaced,
+        });
+        return this.requireDocument(record.id);
+      }
+      return this.requireDocument(record.id);
     } catch (error) {
-      const failureCode = error instanceof DocumentProcessingError
-        || error instanceof DocumentParserError
-        || error instanceof ChunkingError
-        ? error.failureCode
-        : 'processing_failed';
-      return this.db.transaction(() => this.repo.markFailed(record.id, failureCode))();
+      const parserRejected = error instanceof DocumentParserError
+        || error instanceof DocumentIRValidationError;
+      const unsafeStructure = error instanceof ChunkingError
+        && error.failureCode === 'structural_unit_too_large';
+      const failureCode = unsafeStructure
+        ? 'quality_review_required'
+        : processingFailureCode(error);
+      const resolvedQualityDecision = parserRejected
+        ? 'rejected'
+        : unsafeStructure
+          ? 'review_required'
+          : qualityDecision;
+      const resolvedQualityReasons = parserRejected
+        ? []
+        : unsafeStructure
+          ? ['unsupported_structure']
+          : qualityReasons;
+      if (!options.shadow) {
+        this.db.transaction(() => this.repo.markFailed(record.id, failureCode, {
+          taskId,
+          representationId,
+          representationVersion: representation?.schemaVersion ?? null,
+          parserVersion: representation?.parser.version ?? null,
+          cleanerVersion: representation ? DOCUMENT_CLEANER_VERSION : null,
+          chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+          qualityDecision: resolvedQualityDecision,
+          qualityReasons: resolvedQualityReasons,
+          indexStatus: 'failed',
+        }))();
+      }
+      this.repo.completeProcessingTask({
+        taskId,
+        representationVersion: representation?.schemaVersion ?? null,
+        parserVersion: representation?.parser.version ?? null,
+        cleanerVersion: representation ? DOCUMENT_CLEANER_VERSION : null,
+        chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+        qualityDecision: resolvedQualityDecision,
+        qualityReasons: resolvedQualityReasons,
+        failureCode,
+        indexStatus: 'failed',
+        outputCharacters: representation?.metrics.includedCharacters ?? 0,
+        blockCount: representation?.blocks.length ?? 0,
+        chunkCount: plans.length,
+        succeeded: false,
+      });
+      return this.requireDocument(record.id);
     }
+  }
+
+  private async runStage<T>(
+    taskId: string,
+    name: DocumentProcessingStageName,
+    inputCount: number | null,
+    operation: () => T | Promise<T>,
+    outputCount: (result: T) => number | null,
+  ): Promise<T> {
+    this.repo.startProcessingStage(taskId, name, PROCESSING_STAGES[name], inputCount);
+    try {
+      const result = await operation();
+      this.repo.completeProcessingStage(taskId, name, outputCount(result));
+      return result;
+    } catch (error) {
+      this.repo.failProcessingStage(taskId, name, processingFailureCode(error));
+      throw error;
+    }
+  }
+
+  private async embedTextsSafely(record: DocumentRecord, texts: string[]): Promise<number[][]> {
+    try {
+      return await this.dependencies.embedTexts(texts);
+    } catch (error) {
+      logger.warn({
+        documentId: record.id,
+        format: record.format,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Document embedding failed');
+      throw new ChunkingError('embedding_failed');
+    }
+  }
+
+  private async compensatePublishFailure(params: {
+    record: DocumentRecord;
+    previousChunks: DocumentChunk[];
+    taskId: string;
+    representationId: string | null;
+    representation: StructuredDocument;
+    qualityDecision: 'ready' | 'review_required' | 'rejected' | null;
+    qualityReasons: string[];
+    shadow: boolean;
+    databaseReplaced: boolean;
+  }): Promise<void> {
+    let databaseKnown = true;
+    try {
+      if (params.shadow && params.databaseReplaced) {
+        this.repo.restorePublishedState(params.record, params.previousChunks, params.taskId);
+      } else if (!params.shadow) {
+        this.db.transaction(() => this.repo.markFailed(params.record.id, 'publish_failed', {
+          taskId: params.taskId,
+          representationId: params.representationId,
+          representationVersion: params.representation.schemaVersion,
+          parserVersion: params.representation.parser.version,
+          cleanerVersion: DOCUMENT_CLEANER_VERSION,
+          chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+          qualityDecision: params.qualityDecision,
+          qualityReasons: params.qualityReasons,
+          indexStatus: 'failed',
+        }))();
+      }
+    } catch (error) {
+      databaseKnown = false;
+      logger.error({
+        documentId: params.record.id,
+        taskId: params.taskId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Document publish compensation database restoration failed');
+      try {
+        this.repo.setIndexStatus(params.record.id, 'failed', 0);
+      } catch {
+        // The reconciliation result remains false when even disabling cannot be persisted.
+      }
+    }
+    let reconciled = false;
+    if (databaseKnown && this.dependencies.synchronizeIndex) {
+      try {
+        await this.dependencies.synchronizeIndex();
+        reconciled = true;
+      } catch (error) {
+        logger.error({
+          documentId: params.record.id,
+          taskId: params.taskId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }, 'Document publish compensation index synchronization failed');
+      }
+    }
+    if (!reconciled && databaseKnown && !this.dependencies.synchronizeIndex) {
+      try {
+        if (params.shadow && params.record.isActive && this.dependencies.publishChunks) {
+          await this.dependencies.publishChunks?.(params.previousChunks, params.record);
+          reconciled = true;
+        } else if (this.dependencies.removeDocumentFromIndex) {
+          await this.dependencies.removeDocumentFromIndex(params.record.id, []);
+          reconciled = true;
+        }
+      } catch {
+        // The document is disabled below when index convergence is unknown.
+      }
+    }
+    if (!reconciled) {
+      try {
+        this.repo.setIndexStatus(params.record.id, 'failed', 0);
+      } catch {
+        // The task record below still preserves the safe error code when possible.
+      }
+    }
+    this.repo.completeProcessingTask({
+      taskId: params.taskId,
+      representationVersion: params.representation.schemaVersion,
+      parserVersion: params.representation.parser.version,
+      cleanerVersion: DOCUMENT_CLEANER_VERSION,
+      chunkerVersion: DOCUMENT_CHUNKER_VERSION,
+      qualityDecision: params.qualityDecision,
+      qualityReasons: params.qualityReasons,
+      failureCode: 'publish_failed',
+      indexStatus: reconciled && params.shadow ? params.record.indexStatus : 'failed',
+      outputCharacters: params.representation.metrics.includedCharacters,
+      blockCount: params.representation.blocks.length,
+      chunkCount: 0,
+      succeeded: false,
+    });
   }
 
   private validateUpload(fileName: string, mimeType: string, buffer: Buffer): DocumentFormat {
@@ -472,7 +944,7 @@ export class DocumentService {
     if (mode === 'remove' || !record.isActive) {
       await this.dependencies.removeDocumentFromIndex?.(record.id, chunks);
     } else {
-      await this.dependencies.publishChunks?.(chunks);
+      await this.dependencies.publishChunks?.(chunks, record);
     }
   }
 
@@ -500,4 +972,25 @@ class DocumentProcessingError extends Error {
   constructor(public readonly failureCode: string) {
     super(failureCode);
   }
+}
+
+function processingFailureCode(error: unknown): string {
+  return error instanceof DocumentProcessingError
+    || error instanceof DocumentParserError
+    || error instanceof DocumentIRValidationError
+    || error instanceof ChunkingError
+    ? error.failureCode
+    : 'processing_failed';
+}
+
+function chunkableUnits(representation: StructuredDocument) {
+  const units = structuredDocumentToSemanticUnits(representation);
+  const referencedHeadingIds = new Set(units.flatMap((unit) => (
+    unit.blockKind === 'heading' ? [] : unit.sourceBlockIds ?? []
+  )));
+  return units.filter((unit) => {
+    if (unit.blockKind !== 'heading') return true;
+    const ownId = unit.sourceBlockIds?.at(-1);
+    return !ownId || !referencedHeadingIds.has(ownId);
+  });
 }

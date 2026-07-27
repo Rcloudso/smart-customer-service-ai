@@ -17,3 +17,10 @@ DESIGN.md
 PLAN.md
 .agents/
 skills-lock.json
+
+# Local development design artifacts
+docs/system_design.md
+docs/class-diagram.mermaid
+docs/sequence-diagram.mermaid
+docs/superpowers/plans/2026-07-15-admin-token-expiry-logout.md
+docs/superpowers/specs/2026-07-15-admin-token-expiry-logout-design.md
