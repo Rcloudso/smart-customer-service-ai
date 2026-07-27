@@ -1,4 +1,4 @@
-import { DocumentFormat } from '../types/domain';
+import { ParsedDocumentFormat } from '../types/domain';
 import { StructuredDocument } from './document-ir';
 import {
   DocumentParserError,
@@ -23,7 +23,7 @@ export interface ParsedDocument {
 
 export async function parseDocument(
   buffer: Buffer,
-  format: DocumentFormat,
+  format: ParsedDocumentFormat,
   context: DocumentParseContext = {},
 ): Promise<ParsedDocument> {
   const adapter = getDocumentParserAdapter(format);

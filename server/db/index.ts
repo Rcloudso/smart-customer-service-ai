@@ -89,6 +89,7 @@ export function initSchema(database: Database.Database): void {
       file_name TEXT NOT NULL,
       storage_path TEXT NOT NULL,
       format TEXT NOT NULL CHECK(format IN ('txt', 'md', 'pdf', 'docx')),
+      source_format TEXT,
       mime_type TEXT NOT NULL,
       size_bytes INTEGER NOT NULL,
       sha256 TEXT NOT NULL UNIQUE,
@@ -548,6 +549,7 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'documents', 'source_version', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(database, 'documents', 'source_format', 'TEXT');
   ensureColumn(database, 'documents', 'representation_version', 'TEXT');
   ensureColumn(database, 'documents', 'cleaner_version', 'TEXT');
   ensureColumn(database, 'documents', 'quality_decision', 'TEXT');

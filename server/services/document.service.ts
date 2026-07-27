@@ -24,11 +24,20 @@ import {
 import { DocumentParserError, parseDocument } from '../ai/document-parser';
 import { structuredDocumentToSemanticUnits } from '../ai/document-parser-adapter';
 import {
+  OcrExtractionError,
+  OcrExtractor,
+} from '../ai/ocr-extractor';
+import {
   DOCUMENT_EMBEDDING_INPUT_VERSION,
   buildDocumentEmbeddingText,
   currentEmbeddingProfile,
 } from '../ai/embedding-profile';
 import { DocumentRepo } from '../db/repos/document.repo';
+import {
+  DocumentReviewBlock,
+  DocumentReviewRepo,
+  OcrExtractionJob,
+} from '../db/repos/document-review.repo';
 import {
   Document,
   DocumentDetail,
@@ -38,6 +47,8 @@ import {
   DocumentRecord,
   DocumentStatus,
   DocumentProcessingStageName,
+  ParsedDocumentFormat,
+  VisualDocumentFormat,
 } from '../types/domain';
 import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -58,6 +69,7 @@ const PROCESSING_STAGES: Record<DocumentProcessingStageName, number> = {
 export interface DocumentServiceDependencies {
   uploadDir: string;
   embedTexts: (texts: string[]) => Promise<number[][]>;
+  authoritativeOcr?: OcrExtractor;
   publishChunks?: (
     chunks: DocumentChunk[],
     document: Pick<DocumentRecord, 'id' | 'fileName'>,
@@ -68,12 +80,14 @@ export interface DocumentServiceDependencies {
 
 export class DocumentService {
   private readonly repo: DocumentRepo;
+  private readonly reviewRepo: DocumentReviewRepo;
 
   constructor(
     private readonly db: Database.Database,
     private readonly dependencies: DocumentServiceDependencies,
   ) {
     this.repo = new DocumentRepo(db);
+    this.reviewRepo = new DocumentReviewRepo(db);
   }
 
   async upload(params: {
@@ -120,7 +134,10 @@ export class DocumentService {
       throw error;
     }
 
-    return this.toPublicDocument(await this.process(record, params.buffer));
+    const processed = isVisualDocumentFormat(format)
+      ? await this.processVisual(record, params.buffer)
+      : await this.process(record, params.buffer);
+    return this.toPublicDocument(processed);
   }
 
   get(documentId: string): DocumentDetail {
@@ -129,6 +146,10 @@ export class DocumentService {
       ...this.toPublicDocument(record),
       processingSummary: this.repo.getProcessingSummary(record.latestTaskId),
       representationSummary: this.repo.getRepresentationSummary(record.latestRepresentationId),
+      extractionSummary: this.toExtractionSummary(
+        this.reviewRepo.findLatestExtractionJob(documentId),
+      ),
+      reviewDraftSummary: this.reviewRepo.findLatestDraftSummary(documentId),
     };
   }
 
@@ -185,10 +206,43 @@ export class DocumentService {
     };
   }
 
+  listReviewDraftBlocks(documentId: string, params: { page: number; pageSize: number }): {
+    draftId: string | null;
+    revision: number | null;
+    status: 'open' | 'published' | 'superseded' | null;
+    items: DocumentReviewBlock[];
+    total: number;
+  } {
+    this.requireDocument(documentId);
+    const result = this.reviewRepo.listLatestDraftBlocks(
+      documentId,
+      params.pageSize,
+      (params.page - 1) * params.pageSize,
+    );
+    if (!result) {
+      return {
+        draftId: null,
+        revision: null,
+        status: null,
+        items: [],
+        total: 0,
+      };
+    }
+    return {
+      draftId: result.draft.id,
+      revision: result.draft.revision,
+      status: result.draft.status,
+      items: result.items,
+      total: result.total,
+    };
+  }
+
   async retry(documentId: string): Promise<Document> {
     let record = this.requireDocument(documentId);
     if (record.status !== 'failed') throw new ConflictError('Only failed documents can be retried');
-    const retryOf = record.latestTaskId;
+    const retryOf = isVisualDocumentFormat(record.format)
+      ? this.reviewRepo.findLatestExtractionJob(documentId)?.id ?? null
+      : record.latestTaskId;
     let buffer: Buffer;
     try {
       buffer = fs.readFileSync(this.resolveStoragePath(record.storagePath));
@@ -230,13 +284,19 @@ export class DocumentService {
       return this.toPublicDocument(this.requireDocument(documentId));
     }
     record = this.repo.markPending(documentId);
-    return this.toPublicDocument(await this.process(record, buffer, { retryOf }));
+    const processed = isVisualDocumentFormat(record.format)
+      ? await this.processVisual(record, buffer, { retryOf })
+      : await this.process(record, buffer, { retryOf });
+    return this.toPublicDocument(processed);
   }
 
   async reprocess(documentId: string): Promise<DocumentDetail> {
     const record = this.requireDocument(documentId);
     if (record.status !== 'ready') {
       throw new ConflictError('Only ready documents can be reprocessed');
+    }
+    if (isVisualDocumentFormat(record.format)) {
+      throw new ConflictError('Reviewed OCR documents must be re-extracted through the review workflow');
     }
     if (
       record.representationVersion === DOCUMENT_IR_VERSION
@@ -361,11 +421,86 @@ export class DocumentService {
     }
   }
 
+  private async processVisual(
+    record: DocumentRecord,
+    buffer: Buffer,
+    options: { retryOf?: string | null } = {},
+  ): Promise<DocumentRecord> {
+    const extractor = this.dependencies.authoritativeOcr;
+    if (!extractor) {
+      return this.db.transaction(() => this.repo.markFailed(
+        record.id,
+        'ocr_worker_unconfigured',
+        {
+          qualityDecision: null,
+          qualityReasons: [],
+          indexStatus: 'not_indexed',
+        },
+      ))();
+    }
+
+    const job = this.reviewRepo.createExtractionJob({
+      documentId: record.id,
+      sourceVersion: record.sourceVersion,
+      role: 'authoritative',
+      engine: extractor.engine,
+      engineVersion: extractor.engineVersion,
+      retryOf: options.retryOf,
+    });
+    this.reviewRepo.startExtractionJob(job.id);
+
+    try {
+      const result = await extractor.extract({
+        requestId: job.id,
+        documentId: record.id,
+        sourceVersion: record.sourceVersion,
+        fileName: record.fileName,
+        mimeType: record.mimeType,
+        sha256: record.sha256,
+        buffer,
+      });
+      this.db.transaction(() => {
+        this.reviewRepo.completeExtractionJob(job.id, result);
+        this.reviewRepo.createDraftFromAuthoritativeJob(job.id, record.uploadedBy);
+        this.repo.markFailed(record.id, 'ocr_review_required', {
+          parserVersion: `${result.engine.name}:${result.engine.version}`,
+          qualityDecision: 'review_required',
+          qualityReasons: ['ocr_review_required'],
+          indexStatus: 'not_indexed',
+        });
+      })();
+      return this.requireDocument(record.id);
+    } catch (error) {
+      const failureCode = error instanceof OcrExtractionError
+        ? error.failureCode
+        : 'ocr_worker_unavailable';
+      logger.warn({
+        documentId: record.id,
+        jobId: job.id,
+        engine: extractor.engine,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Document OCR extraction failed');
+      this.db.transaction(() => {
+        this.reviewRepo.failExtractionJob(job.id, failureCode);
+        this.repo.markFailed(record.id, failureCode, {
+          qualityDecision: null,
+          qualityReasons: [],
+          indexStatus: 'not_indexed',
+        });
+      })();
+      return this.requireDocument(record.id);
+    }
+  }
+
   private async process(
     record: DocumentRecord,
     buffer: Buffer,
     options: { shadow?: boolean; retryOf?: string | null } = {},
   ): Promise<DocumentRecord> {
+    if (isVisualDocumentFormat(record.format)) {
+      throw new DocumentProcessingError('ocr_required');
+    }
+    const parsedFormat: ParsedDocumentFormat = record.format;
     const previousChunks = options.shadow
       ? this.repo.listChunks(record.id, 300, 0).items
       : [];
@@ -389,7 +524,7 @@ export class DocumentService {
       }, (count) => count);
 
       const parsed = await this.runStage(taskId, 'parse', buffer.byteLength, () => (
-        parseDocument(buffer, record.format, {
+        parseDocument(buffer, parsedFormat, {
           documentId: record.id,
           sourceVersion: record.sourceVersion,
           fileName: record.fileName,
@@ -754,12 +889,16 @@ export class DocumentService {
   private validateUpload(fileName: string, mimeType: string, buffer: Buffer): DocumentFormat {
     if (buffer.byteLength === 0) throw new ValidationError('Document is empty');
     if (buffer.byteLength > MAX_FILE_BYTES) throw new ValidationError('Document exceeds the 10 MB limit');
-    const extension = path.extname(fileName).slice(1).toLowerCase() as DocumentFormat;
+    const rawExtension = path.extname(fileName).slice(1).toLowerCase();
+    const extension = (rawExtension === 'jpg' ? 'jpeg' : rawExtension) as DocumentFormat;
     const allowedMimeTypes: Record<DocumentFormat, string[]> = {
       txt: ['text/plain'],
       md: ['text/markdown', 'text/x-markdown', 'text/plain'],
       pdf: ['application/pdf'],
       docx: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      png: ['image/png'],
+      jpeg: ['image/jpeg'],
+      webp: ['image/webp'],
     };
     if (!(extension in allowedMimeTypes)) throw new ValidationError('Unsupported document format');
     if (!allowedMimeTypes[extension].includes(mimeType)) {
@@ -778,6 +917,30 @@ export class DocumentService {
     }
     if (extension === 'docx' && (buffer[0] !== 0x50 || buffer[1] !== 0x4b)) {
       throw new ValidationError('DOCX signature is invalid');
+    }
+    if (
+      extension === 'png'
+      && !buffer.subarray(0, 8).equals(Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ]))
+    ) {
+      throw new ValidationError('PNG signature is invalid');
+    }
+    if (
+      extension === 'jpeg'
+      && !buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+    ) {
+      throw new ValidationError('JPEG signature is invalid');
+    }
+    if (
+      extension === 'webp'
+      && (
+        buffer.length < 12
+        || buffer.subarray(0, 4).toString('ascii') !== 'RIFF'
+        || buffer.subarray(8, 12).toString('ascii') !== 'WEBP'
+      )
+    ) {
+      throw new ValidationError('WebP signature is invalid');
     }
     return extension;
   }
@@ -966,12 +1129,37 @@ export class DocumentService {
     const { storagePath: _storagePath, sha256: _sha256, ...document } = record;
     return document;
   }
+
+  private toExtractionSummary(
+    job: OcrExtractionJob | null,
+  ): DocumentDetail['extractionSummary'] {
+    if (!job) return null;
+    return {
+      jobId: job.id,
+      status: job.status,
+      role: job.role,
+      engine: job.engine,
+      engineVersion: job.engineVersion,
+      retryOf: job.retryOf,
+      errorCode: job.errorCode,
+      blockCount: job.result?.blocks.length ?? 0,
+      warningCodes: job.result?.warnings.map((warning) => warning.code) ?? [],
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+    };
+  }
+
 }
 
 class DocumentProcessingError extends Error {
   constructor(public readonly failureCode: string) {
     super(failureCode);
   }
+}
+
+function isVisualDocumentFormat(format: DocumentFormat): format is VisualDocumentFormat {
+  return format === 'png' || format === 'jpeg' || format === 'webp';
 }
 
 function processingFailureCode(error: unknown): string {

@@ -60,6 +60,22 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+router.get('/:id/review-draft', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const documentId = parseDocumentId(req.params.id);
+    const parsed = chunkListSchema.safeParse(req.query);
+    if (!parsed.success) throw validationFrom(parsed.error);
+    const result = documentService.listReviewDraftBlocks(documentId, parsed.data);
+    res.json({
+      code: 0,
+      data: { ...result, ...parsed.data },
+      message: 'ok',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/:id/chunks', (req: Request, res: Response, next: NextFunction) => {
   try {
     const documentId = parseDocumentId(req.params.id);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,6 +29,56 @@ async function main(): Promise<void> {
   process.env.OPENAI_API_KEY = '';
   process.env.EMBED_PROVIDER = 'other';
   process.env.EMBED_API_KEY = '';
+  let ocrRequestCount = 0;
+  let ocrServer: Server | null = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    req.on('end', () => {
+      assert.equal(req.method, 'POST');
+      assert.equal(req.url, '/v1/extractions');
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+        source: { contentBase64: string };
+      };
+      assert.ok(body.source.contentBase64);
+      ocrRequestCount += 1;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        code: 0,
+        data: {
+          contractVersion: 'ocr-extraction-v1',
+          engine: {
+            name: 'paddleocr_ppstructurev3',
+            version: '3.0.0',
+          },
+          blocks: [
+            {
+              id: 'block-000001',
+              order: 0,
+              kind: 'paragraph',
+              pageNumber: 1,
+              headingPath: [],
+              confidence: 0.96,
+              layout: { x: 8, y: 12, width: 400, height: 80 },
+              excluded: false,
+              exclusionReason: null,
+              text: '图片中的退款政策：签收后七天内可以申请退款。',
+            },
+          ],
+          warnings: [],
+          metrics: {
+            pageCount: 1,
+            blockCount: 1,
+            elapsedMs: 12,
+          },
+        },
+        message: 'ok',
+      }));
+    });
+  });
+  ocrServer.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => ocrServer?.once('listening', resolve));
+  process.env.OCR_SERVICE_URL = `http://127.0.0.1:${(ocrServer.address() as AddressInfo).port}`;
+  process.env.OCR_ENGINE_VERSION = '3.0.0';
 
   const [{ default: documentRoutes }, { default: chatRoutes }, { errorHandler }, databaseModule] = await Promise.all([
     import('../routes/admin/documents'),
@@ -132,6 +182,74 @@ async function main(): Promise<void> {
       headers: auth,
     })).status, 200);
 
+    const imageBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('document-api-image'),
+    ]);
+    const imageForm = new FormData();
+    imageForm.append(
+      'file',
+      new Blob([new Uint8Array(imageBytes)], { type: 'image/png' }),
+      'refund-screenshot.png',
+    );
+    const imageUpload = await fetch(`${base}/api/admin/documents`, {
+      method: 'POST',
+      headers: auth,
+      body: imageForm,
+    });
+    assert.equal(imageUpload.status, 201);
+    const imageBody = await imageUpload.json() as {
+      data: {
+        id: string;
+        format: string;
+        status: string;
+        failureCode: string;
+        indexStatus: string;
+      };
+    };
+    assert.equal(imageBody.data.format, 'png');
+    assert.equal(imageBody.data.status, 'failed');
+    assert.equal(imageBody.data.failureCode, 'ocr_review_required');
+    assert.equal(imageBody.data.indexStatus, 'not_indexed');
+    assert.equal(ocrRequestCount, 1);
+
+    const imageDetail = await (await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}`,
+      { headers: auth },
+    )).json() as {
+      data: {
+        extractionSummary: { status: string; engine: string; blockCount: number };
+        reviewDraftSummary: { status: string; revision: number; blockCount: number };
+      };
+    };
+    assert.equal(imageDetail.data.extractionSummary.status, 'succeeded');
+    assert.equal(imageDetail.data.extractionSummary.engine, 'paddleocr_ppstructurev3');
+    assert.equal(imageDetail.data.extractionSummary.blockCount, 1);
+    assert.equal(imageDetail.data.reviewDraftSummary.status, 'open');
+    assert.equal(imageDetail.data.reviewDraftSummary.revision, 1);
+    assert.equal(imageDetail.data.reviewDraftSummary.blockCount, 1);
+
+    const imageDraft = await (await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}/review-draft?page=1&pageSize=1`,
+      { headers: auth },
+    )).json() as {
+      data: {
+        items: Array<Record<string, unknown>>;
+        total: number;
+        revision: number;
+        status: string;
+      };
+    };
+    assert.equal(imageDraft.data.total, 1);
+    assert.equal(imageDraft.data.items[0].kind, 'paragraph');
+    assert.equal(imageDraft.data.items[0].manuallyEdited, false);
+    assert.equal(imageDraft.data.revision, 1);
+    assert.equal(imageDraft.data.status, 'open');
+    assert.equal((await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}`,
+      { method: 'DELETE', headers: auth },
+    )).status, 200);
+
     const duplicateForm = new FormData();
     duplicateForm.append('file', new Blob(['退款政策\n\n签收后七天内可以申请退款，并提供订单号。'], { type: 'text/plain' }), 'copy.txt');
     assert.equal((await fetch(`${base}/api/admin/documents`, { method: 'POST', headers: auth, body: duplicateForm })).status, 409);
@@ -158,6 +276,8 @@ async function main(): Promise<void> {
     console.log('document API tests passed');
   } finally {
     await closeServer(server);
+    await closeServer(ocrServer);
+    ocrServer = null;
     databaseModule.closeDatabase();
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

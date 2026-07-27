@@ -46,6 +46,17 @@ export interface DocumentReviewDraft {
   publishedAt: string | null;
 }
 
+export interface DocumentReviewDraftSummaryRecord {
+  id: string;
+  revision: number;
+  status: DocumentReviewDraftStatus;
+  blockCount: number;
+  manuallyEditedBlockCount: number;
+  updatedBy: string;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
 export class DocumentReviewRepo {
   constructor(private readonly db: Database.Database) {}
 
@@ -155,6 +166,19 @@ export class DocumentReviewRepo {
     return row ? mapExtractionJob(row) : null;
   }
 
+  findLatestExtractionJob(
+    documentId: string,
+    role: OcrExtractionRole = 'authoritative',
+  ): OcrExtractionJob | null {
+    const row = this.db.prepare(`
+      SELECT * FROM document_extraction_jobs
+      WHERE document_id = ? AND role = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(documentId, role) as Record<string, unknown> | undefined;
+    return row ? mapExtractionJob(row) : null;
+  }
+
   createDraftFromAuthoritativeJob(jobId: string, createdBy: string): DocumentReviewDraft {
     if (!createdBy.trim() || createdBy.length > 120) {
       throw new Error('Review author is invalid');
@@ -191,6 +215,86 @@ export class DocumentReviewRepo {
       SELECT * FROM document_review_drafts WHERE id = ?
     `).get(id) as Record<string, unknown> | undefined;
     return row ? this.mapDraft(row) : null;
+  }
+
+  findLatestDraft(documentId: string): DocumentReviewDraft | null {
+    const row = this.db.prepare(`
+      SELECT * FROM document_review_drafts
+      WHERE document_id = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(documentId) as Record<string, unknown> | undefined;
+    return row ? this.mapDraft(row) : null;
+  }
+
+  findLatestDraftSummary(documentId: string): DocumentReviewDraftSummaryRecord | null {
+    const row = this.db.prepare(`
+      SELECT d.id, d.revision, d.status, d.updated_by, d.updated_at, d.published_at,
+             COUNT(b.block_id) AS block_count,
+             COALESCE(SUM(b.manually_edited), 0) AS manually_edited_block_count
+      FROM document_review_drafts d
+      LEFT JOIN document_review_blocks b ON b.draft_id = d.id
+      WHERE d.id = (
+        SELECT latest.id
+        FROM document_review_drafts latest
+        WHERE latest.document_id = ?
+        ORDER BY latest.created_at DESC, latest.rowid DESC
+        LIMIT 1
+      )
+      GROUP BY d.id
+    `).get(documentId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: row.id as string,
+      revision: row.revision as number,
+      status: row.status as DocumentReviewDraftStatus,
+      blockCount: row.block_count as number,
+      manuallyEditedBlockCount: row.manually_edited_block_count as number,
+      updatedBy: row.updated_by as string,
+      updatedAt: row.updated_at as string,
+      publishedAt: row.published_at as string | null,
+    };
+  }
+
+  listLatestDraftBlocks(
+    documentId: string,
+    limit: number,
+    offset: number,
+  ): {
+    draft: Omit<DocumentReviewDraft, 'blocks'>;
+    items: DocumentReviewBlock[];
+    total: number;
+  } | null {
+    const row = this.db.prepare(`
+      SELECT * FROM document_review_drafts
+      WHERE document_id = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(documentId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const draft = mapDraftMetadata(row);
+    const rows = this.db.prepare(`
+      SELECT * FROM document_review_blocks
+      WHERE draft_id = ? ORDER BY block_order LIMIT ? OFFSET ?
+    `).all(draft.id, limit, offset) as Record<string, unknown>[];
+    const count = this.db.prepare(`
+      SELECT COUNT(*) AS total FROM document_review_blocks WHERE draft_id = ?
+    `).get(draft.id) as { total: number };
+    const items = rows.map((row) => {
+      const block = parseDraftBlock(row.payload);
+      if (
+        block.id !== row.block_id
+        || block.order !== row.block_order
+        || block.kind !== row.kind
+      ) {
+        throw new Error('Review draft block metadata is inconsistent');
+      }
+      return {
+        ...block,
+        manuallyEdited: Boolean(row.manually_edited),
+      } as DocumentReviewBlock;
+    });
+    return { draft, items, total: count.total };
   }
 
   replaceDraftBlocks(
@@ -333,6 +437,23 @@ function assertEngineRole(role: OcrExtractionRole, engine: OcrEngineName): void 
   ) {
     throw new Error('OCR engine is not allowed for this extraction role');
   }
+}
+
+function mapDraftMetadata(
+  row: Record<string, unknown>,
+): Omit<DocumentReviewDraft, 'blocks'> {
+  return {
+    id: row.id as string,
+    documentId: row.document_id as string,
+    sourceJobId: row.source_job_id as string,
+    revision: row.revision as number,
+    status: row.status as DocumentReviewDraftStatus,
+    createdBy: row.created_by as string,
+    updatedBy: row.updated_by as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    publishedAt: row.published_at as string | null,
+  };
 }
 
 function mapExtractionJob(row: Record<string, unknown>): OcrExtractionJob {

@@ -188,7 +188,11 @@ export function DocumentManagementPage(): React.ReactElement {
     try {
       const document = await adminApi.uploadDocument(file);
       MessagePlugin[document.status === 'ready' ? 'success' : 'warning'](
-        document.status === 'ready' ? t('documents.uploaded') : t('documents.uploadFailedAccepted'),
+        document.status === 'ready'
+          ? t('documents.uploaded')
+          : document.failureCode === 'ocr_review_required'
+            ? t('documents.ocrReviewReady')
+            : t('documents.uploadFailedAccepted'),
       );
       setUploadFiles([]);
       setPage(1);
@@ -231,7 +235,11 @@ export function DocumentManagementPage(): React.ReactElement {
     try {
       const result = await adminApi.retryDocument(document.id);
       MessagePlugin[result.status === 'ready' ? 'success' : 'warning'](
-        result.status === 'ready' ? t('documents.retrySucceeded') : t('documents.retryFailed'),
+        result.status === 'ready'
+          ? t('documents.retrySucceeded')
+          : result.failureCode === 'ocr_review_required'
+            ? t('documents.ocrReviewReady')
+            : t('documents.retryFailed'),
       );
       await fetchDocuments();
     } catch {
@@ -444,7 +452,7 @@ export function DocumentManagementPage(): React.ReactElement {
             <Upload
               action="#"
               theme="file"
-              accept=".txt,.md,.pdf,.docx"
+              accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp"
               autoUpload={false}
               disabled={uploading}
               files={uploadFiles}
@@ -552,6 +560,8 @@ export function DocumentManagementPage(): React.ReactElement {
                       ? 'documents.failureAdvice.embedding_failed'
                       : selected.failureCode === 'processing_failed'
                         ? 'documents.failureAdvice.processing_failed'
+                        : selected.failureCode === 'ocr_review_required'
+                          ? 'documents.failureAdvice.ocr_review_required'
                         : 'documents.failureAdvice.default')}
                   </span>
                 </div>

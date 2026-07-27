@@ -242,6 +242,9 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | 对话模型地址、仅环境注入的凭据和模型名 |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI 兼容 embedding 模型 |
 | `DOCUMENT_UPLOAD_DIR` | 私有文档文件目录，默认 `./data/uploads` |
+| `OCR_SERVICE_URL` | 可选 PaddleOCR/PP-StructureV3 Worker 根地址；留空时原有 FAQ 和文本文档能力仍可运行 |
+| `OCR_SERVICE_TOKEN` | 可选 Bearer Token，只发送给已配置的 OCR Worker |
+| `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Worker 版本匹配和请求超时，默认 `3.0.0` / `120000` 毫秒 |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API 限流配置 |
 | `SESSION_INACTIVITY_MINUTES` | 活跃会话无消息后自动关闭的分钟数，默认 `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | 一次同步筛选 CSV 可导出的完整消息行上限，默认 `5000` |
@@ -327,9 +330,11 @@ data/          本地 SQLite 数据库文件
 
 - 默认向量索引在进程内存中，全量遍历 FAQ 与文档切片 embedding，适合 Demo 和小规模知识库，不适合大规模检索。
 - embedding 以 JSON 形式存储在 SQLite 中，没有使用专门的向量数据库。
-- 文档解析仍同步运行在 Express 进程内；加密和损坏文件会被拒绝，扫描 PDF
-  与仅图片 DOCX 会进入复核且不建立索引。当前不包含 OCR、VLM 提取、网页采集、
-  引用跳转或页码跳转。
+- 文本文档解析仍同步运行在 Express 进程内，加密和损坏文件会被拒绝。
+  v0.3.1 开发路径可把 PNG、JPEG 和 WebP 交给可选的外部
+  PaddleOCR/PP-StructureV3 Worker，成功结果只保存为待复核草稿；复核与发布流程
+  完成前不会建立索引。上传请求目前会同步等待 Worker，尚无持久化后台 OCR
+  调度器。扫描 PDF 路由、VLM 提取、网页采集、引用跳转和页码跳转仍未包含。
 - v0.3.0 会保存结构化表示和处理记录，但原文件仍是事实源；只提供显式重试/
   重处理，不包含后台 Worker、定时任务或人工强制放行。
 - 文档仍属于单一全局知识库；v0.3.0 不包含多租户分库或外部向量存储。

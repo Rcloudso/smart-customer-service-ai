@@ -256,6 +256,9 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | Chat model endpoint, environment-only credential, and model |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI-compatible embedding model |
 | `DOCUMENT_UPLOAD_DIR` | Private document file directory; defaults to `./data/uploads` |
+| `OCR_SERVICE_URL` | Optional PaddleOCR/PP-StructureV3 worker base URL; when empty, existing FAQ and text-document features still work |
+| `OCR_SERVICE_TOKEN` | Optional bearer token sent only to the configured OCR worker |
+| `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Required worker version match and request timeout; defaults to `3.0.0` / `120000` ms |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API rate limits |
 | `SESSION_INACTIVITY_MINUTES` | Minutes without activity before an active conversation is closed; defaults to `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | Maximum complete message rows in one synchronous filtered CSV export; defaults to `5000` |
@@ -343,10 +346,14 @@ data/          Local SQLite database files
 
 - The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
-- Document parsing remains synchronous inside the Express process. Encrypted
-  and damaged files are rejected; scan-only PDFs and image-only DOCX files are
-  marked for review and are not indexed. OCR, VLM extraction, web ingestion,
-  citation links, and page jumps are not included.
+- Text-document parsing remains synchronous inside the Express process.
+  Encrypted and damaged files are rejected. The v0.3.1 development path accepts
+  PNG, JPEG and WebP sources through an optional external
+  PaddleOCR/PP-StructureV3 worker and stores successful output as a review
+  draft; those drafts are not indexed until the review/publication workflow is
+  completed. The upload request currently waits synchronously for that worker;
+  there is no durable background OCR scheduler yet. Scan-PDF routing, VLM
+  extraction, web ingestion, citation links and page jumps are not included yet.
 - v0.3.0 stores structured representations and processing history but keeps the
   original file as source truth. It has explicit retry/reprocess only—no
   background worker, scheduler, or manual force-publish flow.

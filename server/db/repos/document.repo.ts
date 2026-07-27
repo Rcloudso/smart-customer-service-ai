@@ -39,14 +39,15 @@ export class DocumentRepo {
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT INTO documents (
-        id, file_name, storage_path, format, mime_type, size_bytes, sha256,
+        id, file_name, storage_path, format, source_format, mime_type, size_bytes, sha256,
         status, is_active, parser_version, chunker_version, failure_code,
         character_count, chunk_count, uploaded_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 'parser-v1', 'semantic-v1', NULL, 0, 0, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, 'parser-v1', 'semantic-v1', NULL, 0, 0, ?, ?, ?)
     `).run(
       params.id,
       params.fileName,
       params.storagePath,
+      legacyStoredFormat(params.format),
       params.format,
       params.mimeType,
       params.sizeBytes,
@@ -326,16 +327,17 @@ export class DocumentRepo {
   restore(document: DocumentRecord, chunks: DocumentChunk[]): void {
     this.db.prepare(`
       INSERT INTO documents (
-        id, file_name, storage_path, format, mime_type, size_bytes, sha256,
+        id, file_name, storage_path, format, source_format, mime_type, size_bytes, sha256,
         status, is_active, parser_version, chunker_version, failure_code,
         character_count, chunk_count, source_version, representation_version,
         cleaner_version, quality_decision, quality_reasons, latest_task_id,
         latest_representation_id, index_status, uploaded_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       document.id,
       document.fileName,
       document.storagePath,
+      legacyStoredFormat(document.format),
       document.format,
       document.mimeType,
       document.sizeBytes,
@@ -742,7 +744,7 @@ export class DocumentRepo {
       id: row.id as string,
       fileName: row.file_name as string,
       storagePath: row.storage_path as string,
-      format: row.format as DocumentFormat,
+      format: mapDocumentFormat(row.source_format, row.format),
       mimeType: row.mime_type as string,
       sizeBytes: row.size_bytes as number,
       sha256: row.sha256 as string,
@@ -792,6 +794,31 @@ export class DocumentRepo {
       createdAt: row.created_at as string,
     };
   }
+}
+
+function legacyStoredFormat(format: DocumentFormat): 'txt' | 'md' | 'pdf' | 'docx' {
+  return ['png', 'jpeg', 'webp'].includes(format) ? 'txt' : format as 'txt' | 'md' | 'pdf' | 'docx';
+}
+
+function mapDocumentFormat(sourceFormat: unknown, storedFormat: unknown): DocumentFormat {
+  const supportedFormats: DocumentFormat[] = [
+    'txt',
+    'md',
+    'pdf',
+    'docx',
+    'png',
+    'jpeg',
+    'webp',
+  ];
+  if (
+    typeof sourceFormat === 'string'
+    && supportedFormats.includes(sourceFormat as DocumentFormat)
+  ) {
+    return sourceFormat as DocumentFormat;
+  }
+  return supportedFormats.includes(storedFormat as DocumentFormat)
+    ? storedFormat as DocumentFormat
+    : 'txt';
 }
 
 function mapRepresentationBlock(row: Record<string, unknown>): DocumentBlock {

@@ -98,6 +98,24 @@ try {
     `).get() as { total: number }).total,
     7,
   );
+  const image = repo.createPending({
+    id: 'image-document',
+    fileName: 'legacy-compatible.png',
+    storagePath: 'image-document.png',
+    format: 'png',
+    mimeType: 'image/png',
+    sizeBytes: 32,
+    sha256: 'b'.repeat(64),
+    uploadedBy: 'admin',
+  });
+  assert.equal(image.format, 'png');
+  assert.deepEqual(
+    db.prepare(`
+      SELECT format, source_format AS sourceFormat
+      FROM documents WHERE id = 'image-document'
+    `).get(),
+    { format: 'txt', sourceFormat: 'png' },
+  );
   db.close();
   console.log('document migration tests passed');
 } catch (error) {

@@ -111,7 +111,7 @@ export interface KnowledgeRetrievalSnapshot {
   pageEnd?: number;
 }
 
-export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx' | 'png' | 'jpeg' | 'webp';
 export type DocumentStatus = 'pending' | 'ready' | 'failed';
 export type DocumentQualityDecision = 'ready' | 'review_required' | 'rejected';
 export type DocumentIndexStatus = 'legacy' | 'not_indexed' | 'published' | 'failed';
@@ -216,6 +216,30 @@ export interface DocumentRepresentationSummary {
 export interface DocumentDetail extends DocumentItem {
   processingSummary: DocumentProcessingSummary | null;
   representationSummary: DocumentRepresentationSummary | null;
+  extractionSummary?: {
+    jobId: string;
+    status: 'queued' | 'running' | 'succeeded' | 'failed';
+    role: 'authoritative' | 'shadow';
+    engine: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+    engineVersion: string;
+    retryOf: string | null;
+    errorCode: string | null;
+    blockCount: number;
+    warningCodes: string[];
+    createdAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  } | null;
+  reviewDraftSummary?: {
+    id: string;
+    revision: number;
+    status: 'open' | 'published' | 'superseded';
+    blockCount: number;
+    manuallyEditedBlockCount: number;
+    updatedBy: string;
+    updatedAt: string;
+    publishedAt: string | null;
+  } | null;
 }
 
 export type DocumentBlockKind =
@@ -234,8 +258,10 @@ export interface DocumentBlock {
   pageNumber: number | null;
   headingPath: string[];
   confidence: number | null;
+  layout?: { x: number; y: number; width: number; height: number } | null;
   excluded: boolean;
   exclusionReason: string | null;
+  manuallyEdited?: boolean;
   text?: string;
   items?: Array<{ ordinal: number; text: string }>;
   cells?: Array<{ rowIndex: number; columnIndex: number; text: string; isHeader: boolean }>;

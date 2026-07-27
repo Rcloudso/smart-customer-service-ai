@@ -8,7 +8,7 @@ export const MAX_DOCUMENT_BLOCKS = 2_000;
 const sourceSchema = z.object({
   documentId: z.string().uuid().optional(),
   sourceVersion: z.number().int().positive().default(1),
-  format: z.enum(['txt', 'md', 'pdf', 'docx']),
+  format: z.enum(['txt', 'md', 'pdf', 'docx', 'png', 'jpeg', 'webp']),
   fileName: z.string().min(1).max(255).optional(),
   mimeType: z.string().min(1).max(255).optional(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
