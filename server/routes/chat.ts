@@ -80,6 +80,10 @@ function toRetrievalSnapshot(results: RetrievalResult[]): KnowledgeRetrievalSnap
     chunkIndex: result.chunkIndex,
     pageStart: result.pageStart,
     pageEnd: result.pageEnd,
+    sourceBlockIds: result.sourceBlockIds,
+    extractionJobId: result.extractionJobId,
+    extractionEngine: result.extractionEngine,
+    extractionEngineVersion: result.extractionEngineVersion,
   }));
 }
 

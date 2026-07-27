@@ -109,6 +109,10 @@ export interface KnowledgeRetrievalSnapshot {
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
+  sourceBlockIds?: string[];
+  extractionJobId?: string;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  extractionEngineVersion?: string;
 }
 
 export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx' | 'png' | 'jpeg' | 'webp';
@@ -166,6 +170,9 @@ export interface DocumentChunk {
   headingPath?: string[];
   representationVersion?: string | null;
   chunkerVersion?: string | null;
+  extractionJobId?: string | null;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2' | null;
+  extractionEngineVersion?: string | null;
   createdAt: string;
 }
 
@@ -213,22 +220,35 @@ export interface DocumentRepresentationSummary {
   createdAt: string;
 }
 
+export interface DocumentExtractionSummary {
+  jobId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  role: 'authoritative' | 'shadow';
+  engine: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  engineVersion: string;
+  retryOf: string | null;
+  errorCode: string | null;
+  blockCount: number;
+  warningCodes: string[];
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface DocumentDetail extends DocumentItem {
   processingSummary: DocumentProcessingSummary | null;
   representationSummary: DocumentRepresentationSummary | null;
-  extractionSummary?: {
-    jobId: string;
-    status: 'queued' | 'running' | 'succeeded' | 'failed';
-    role: 'authoritative' | 'shadow';
-    engine: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
-    engineVersion: string;
-    retryOf: string | null;
-    errorCode: string | null;
-    blockCount: number;
-    warningCodes: string[];
-    createdAt: string;
-    startedAt: string | null;
-    completedAt: string | null;
+  extractionSummary?: DocumentExtractionSummary | null;
+  shadowExtractionSummary?: DocumentExtractionSummary | null;
+  extractionHistory?: DocumentExtractionSummary[];
+  ocrComparisonSummary?: {
+    status: 'pending' | 'available' | 'failed';
+    authoritativeJobId: string;
+    shadowJobId: string;
+    blockCountDelta: number | null;
+    warningCountDelta: number | null;
+    textAgreement: number | null;
+    structureAgreement: number | null;
   } | null;
   reviewDraftSummary?: {
     id: string;

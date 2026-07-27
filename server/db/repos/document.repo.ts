@@ -93,8 +93,10 @@ export class DocumentRepo {
         INSERT INTO document_chunks (
           id, document_id, chunk_index, content, title, page_start, page_end,
           character_count, embedding, embedding_profile, source_block_ids,
-          heading_path, representation_version, chunker_version, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          heading_path, representation_version, chunker_version,
+          extraction_job_id, extraction_engine, extraction_engine_version,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
     const now = new Date().toISOString();
     for (const chunk of chunks) {
@@ -113,6 +115,9 @@ export class DocumentRepo {
         JSON.stringify(chunk.headingPath ?? []),
         chunk.representationVersion ?? null,
         chunk.chunkerVersion ?? null,
+        chunk.extractionJobId ?? null,
+        chunk.extractionEngine ?? null,
+        chunk.extractionEngineVersion ?? null,
         now,
       );
     }
@@ -365,8 +370,10 @@ export class DocumentRepo {
       INSERT INTO document_chunks (
         id, document_id, chunk_index, content, title, page_start, page_end,
         character_count, embedding, embedding_profile, source_block_ids,
-        heading_path, representation_version, chunker_version, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        heading_path, representation_version, chunker_version,
+        extraction_job_id, extraction_engine, extraction_engine_version,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const chunk of chunks) {
       insertChunk.run(
@@ -384,6 +391,9 @@ export class DocumentRepo {
         JSON.stringify(chunk.headingPath ?? []),
         chunk.representationVersion ?? null,
         chunk.chunkerVersion ?? null,
+        chunk.extractionJobId ?? null,
+        chunk.extractionEngine ?? null,
+        chunk.extractionEngineVersion ?? null,
         chunk.createdAt,
       );
     }
@@ -685,8 +695,10 @@ export class DocumentRepo {
       INSERT INTO document_chunks (
         id, document_id, chunk_index, content, title, page_start, page_end,
         character_count, embedding, embedding_profile, source_block_ids,
-        heading_path, representation_version, chunker_version, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        heading_path, representation_version, chunker_version,
+        extraction_job_id, extraction_engine, extraction_engine_version,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM document_chunks WHERE document_id = ?').run(document.id);
@@ -706,6 +718,9 @@ export class DocumentRepo {
           JSON.stringify(chunk.headingPath ?? []),
           chunk.representationVersion ?? null,
           chunk.chunkerVersion ?? null,
+          chunk.extractionJobId ?? null,
+          chunk.extractionEngine ?? null,
+          chunk.extractionEngineVersion ?? null,
           chunk.createdAt,
         );
       }
@@ -791,6 +806,9 @@ export class DocumentRepo {
       headingPath: parseJson<string[]>(row.heading_path, []),
       representationVersion: row.representation_version as string | null,
       chunkerVersion: row.chunker_version as string | null,
+      extractionJobId: row.extraction_job_id as string | null,
+      extractionEngine: row.extraction_engine as DocumentChunk['extractionEngine'],
+      extractionEngineVersion: row.extraction_engine_version as string | null,
       createdAt: row.created_at as string,
     };
   }

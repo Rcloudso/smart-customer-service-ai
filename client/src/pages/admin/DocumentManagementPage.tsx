@@ -156,6 +156,13 @@ export function DocumentManagementPage(): React.ReactElement {
   }, [language]);
 
   useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
+  useEffect(() => {
+    if (!documents.some((document) => document.status === 'pending')) return undefined;
+    const timer = window.setInterval(() => {
+      void fetchDocuments();
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [documents, fetchDocuments]);
 
   const openDetails = async (document: DocumentItem) => {
     const detailRequestId = ++detailRequestIdRef.current;
@@ -192,6 +199,8 @@ export function DocumentManagementPage(): React.ReactElement {
       MessagePlugin[document.status === 'ready' ? 'success' : 'warning'](
         document.status === 'ready'
           ? t('documents.uploaded')
+          : document.status === 'pending'
+            ? t('documents.ocrQueued')
           : document.failureCode === 'ocr_review_required'
             ? t('documents.ocrReviewReady')
             : t('documents.uploadFailedAccepted'),
@@ -239,6 +248,8 @@ export function DocumentManagementPage(): React.ReactElement {
       MessagePlugin[result.status === 'ready' ? 'success' : 'warning'](
         result.status === 'ready'
           ? t('documents.retrySucceeded')
+          : result.status === 'pending'
+            ? t('documents.ocrQueued')
           : result.failureCode === 'ocr_review_required'
             ? t('documents.ocrReviewReady')
             : t('documents.retryFailed'),
@@ -596,6 +607,121 @@ export function DocumentManagementPage(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            {selected.extractionSummary && (
+              <div
+                className="app-document-ocr-provenance"
+                role="status"
+                data-testid="document-ocr-provenance"
+              >
+                <div className="app-document-ocr-provenance__header">
+                  <div>
+                    <strong>{t('documents.ocrProvenanceTitle')}</strong>
+                    <span>{t('documents.ocrProvenanceDescription')}</span>
+                  </div>
+                  <div className="app-document-ocr-provenance__engines">
+                    <Tag
+                      theme={
+                        selected.extractionSummary.status === 'failed'
+                          ? 'danger'
+                          : selected.extractionSummary.status === 'succeeded'
+                            ? 'success'
+                            : 'warning'
+                      }
+                      variant="light"
+                    >
+                      {t('documents.ocrAuthoritative')}: {' '}
+                      {t(`documents.ocrEngine.${selected.extractionSummary.engine}`)} {' '}
+                      {selected.extractionSummary.engineVersion} · {' '}
+                      {t(`documents.extractionStatus.${selected.extractionSummary.status}`)}
+                    </Tag>
+                    {selected.shadowExtractionSummary && (
+                      <Tag
+                        theme={
+                          selected.shadowExtractionSummary.status === 'failed'
+                            ? 'danger'
+                            : selected.shadowExtractionSummary.status === 'succeeded'
+                              ? 'default'
+                              : 'warning'
+                        }
+                        variant="light"
+                      >
+                        {t('documents.ocrShadow')}: {' '}
+                        {t(`documents.ocrEngine.${selected.shadowExtractionSummary.engine}`)} {' '}
+                        {selected.shadowExtractionSummary.engineVersion} · {' '}
+                        {t(`documents.extractionStatus.${selected.shadowExtractionSummary.status}`)}
+                      </Tag>
+                    )}
+                  </div>
+                </div>
+                {selected.ocrComparisonSummary && (
+                  selected.ocrComparisonSummary.status === 'available'
+                    ? (
+                      <div className="app-document-ocr-provenance__metrics">
+                        <span>
+                          <strong>
+                            {Math.round((selected.ocrComparisonSummary.textAgreement ?? 0) * 100)}%
+                          </strong>
+                          {t('documents.ocrTextAgreement')}
+                        </span>
+                        <span>
+                          <strong>
+                            {Math.round((selected.ocrComparisonSummary.structureAgreement ?? 0) * 100)}%
+                          </strong>
+                          {t('documents.ocrStructureAgreement')}
+                        </span>
+                        <span>
+                          <strong>
+                            {selected.ocrComparisonSummary.blockCountDelta ?? 0}
+                          </strong>
+                          {t('documents.ocrBlockDelta')}
+                        </span>
+                      </div>
+                    )
+                    : (
+                      <span className="app-document-ocr-provenance__state">
+                        {t(`documents.ocrComparison.${selected.ocrComparisonSummary.status}`)}
+                      </span>
+                    )
+                )}
+                {(selected.extractionHistory?.length ?? 0) > 0 && (
+                  <details className="app-document-ocr-history">
+                    <summary>{t('documents.ocrHistoryTitle')}</summary>
+                    <div className="app-document-ocr-history__list">
+                      {selected.extractionHistory?.map((job) => (
+                        <div key={job.jobId} className="app-document-ocr-history__item">
+                          <span>
+                            {job.role === 'authoritative'
+                              ? t('documents.ocrAuthoritative')
+                              : t('documents.ocrShadow')}
+                            {' · '}
+                            {t(`documents.ocrEngine.${job.engine}`)} {job.engineVersion}
+                          </span>
+                          <Tag
+                            theme={
+                              job.status === 'failed'
+                                ? 'danger'
+                                : job.status === 'succeeded'
+                                  ? 'success'
+                                  : 'warning'
+                            }
+                            variant="light"
+                          >
+                            {t(`documents.extractionStatus.${job.status}`)}
+                          </Tag>
+                          <code>{job.jobId.slice(0, 8)}</code>
+                          {job.retryOf && (
+                            <span>
+                              {t('documents.ocrRetryOf')}: <code>{job.retryOf.slice(0, 8)}</code>
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
 
             {selected.reviewDraftSummary?.status === 'open' && (
               <div className="app-document-review-callout" role="status">

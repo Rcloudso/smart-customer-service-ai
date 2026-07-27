@@ -95,8 +95,8 @@ fields are optional in the final `done` event.
 ## Knowledge Ingestion And Consistency
 
 FAQ writes and document ingestion update both durable rows and the process
-index through application services. Document uploads run synchronously through
-the fixed, versioned pipeline:
+index through application services. Text document uploads run synchronously
+through the fixed, versioned pipeline:
 
 ```text
 validate → parse → normalize → clean → quality_gate → chunk → embed → publish
@@ -110,8 +110,23 @@ representations, safe Block payloads, processing tasks, and per-stage counts
 are stored additively in SQLite. The original uploaded file remains source
 truth and its binary content is not duplicated in the representation tables.
 
+PNG, JPEG, WebP, and scan-only PDF sources take a separate reviewed OCR path:
+
+```text
+validate/store → queue authoritative Paddle job → extract → immutable result
+  → revisioned review draft → validate/clean/quality/chunk/embed → atomic publish
+                     └→ optional DeepSeek shadow job → comparison only
+```
+
+Extraction jobs, retry relationships, engine versions, safe errors, timestamps,
+and immutable results are additive SQLite records. A single-process scheduler
+recovers interrupted `running` jobs to `queued`, claims one job transactionally,
+and executes through the project-owned HTTP contract. PaddleOCR PP-StructureV3
+is authoritative; optional DeepSeek-OCR-2 output is stored separately and
+cannot create or overwrite the review draft.
+
 Chunks retain source Block ids, heading path, page range, representation
-version, and chunker version. Embeddings include title and section metadata and
+version, chunker version, extraction job, and OCR engine/version. Embeddings include title and section metadata and
 carry a profile derived from the active provider, model, endpoint, and input
 schema, while user-visible excerpts preserve source text.
 
@@ -135,6 +150,12 @@ aligned.
   APIs expose configured status, never key material.
 - Upload APIs enforce type and resource limits and do not return storage paths,
   hashes, embeddings, or parser exceptions.
+- OCR sources are checked against extension, MIME type, binary signature,
+  request size, and SHA-256 at both the API and worker boundaries. Worker
+  responses are schema-validated and bounded before persistence.
+- OCR output remains untrusted and non-searchable until an administrator
+  publishes the complete validated draft. Shadow output has no publication
+  authority.
 - The model has no business-operation tools. Deterministic rules recognize
   common private order, logistics, account, address, cancellation, and refund
   action requests, then refuse and route them to human support.
@@ -169,7 +190,8 @@ New infrastructure should follow measurements, not portfolio optics:
 
 | Signal | Likely evolution |
 | --- | --- |
-| Upload parsing or embedding causes visible request latency/timeouts | Move ingestion behind a durable job boundary and idempotent worker |
+| Text parsing or embedding causes visible request latency/timeouts | Extend the proven OCR job boundary to other fixed ingestion stages |
+| OCR throughput or multiple replicas exceed single-process polling | Introduce a distributed claim/lease queue without changing the extraction contract |
 | Index rebuild time or memory materially affects startup/availability | Add a persistent vector adapter and asynchronous index lifecycle |
 | Multiple API replicas are required | Externalize process-local index/config/rate-limit state and define cache invalidation |
 | SQLite write contention, backup, or tenant isolation becomes limiting | Introduce explicit migrations and a server database |
@@ -183,13 +205,14 @@ switch today.
 ## Known Limits
 
 - One deployment-wide knowledge base; no tenant isolation or fine-grained RBAC.
-- Document parsing and embedding remain inside the API request process.
-- Scan-only PDFs and image-only DOCX files are identified but not interpreted;
-  OCR, VLM extraction, web ingestion, and source-file version history are not
-  implemented.
-- Processing is synchronous with explicit retry/reprocess only. Durable
-  background recovery, schedules, and manual review approval remain future
-  work.
+- Text-document parsing and embedding remain inside the API request process.
+- OCR scheduling is durable but deployment-local: one application process polls
+  SQLite, and there is no distributed lease coordination across replicas.
+- PNG/JPEG/WebP and scan-only PDFs can be reviewed through OCR. Image-only DOCX,
+  free-form VLM extraction, multimodal embeddings, web ingestion, and
+  source-file version history are not implemented.
+- The local Paddle worker has a heavy first-start model download and should be
+  isolated on a trusted private network.
 - Conflict detection is intentionally narrow: it detects duplicate normalized
   direct-FAQ questions with different answers, not arbitrary contradictions
   across prose documents.

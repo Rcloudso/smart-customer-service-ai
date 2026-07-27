@@ -31,13 +31,44 @@ const webp = Buffer.concat([
   Buffer.from('resolve-weave-ocr-fixture-webp'),
 ]);
 
-function extractedResult(): OcrExtractionResult {
+function createImagePdf(): Buffer {
+  const imageStream = '\xff';
+  const contentStream = 'q 100 0 0 100 72 620 cm /Im0 Do Q';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+      + '/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>',
+    `<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray `
+      + `/BitsPerComponent 8 /Length ${Buffer.byteLength(imageStream, 'latin1')} >>\n`
+      + `stream\n${imageStream}\nendstream`,
+    `<< /Length ${Buffer.byteLength(contentStream)} >>\nstream\n${contentStream}\nendstream`,
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(body, 'latin1'));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(body, 'latin1');
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  body += offsets.slice(1).map((offset) => (
+    `${String(offset).padStart(10, '0')} 00000 n \n`
+  )).join('');
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`
+    + `startxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(body, 'latin1');
+}
+
+function extractedResult(
+  engine: OcrExtractionResult['engine'] = {
+    name: 'paddleocr_ppstructurev3',
+    version: '3.0.0',
+  },
+): OcrExtractionResult {
   return {
     contractVersion: OCR_EXTRACTION_CONTRACT_VERSION,
-    engine: {
-      name: 'paddleocr_ppstructurev3',
-      version: '3.0.0',
-    },
+    engine,
     blocks: [
       {
         id: 'block-000001',
@@ -84,6 +115,20 @@ class FakePaddleExtractor implements OcrExtractor {
     this.calls += 1;
     if (this.fail) throw new OcrExtractionError('ocr_worker_unavailable');
     return extractedResult();
+  }
+}
+
+class FakeDeepSeekExtractor implements OcrExtractor {
+  readonly engine = 'deepseek_ocr2';
+  readonly engineVersion = '2.0.0';
+  calls = 0;
+
+  async extract(): Promise<OcrExtractionResult> {
+    this.calls += 1;
+    return extractedResult({
+      name: 'deepseek_ocr2',
+      version: this.engineVersion,
+    });
   }
 }
 
@@ -311,6 +356,9 @@ async function testReviewedDraftPublishesWholeDocument(): Promise<void> {
       chunk.content.includes('七个自然日')
       && chunk.sourceBlockIds?.includes('block-000002')
       && chunk.pageStart === 1
+      && chunk.extractionJobId === published.extractionSummary?.jobId
+      && chunk.extractionEngine === 'paddleocr_ppstructurev3'
+      && chunk.extractionEngineVersion === '3.0.0'
     )));
     const immutableResult = db.prepare(`
       SELECT result_json AS resultJson
@@ -418,6 +466,94 @@ async function testReplacementFailurePreservesPublishedKnowledge(): Promise<void
   }
 }
 
+async function testQueuedExtractionSurvivesSchedulingAndKeepsShadowSeparate(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-queued-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const authoritative = new FakePaddleExtractor();
+  const shadow = new FakeDeepSeekExtractor();
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: authoritative,
+    shadowOcr: shadow,
+    ocrMode: 'queued',
+    embedTexts: async () => [],
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'queued-policy.png',
+      mimeType: 'image/png',
+      buffer: png,
+      uploadedBy: 'admin',
+    });
+    assert.equal(document.status, 'pending');
+    assert.equal(authoritative.calls, 0);
+    const queuedJobId = service.get(document.id).extractionSummary?.jobId as string;
+    assert.equal(service.get(document.id).extractionSummary?.status, 'queued');
+    new DocumentReviewRepo(db).startExtractionJob(queuedJobId);
+    assert.equal(service.recoverInterruptedOcrJobs(), 1);
+    assert.equal(service.get(document.id).extractionSummary?.status, 'queued');
+
+    assert.equal(await service.processNextOcrJob(), true);
+    const authoritativeDone = service.get(document.id);
+    assert.equal(authoritativeDone.failureCode, 'ocr_review_required');
+    assert.equal(authoritativeDone.reviewDraftSummary?.status, 'open');
+    assert.equal(authoritativeDone.shadowExtractionSummary?.status, 'queued');
+    assert.equal(authoritative.calls, 1);
+    assert.equal(shadow.calls, 0);
+
+    assert.equal(await service.processNextOcrJob(), true);
+    const shadowDone = service.get(document.id);
+    assert.equal(shadowDone.failureCode, 'ocr_review_required');
+    assert.equal(shadowDone.reviewDraftSummary?.status, 'open');
+    assert.equal(shadowDone.shadowExtractionSummary?.status, 'succeeded');
+    assert.equal(shadowDone.ocrComparisonSummary?.status, 'available');
+    assert.equal(shadowDone.ocrComparisonSummary?.blockCountDelta, 0);
+    assert.equal(shadowDone.ocrComparisonSummary?.textAgreement, 1);
+    assert.deepEqual(
+      shadowDone.extractionHistory.map((job) => [job.role, job.status]),
+      [['shadow', 'succeeded'], ['authoritative', 'succeeded']],
+    );
+    assert.equal(shadow.calls, 1);
+    assert.equal(await service.processNextOcrJob(), false);
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testScannedPdfRoutesThroughAuthoritativeOcr(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-scan-pdf-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const extractor = new FakePaddleExtractor();
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: extractor,
+    embedTexts: async () => [],
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'scan-policy.pdf',
+      mimeType: 'application/pdf',
+      buffer: createImagePdf(),
+      uploadedBy: 'admin',
+    });
+    assert.equal(document.format, 'pdf');
+    assert.equal(document.failureCode, 'ocr_review_required');
+    assert.equal(extractor.calls, 1);
+    assert.equal(service.get(document.id).extractionSummary?.status, 'succeeded');
+    assert.equal(service.get(document.id).reviewDraftSummary?.status, 'open');
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await testVisualUploadCreatesReviewDraftWithoutPublishing();
   await testFailedVisualExtractionCanRetryIntoReview();
@@ -425,6 +561,8 @@ async function main(): Promise<void> {
   await testReviewedDraftPublishesWholeDocument();
   await testPublishFailureLeavesDraftOpenAndUnindexed();
   await testReplacementFailurePreservesPublishedKnowledge();
+  await testQueuedExtractionSurvivesSchedulingAndKeepsShadowSeparate();
+  await testScannedPdfRoutesThroughAuthoritativeOcr();
   console.log('document OCR tests passed');
 }
 

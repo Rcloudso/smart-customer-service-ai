@@ -82,6 +82,9 @@ try {
   assert.deepEqual(chunks.items[0].sourceBlockIds, []);
   assert.deepEqual(chunks.items[0].headingPath, []);
   assert.equal(chunks.items[0].representationVersion, null);
+  assert.equal(chunks.items[0].extractionJobId, null);
+  assert.equal(chunks.items[0].extractionEngine, null);
+  assert.equal(chunks.items[0].extractionEngineVersion, null);
   assert.equal(
     (db.prepare(`
       SELECT COUNT(*) AS total

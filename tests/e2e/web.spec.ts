@@ -115,6 +115,10 @@ test.describe('Web automation: customer chat experience', () => {
               chunkIndex: 1,
               pageStart: 2,
               pageEnd: 2,
+              sourceBlockIds: ['block-000003', 'block-000004'],
+              extractionJobId: '11111111-1111-4111-8111-111111111111',
+              extractionEngine: 'paddleocr_ppstructurev3',
+              extractionEngineVersion: '3.0.0',
             }],
           },
         },
@@ -138,6 +142,9 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(page.getByTestId('chat-document-references')).toContainText('公司薪酬制度.pdf');
     await expect(page.getByTestId('chat-document-references')).toContainText('切片 2');
     await expect(page.getByTestId('chat-document-references')).toContainText('第 2 页');
+    await expect(page.getByTestId('chat-document-references')).toContainText('PaddleOCR PP-StructureV3 3.0.0');
+    await expect(page.getByTestId('chat-document-references')).toContainText('block-000003');
+    await expect(page.getByTestId('chat-document-references')).toContainText('提取任务 11111111');
     const grounding = page.getByTestId('chat-grounding-status');
     await expect(grounding).toContainText('检索支持生成');
     await expect(grounding).toContainText('检索阈值已满足');
@@ -1494,10 +1501,129 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
         }),
       });
     });
+    await page.route(`**/api/admin/documents/${documentId}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            ...documentItem(),
+            processingSummary: null,
+            representationSummary: null,
+            extractionSummary: {
+              jobId: '11111111-1111-4111-8111-111111111111',
+              status: 'succeeded',
+              role: 'authoritative',
+              engine: 'paddleocr_ppstructurev3',
+              engineVersion: '3.0.0',
+              retryOf: null,
+              errorCode: null,
+              blockCount: 2,
+              warningCodes: [],
+              createdAt: '2026-07-27T10:00:00.000Z',
+              startedAt: '2026-07-27T10:00:01.000Z',
+              completedAt: '2026-07-27T10:00:05.000Z',
+            },
+            shadowExtractionSummary: {
+              jobId: '22222222-2222-4222-8222-222222222222',
+              status: 'succeeded',
+              role: 'shadow',
+              engine: 'deepseek_ocr2',
+              engineVersion: '2.0.0',
+              retryOf: null,
+              errorCode: null,
+              blockCount: 2,
+              warningCodes: [],
+              createdAt: '2026-07-27T10:00:05.000Z',
+              startedAt: '2026-07-27T10:00:06.000Z',
+              completedAt: '2026-07-27T10:00:09.000Z',
+            },
+            extractionHistory: [
+              {
+                jobId: '22222222-2222-4222-8222-222222222222',
+                status: 'succeeded',
+                role: 'shadow',
+                engine: 'deepseek_ocr2',
+                engineVersion: '2.0.0',
+                retryOf: null,
+                errorCode: null,
+                blockCount: 2,
+                warningCodes: [],
+                createdAt: '2026-07-27T10:00:05.000Z',
+                startedAt: '2026-07-27T10:00:06.000Z',
+                completedAt: '2026-07-27T10:00:09.000Z',
+              },
+              {
+                jobId: '11111111-1111-4111-8111-111111111111',
+                status: 'succeeded',
+                role: 'authoritative',
+                engine: 'paddleocr_ppstructurev3',
+                engineVersion: '3.0.0',
+                retryOf: null,
+                errorCode: null,
+                blockCount: 2,
+                warningCodes: [],
+                createdAt: '2026-07-27T10:00:00.000Z',
+                startedAt: '2026-07-27T10:00:01.000Z',
+                completedAt: '2026-07-27T10:00:05.000Z',
+              },
+            ],
+            ocrComparisonSummary: {
+              status: 'available',
+              authoritativeJobId: '11111111-1111-4111-8111-111111111111',
+              shadowJobId: '22222222-2222-4222-8222-222222222222',
+              blockCountDelta: 0,
+              warningCountDelta: 0,
+              textAgreement: 0.96,
+              structureAgreement: 1,
+            },
+            reviewDraftSummary: {
+              id: 'draft-1',
+              revision: savedRevision,
+              status: published ? 'published' : 'open',
+              blockCount: 2,
+              manuallyEditedBlockCount: savedRevision > 1 ? 1 : 0,
+              updatedBy: 'admin',
+              updatedAt: '2026-07-27T10:05:00.000Z',
+              publishedAt: published ? '2026-07-27T10:05:00.000Z' : null,
+            },
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/blocks?**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20, representationVersion: null },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/chunks?**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
 
     await page.getByText('文档知识').click();
     const row = documentRow(page, 'refund-policy.png');
     await expect(row).toContainText('OCR 提取完成，等待人工复核');
+    await row.getByTestId('document-view').click();
+    await expect(page.getByTestId('document-ocr-provenance')).toContainText('PaddleOCR PP-StructureV3 3.0.0');
+    await expect(page.getByTestId('document-ocr-provenance')).toContainText('DeepSeek-OCR-2 2.0.0');
+    await expect(page.getByTestId('document-ocr-provenance')).toContainText('96%');
+    await page.getByTestId('document-detail-close').click();
     await row.getByTestId('document-review').click();
     await expect(page.getByTestId('document-review-dialog')).toBeVisible();
     await expect(page.getByTestId('document-review-dialog')).toContainText('2 个 Block');

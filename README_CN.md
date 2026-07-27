@@ -14,7 +14,7 @@
 
 **English version**: [README.md](README.md)
 
-开发版本：**v0.3.0（pre-1.0）**。最新公开发布版仍为 v0.2.9；在 1.0
+开发版本：**v0.3.1（pre-1.0）**。最新公开发布版仍为 v0.2.9；在 1.0
 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
@@ -26,7 +26,7 @@
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看文档 RAG 演示（v0.2.6）</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI 辅助开发复盘</a>
-  · <a href="docs/releases/v0.3.0.md">v0.3.0 版本说明</a>
+  · <a href="docs/releases/v0.3.1.md">v0.3.1 版本说明</a>
   · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 版本验证证据</a>
 </p>
 
@@ -95,9 +95,9 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 - **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
   Retrieval 分开交付，不进行一次性框架重写。
 
-| v0.3.0 分支已实现 | 下一阶段 — v0.3.1+ |
+| v0.3.1 分支已实现 | 下一阶段 — v0.3.2+ |
 | --- | --- |
-| 版本化结构入库，以及 v0.2.9 的 FAQ/RAG、质量实验室和结构化转人工基线 | OCR/图片知识、可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
+| 版本化结构入库、持久化 PaddleOCR 复核流程、可选 DeepSeek 影子对照，以及 v0.2.9 的 FAQ/RAG 基线 | 可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
 
 完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
 
@@ -120,6 +120,7 @@ flowchart LR
 - **管理后台** - FAQ 管理、会话列表、数据看板和运行时模型配置。
 - **知识缺口反馈闭环** - 无匹配、低检索分和 1–2 星负反馈会进入知识审核，管理员可编辑、忽略或转换为已索引 FAQ。
 - **结构感知文档入库** - 后台上传 TXT、Markdown、含文本层 PDF 和 DOCX，进入版本化 `DocumentIR`；保留标题、段落、列表、表格、页码和 Block 来源，检查质量与处理阶段，再原子发布结构感知切片。
+- **需复核的 OCR 入库** - PNG、JPEG、WebP 和扫描 PDF 进入持久化 PaddleOCR PP-StructureV3 队列；管理员检查、编辑 Block 后原子发布，并可启用不具发布权的 DeepSeek-OCR-2 影子对照。
 - **多知识源混合检索** - FAQ 与文档分别召回向量候选，再结合字段感知的关键词候选，由统一检索器通过分数感知的倒数排名融合（RRF）合并、去重并保持来源多样性。
 - **兼容意图分类** - 结构化输出依次尝试 `json_schema`、`json_object` 和经过严格校验的普通文本 JSON，最后才降级到确定性关键词规则。
 - **向量库接口抽象** - `VectorStore` 让默认部署保持简单，也方便后续接入 Qdrant 或 pgvector。
@@ -219,6 +220,15 @@ Docker 默认暴露：
 
 Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时也能启动。确定性本地路径支持 FAQ 与文档检索；文档回答会回退到最高分原文片段。
 
+通过 Compose profile 启动可选 CPU OCR Worker：
+
+```bash
+OCR_SERVICE_URL=http://ocr-worker:8001 docker compose --profile ocr up --build
+```
+
+Worker 首次启动会下载 Paddle 模型。本地 Python 启动方式、Worker 契约和
+Paddle 安装资料见 [ocr-worker/README.md](ocr-worker/README.md)。
+
 Compose 使用 `resolve-weave` 项目名，并将本地镜像构建为
 `resolve-weave:local`。全新安装默认使用 `resolve-weave-data` 数据卷。已有
 Docker 部署应先通过 `docker volume ls` 找到原物理卷，再在启动新 Compose
@@ -245,6 +255,8 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `OCR_SERVICE_URL` | 可选 PaddleOCR/PP-StructureV3 Worker 根地址；留空时原有 FAQ 和文本文档能力仍可运行 |
 | `OCR_SERVICE_TOKEN` | 可选 Bearer Token，只发送给已配置的 OCR Worker |
 | `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Worker 版本匹配和请求超时，默认 `3.0.0` / `120000` 毫秒 |
+| `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | SQLite 持久化队列轮询，默认 `true` / `1000` 毫秒 |
+| `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | 可选、仅用于对照的 DeepSeek-OCR-2 兼容 Worker；不会替换 Paddle 复核内容 |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API 限流配置 |
 | `SESSION_INACTIVITY_MINUTES` | 活跃会话无消息后自动关闭的分钟数，默认 `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | 一次同步筛选 CSV 可导出的完整消息行上限，默认 `5000` |
@@ -262,16 +274,18 @@ EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
 EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
+EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
 ```
 
-评测包含 FAQ 的 Top1/Top3/无匹配指标、覆盖 TXT/Markdown/PDF/DOCX 的 12 条文档用例，以及账户安全、投诉、退款、订单、技术、显式转人工、知识冲突、私有业务操作和提示注入的中英文确定性分流用例。文档评测会对比 `semantic-v1` 与仅结构切片基线，并要求 Top3 100%、MRR 不下降。
+评测包含 FAQ 的 Top1/Top3/无匹配指标、覆盖 TXT/Markdown/PDF/DOCX 的 12 条文档用例、覆盖截图/扫描 PDF/表格/旋转噪声/低质量门禁的 6 条 OCR 契约用例，以及确定性分流用例。文档评测会对比 `semantic-v1` 与仅结构切片基线，并要求 Top3 100%、MRR 不下降。
 
 文档管理入口位于 **管理后台 → 文档知识**。详情 Dialog 会展示质量/索引状态、
 结构指标、警告、分页 Block 检查、八个处理阶段和已发布切片。单文件上限
 10 MB、提取文本上限 200,000 字符、`DocumentIR` 上限 2 MiB/2,000 个 Block、
 最终切片上限 300。完全重复内容按 SHA-256 拒绝；接口不返回存储路径、哈希、
-embedding 或解析器原始异常。
+embedding 或解析器原始异常。OCR 文档还会展示队列/重试历史、引擎版本、可选
+影子一致度和经过复核的 Block 来源。
 
 FAQ 评测报告包含：
 
@@ -304,6 +318,7 @@ EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
 EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
+EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
@@ -318,7 +333,8 @@ GitHub Actions 会在 PR 和推送到 `main` 时运行 `npm ci`、回归测试�
 ```text
 client/        React + Vite 前端
 server/        Express API、服务层、AI 适配器、SQLite 仓储
-eval/          FAQ 与文档检索评测用例
+ocr-worker/    可选 FastAPI PaddleOCR PP-StructureV3 CPU Worker
+eval/          FAQ、文档、质量和 OCR 评测用例
 tests/e2e/     Playwright 端到端测试
 ARCHITECTURE.md 运行拓扑、信任边界和扩容触发条件
 data/          本地 SQLite 数据库文件
@@ -330,14 +346,14 @@ data/          本地 SQLite 数据库文件
 
 - 默认向量索引在进程内存中，全量遍历 FAQ 与文档切片 embedding，适合 Demo 和小规模知识库，不适合大规模检索。
 - embedding 以 JSON 形式存储在 SQLite 中，没有使用专门的向量数据库。
-- 文本文档解析仍同步运行在 Express 进程内，加密和损坏文件会被拒绝。
-  v0.3.1 开发路径可把 PNG、JPEG 和 WebP 交给可选的外部
-  PaddleOCR/PP-StructureV3 Worker，成功结果只保存为待复核草稿；复核与发布流程
-  完成前不会建立索引。上传请求目前会同步等待 Worker，尚无持久化后台 OCR
-  调度器。扫描 PDF 路由、VLM 提取、网页采集、引用跳转和页码跳转仍未包含。
-- v0.3.0 会保存结构化表示和处理记录，但原文件仍是事实源；只提供显式重试/
-  重处理，不包含后台 Worker、定时任务或人工强制放行。
-- 文档仍属于单一全局知识库；v0.3.0 不包含多租户分库或外部向量存储。
+- 文本文档解析仍同步运行在 Express 进程内，加密和损坏文件会被拒绝。PNG、
+  JPEG、WebP 和扫描 PDF 通过可选 PaddleOCR Worker 进入 SQLite 持久化队列；
+  管理员发布完整复核草稿前不会建立索引。
+- 调度器刻意保持单进程轮询 SQLite，不是跨多副本的分布式队列。Paddle Worker
+  首次启动会下载较大的模型，应部署在可信私有网络中。
+- OCR 只提取文本与表格结构；VLM 图片描述、直接用原图回答、网页采集、引用
+  跳转和页码跳转仍未包含。
+- 文档仍属于单一全局知识库；v0.3.1 不包含多租户分库或外部向量存储。
 - `VectorStore` 隔离了本地向量操作，但接入网络向量数据库仍需异步契约、健康检查和一致性测试。
 - 冲突检测刻意限制为“归一化后问题相同、答案不同”的直达 FAQ；Grounding 阈值通过版本化质量实验室治理，不会自动切换。
 - LLM 意图识别失败时会回退到关键词规则。
@@ -353,8 +369,8 @@ data/          本地 SQLite 数据库文件
 
 有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
 
-- v0.3.1–v0.3.3：OCR/表格/图片知识、带检索 Trace 的可选 Qdrant，
-  再实现由确定性 Grounding Gate 约束的 Agentic Retrieval。
+- v0.3.2–v0.3.3：带检索 Trace 的可选 Qdrant，再实现由确定性
+  Grounding Gate 约束的 Agentic Retrieval。
 - v0.3.4–v0.3.8：企业知识运营、mock 优先的订单只读工具、人工协作、
   客户身份/记忆和受控写操作。
 - v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份恢复与生产可观测性。

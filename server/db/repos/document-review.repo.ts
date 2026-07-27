@@ -179,6 +179,49 @@ export class DocumentReviewRepo {
     return row ? mapExtractionJob(row) : null;
   }
 
+  listExtractionJobs(documentId: string, limit = 20): OcrExtractionJob[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error('Extraction job list limit is invalid');
+    }
+    const rows = this.db.prepare(`
+      SELECT * FROM document_extraction_jobs
+      WHERE document_id = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT ?
+    `).all(documentId, limit) as Record<string, unknown>[];
+    return rows.map(mapExtractionJob);
+  }
+
+  claimNextQueuedExtractionJob(): OcrExtractionJob | null {
+    const claim = this.db.transaction(() => {
+      const row = this.db.prepare(`
+        SELECT id FROM document_extraction_jobs
+        WHERE status = 'queued'
+        ORDER BY created_at, rowid
+        LIMIT 1
+      `).get() as { id: string } | undefined;
+      if (!row) return null;
+      const updated = this.db.prepare(`
+        UPDATE document_extraction_jobs
+        SET status = 'running', started_at = ?, completed_at = NULL,
+            result_json = NULL, error_code = NULL
+        WHERE id = ? AND status = 'queued'
+      `).run(new Date().toISOString(), row.id);
+      return updated.changes === 1 ? row.id : null;
+    });
+    const id = claim();
+    return id ? this.requireExtractionJob(id) : null;
+  }
+
+  recoverInterruptedExtractionJobs(): number {
+    return this.db.prepare(`
+      UPDATE document_extraction_jobs
+      SET status = 'queued', started_at = NULL, completed_at = NULL,
+          result_json = NULL, error_code = NULL
+      WHERE status = 'running'
+    `).run().changes;
+  }
+
   createDraftFromAuthoritativeJob(jobId: string, createdBy: string): DocumentReviewDraft {
     if (!createdBy.trim() || createdBy.length > 120) {
       throw new Error('Review author is invalid');

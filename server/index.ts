@@ -159,6 +159,12 @@ async function start(): Promise<void> {
     await semanticSearch.initialize();
     logger.info('Semantic search index initialized');
 
+    const { documentOcrScheduler } = await import('./services/document-runtime');
+    if (config.ocr.backgroundEnabled) {
+      documentOcrScheduler.start();
+      logger.info('OCR scheduler initialized');
+    }
+
     const app = createApp();
 
     const server = app.listen(config.port, () => {
@@ -207,6 +213,8 @@ function registerGracefulShutdown(server: Server): void {
 
 async function closeDatabaseAndExit(code: number): Promise<void> {
   try {
+    const { documentOcrScheduler } = await import('./services/document-runtime');
+    await documentOcrScheduler.stop();
     const { closeDatabase } = await import('./db');
     closeDatabase();
   } catch (error) {

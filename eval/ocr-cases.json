@@ -1,0 +1,233 @@
+[
+  {
+    "id": "zh-refund-screenshot",
+    "sourceKind": "zh_screenshot",
+    "expectedText": "退款政策\n签收后七天内可以申请退款。",
+    "expectedKinds": ["heading", "paragraph"],
+    "expectedPageCount": 1,
+    "expectedTableCells": [],
+    "expectedLowQuality": false,
+    "result": {
+      "contractVersion": "ocr-extraction-v1",
+      "engine": { "name": "paddleocr_ppstructurev3", "version": "3.0.0" },
+      "blocks": [
+        {
+          "id": "block-000001",
+          "order": 0,
+          "kind": "heading",
+          "pageNumber": 1,
+          "headingPath": ["退款政策"],
+          "confidence": 0.99,
+          "layout": { "x": 12, "y": 16, "width": 180, "height": 28 },
+          "excluded": false,
+          "exclusionReason": null,
+          "level": 1,
+          "text": "退款政策"
+        },
+        {
+          "id": "block-000002",
+          "order": 1,
+          "kind": "paragraph",
+          "pageNumber": 1,
+          "headingPath": ["退款政策"],
+          "confidence": 0.96,
+          "layout": { "x": 12, "y": 56, "width": 420, "height": 60 },
+          "excluded": false,
+          "exclusionReason": null,
+          "text": "签收后七天内可以申请退款。"
+        }
+      ],
+      "warnings": [],
+      "metrics": { "pageCount": 1, "blockCount": 2, "elapsedMs": 28 }
+    }
+  },
+  {
+    "id": "en-shipping-screenshot",
+    "sourceKind": "en_screenshot",
+    "expectedText": "Shipping policy\nOrders ship within two business days.",
+    "expectedKinds": ["heading", "paragraph"],
+    "expectedPageCount": 1,
+    "expectedTableCells": [],
+    "expectedLowQuality": false,
+    "result": {
+      "contractVersion": "ocr-extraction-v1",
+      "engine": { "name": "paddleocr_ppstructurev3", "version": "3.0.0" },
+      "blocks": [
+        {
+          "id": "block-000001",
+          "order": 0,
+          "kind": "heading",
+          "pageNumber": 1,
+          "headingPath": ["Shipping policy"],
+          "confidence": 0.98,
+          "layout": { "x": 20, "y": 20, "width": 240, "height": 32 },
+          "excluded": false,
+          "exclusionReason": null,
+          "level": 1,
+          "text": "Shipping policy"
+        },
+        {
+          "id": "block-000002",
+          "order": 1,
+          "kind": "paragraph",
+          "pageNumber": 1,
+          "headingPath": ["Shipping policy"],
+          "confidence": 0.95,
+          "layout": { "x": 20, "y": 68, "width": 480, "height": 54 },
+          "excluded": false,
+          "exclusionReason": null,
+          "text": "Orders ship within two business days."
+        }
+      ],
+      "warnings": [],
+      "metrics": { "pageCount": 1, "blockCount": 2, "elapsedMs": 31 }
+    }
+  },
+  {
+    "id": "two-page-scanned-pdf",
+    "sourceKind": "scanned_pdf",
+    "expectedText": "Page one return conditions.\nPage two contact information.",
+    "expectedKinds": ["paragraph", "paragraph"],
+    "expectedPageCount": 2,
+    "expectedTableCells": [],
+    "expectedLowQuality": false,
+    "result": {
+      "contractVersion": "ocr-extraction-v1",
+      "engine": { "name": "paddleocr_ppstructurev3", "version": "3.0.0" },
+      "blocks": [
+        {
+          "id": "block-000001",
+          "order": 0,
+          "kind": "paragraph",
+          "pageNumber": 1,
+          "headingPath": [],
+          "confidence": 0.94,
+          "layout": { "x": 18, "y": 24, "width": 430, "height": 50 },
+          "excluded": false,
+          "exclusionReason": null,
+          "text": "Page one return conditions."
+        },
+        {
+          "id": "block-000002",
+          "order": 1,
+          "kind": "paragraph",
+          "pageNumber": 2,
+          "headingPath": [],
+          "confidence": 0.93,
+          "layout": { "x": 18, "y": 24, "width": 430, "height": 50 },
+          "excluded": false,
+          "exclusionReason": null,
+          "text": "Page two contact information."
+        }
+      ],
+      "warnings": [],
+      "metrics": { "pageCount": 2, "blockCount": 2, "elapsedMs": 62 }
+    }
+  },
+  {
+    "id": "refund-method-table",
+    "sourceKind": "table",
+    "expectedText": "Method\nDays\nCard\n7",
+    "expectedKinds": ["table"],
+    "expectedPageCount": 1,
+    "expectedTableCells": ["Method", "Days", "Card", "7"],
+    "expectedLowQuality": false,
+    "result": {
+      "contractVersion": "ocr-extraction-v1",
+      "engine": { "name": "paddleocr_ppstructurev3", "version": "3.0.0" },
+      "blocks": [
+        {
+          "id": "block-000001",
+          "order": 0,
+          "kind": "table",
+          "pageNumber": 1,
+          "headingPath": ["Refund methods"],
+          "confidence": 0.92,
+          "layout": { "x": 20, "y": 80, "width": 520, "height": 180 },
+          "excluded": false,
+          "exclusionReason": null,
+          "rowCount": 2,
+          "columnCount": 2,
+          "cells": [
+            { "rowIndex": 0, "columnIndex": 0, "rowSpan": 1, "columnSpan": 1, "text": "Method", "isHeader": true },
+            { "rowIndex": 0, "columnIndex": 1, "rowSpan": 1, "columnSpan": 1, "text": "Days", "isHeader": true },
+            { "rowIndex": 1, "columnIndex": 0, "rowSpan": 1, "columnSpan": 1, "text": "Card", "isHeader": false },
+            { "rowIndex": 1, "columnIndex": 1, "rowSpan": 1, "columnSpan": 1, "text": "7", "isHeader": false }
+          ]
+        }
+      ],
+      "warnings": [],
+      "metrics": { "pageCount": 1, "blockCount": 1, "elapsedMs": 44 }
+    }
+  },
+  {
+    "id": "rotated-noisy-order-label",
+    "sourceKind": "rotation_noise",
+    "expectedText": "Order No. RW-1024",
+    "expectedKinds": ["paragraph"],
+    "expectedPageCount": 1,
+    "expectedTableCells": [],
+    "expectedLowQuality": false,
+    "result": {
+      "contractVersion": "ocr-extraction-v1",
+      "engine": { "name": "paddleocr_ppstructurev3", "version": "3.0.0" },
+      "blocks": [
+        {
+          "id": "block-000001",
+          "order": 0,
+          "kind": "paragraph",
+          "pageNumber": 1,
+          "headingPath": [],
+          "confidence": 0.82,
+          "layout": { "x": 24, "y": 30, "width": 340, "height": 54 },
+          "excluded": false,
+          "exclusionReason": null,
+          "text": "Order N0. RW-1024"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "ocr_rotation_corrected",
+          "detail": "Document orientation correction was applied",
+          "blockIds": ["block-000001"]
+        }
+      ],
+      "metrics": { "pageCount": 1, "blockCount": 1, "elapsedMs": 39 }
+    }
+  },
+  {
+    "id": "deliberately-low-quality",
+    "sourceKind": "low_quality",
+    "expectedText": "Refund policy",
+    "expectedKinds": ["paragraph"],
+    "expectedPageCount": 1,
+    "expectedTableCells": [],
+    "expectedLowQuality": true,
+    "result": {
+      "contractVersion": "ocr-extraction-v1",
+      "engine": { "name": "paddleocr_ppstructurev3", "version": "3.0.0" },
+      "blocks": [
+        {
+          "id": "block-000001",
+          "order": 0,
+          "kind": "paragraph",
+          "pageNumber": 1,
+          "headingPath": [],
+          "confidence": 0.35,
+          "layout": { "x": 12, "y": 18, "width": 240, "height": 42 },
+          "excluded": false,
+          "exclusionReason": null,
+          "text": "????"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "ocr_low_confidence",
+          "detail": "Block confidence is 0.350",
+          "blockIds": ["block-000001"]
+        }
+      ],
+      "metrics": { "pageCount": 1, "blockCount": 1, "elapsedMs": 22 }
+    }
+  }
+]

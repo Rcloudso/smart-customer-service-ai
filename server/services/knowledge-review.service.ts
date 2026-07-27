@@ -84,6 +84,10 @@ export class KnowledgeReviewService {
       chunkIndex: result.chunkIndex,
       pageStart: result.pageStart,
       pageEnd: result.pageEnd,
+      sourceBlockIds: result.sourceBlockIds,
+      extractionJobId: result.extractionJobId,
+      extractionEngine: result.extractionEngine,
+      extractionEngineVersion: result.extractionEngineVersion,
     }));
 
     return this.reviewRepo.create({

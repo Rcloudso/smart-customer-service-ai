@@ -15,7 +15,7 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Development version: **v0.3.0 (pre-1.0)**. The latest published release is
+Development version: **v0.3.1 (pre-1.0)**. The latest published release is
 v0.2.9; APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
@@ -27,7 +27,7 @@ v0.2.9; APIs and persisted data remain subject to change before 1.0.
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the document RAG demo (v0.2.6)</a>
   · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI-assisted development case study</a>
-  · <a href="docs/releases/v0.3.0.md">v0.3.0 release notes</a>
+  · <a href="docs/releases/v0.3.1.md">v0.3.1 release notes</a>
   · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 release evidence</a>
 </p>
 
@@ -104,9 +104,9 @@ into one accountable customer-resolution flow.
   bounded Agentic Retrieval are planned as separately testable releases rather
   than one framework rewrite.
 
-| Implemented on v0.3.0 branch | Next — v0.3.1+ |
+| Implemented on v0.3.1 branch | Next — v0.3.2+ |
 | --- | --- |
-| Versioned structure-aware ingestion plus the v0.2.9 FAQ/RAG, Quality Lab and structured escalation baseline | OCR/image knowledge, optional Qdrant, retrieval traces, bounded Agentic Retrieval, then mock-first business tools |
+| Versioned structure-aware ingestion, durable PaddleOCR review workflow, optional DeepSeek shadow comparison, and the v0.2.9 FAQ/RAG baseline | Optional Qdrant, retrieval traces, bounded Agentic Retrieval, then mock-first business tools |
 
 See [ROADMAP.md](ROADMAP.md) for release boundaries and non-goals.
 
@@ -129,6 +129,7 @@ flowchart LR
 - **Admin console** - FAQ management, conversation list, dashboard analytics, and runtime model configuration.
 - **Knowledge gap feedback loop** - no-match, low-score, and negatively rated answers become review items that admins can edit, dismiss, or convert into indexed FAQs.
 - **Structure-aware document ingestion** - upload TXT, Markdown, text-layer PDF, and DOCX files into a versioned `DocumentIR`; preserve headings, paragraphs, lists, tables, page and block provenance; inspect quality and processing stages; then publish structure-aware chunks atomically.
+- **Reviewed OCR ingestion** - route PNG, JPEG, WebP, and scan-only PDF sources to a durable PaddleOCR PP-StructureV3 queue; inspect and edit extracted Blocks before atomic publication, with optional non-authoritative DeepSeek-OCR-2 shadow comparison.
 - **Hybrid multi-source retrieval** - FAQ and document candidates use per-source vector recall plus field-aware keyword recall, then merge with score-aware reciprocal-rank fusion (RRF), deduplicate, and apply source-aware diversity.
 - **Compatible intent classification** - structured intent output negotiates `json_schema`, then `json_object`, then validated plain-text JSON before the deterministic keyword fallback.
 - **Open vector-store interface** - `VectorStore` keeps the default deployment simple while leaving room for Qdrant or pgvector later.
@@ -232,6 +233,16 @@ Docker exposes:
 
 The compose example uses `EMBED_PROVIDER=other`, so the project can start without paid model keys. The deterministic local path supports FAQ and document retrieval; document answers fall back to the highest-ranked source excerpt instead of inventing a summary.
 
+Start the optional CPU OCR worker with the Compose profile:
+
+```bash
+OCR_SERVICE_URL=http://ocr-worker:8001 docker compose --profile ocr up --build
+```
+
+The first worker start downloads Paddle models. See
+[ocr-worker/README.md](ocr-worker/README.md) for the local Python path, worker
+contract, and Paddle installation references.
+
 Compose uses the `resolve-weave` project name and builds the local image as
 `resolve-weave:local`. New installations store data in the
 `resolve-weave-data` volume. Existing Docker users should identify the previous
@@ -259,6 +270,8 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `OCR_SERVICE_URL` | Optional PaddleOCR/PP-StructureV3 worker base URL; when empty, existing FAQ and text-document features still work |
 | `OCR_SERVICE_TOKEN` | Optional bearer token sent only to the configured OCR worker |
 | `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Required worker version match and request timeout; defaults to `3.0.0` / `120000` ms |
+| `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | Durable SQLite queue polling; defaults to `true` / `1000` ms |
+| `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | Optional comparison-only DeepSeek-OCR-2-compatible worker; never replaces Paddle review content |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API rate limits |
 | `SESSION_INACTIVITY_MINUTES` | Minutes without activity before an active conversation is closed; defaults to `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | Maximum complete message rows in one synchronous filtered CSV export; defaults to `5000` |
@@ -276,10 +289,11 @@ EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
 EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
+EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
 ```
 
-The reports include FAQ Top1/Top3/no-match metrics, a 12-case document benchmark across TXT, Markdown, PDF, and DOCX, and deterministic triage coverage for bilingual security, complaint, refund, order, technical, explicit-human, knowledge-conflict, private-operation, and prompt-injection cases. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
+The reports include FAQ Top1/Top3/no-match metrics, a 12-case document benchmark across TXT, Markdown, PDF, and DOCX, a six-case OCR contract benchmark covering screenshots, scan PDFs, tables, rotation/noise and low-quality gating, and deterministic triage coverage. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
 
 Document management is available at **Admin Console → Documents**. The detail
 dialog exposes quality/index status, structure metrics, warnings, a paginated
@@ -287,7 +301,8 @@ Block inspector, the eight processing stages, and published chunks. Uploads are
 limited to 10 MB, extracted text to 200,000 characters, `DocumentIR` to 2 MiB
 and 2,000 Blocks, and final chunks to 300. Exact duplicate content is rejected
 by SHA-256; storage paths, hashes, embeddings, and parser exceptions are not
-returned by the API.
+returned by the API. OCR documents also expose queue/retry history, engine
+versions, optional shadow agreement, and reviewed Block provenance.
 
 The FAQ report includes:
 
@@ -320,6 +335,7 @@ EMBED_PROVIDER=other npm run eval:faq
 EMBED_PROVIDER=other npm run eval:document
 EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
+EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
@@ -334,7 +350,8 @@ GitHub Actions runs `npm ci`, regression tests, Playwright E2E, and production b
 ```text
 client/        React + Vite frontend
 server/        Express API, services, AI adapters, SQLite repositories
-eval/          FAQ and document retrieval evaluation cases
+ocr-worker/    Optional FastAPI PaddleOCR PP-StructureV3 CPU worker
+eval/          FAQ, document, quality, and OCR evaluation cases
 tests/e2e/     Playwright end-to-end tests
 ARCHITECTURE.md Runtime topology, trust boundaries, and scaling triggers
 data/          Local SQLite database files
@@ -347,17 +364,16 @@ data/          Local SQLite database files
 - The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
 - Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
 - Text-document parsing remains synchronous inside the Express process.
-  Encrypted and damaged files are rejected. The v0.3.1 development path accepts
-  PNG, JPEG and WebP sources through an optional external
-  PaddleOCR/PP-StructureV3 worker and stores successful output as a review
-  draft; those drafts are not indexed until the review/publication workflow is
-  completed. The upload request currently waits synchronously for that worker;
-  there is no durable background OCR scheduler yet. Scan-PDF routing, VLM
-  extraction, web ingestion, citation links and page jumps are not included yet.
-- v0.3.0 stores structured representations and processing history but keeps the
-  original file as source truth. It has explicit retry/reprocess only—no
-  background worker, scheduler, or manual force-publish flow.
-- Document files remain global to the deployment; v0.3.0 does not add
+  Encrypted and damaged files are rejected. PNG, JPEG, WebP, and scan-only PDF
+  sources use an optional external PaddleOCR worker through a durable SQLite
+  queue. Review drafts are never indexed until an administrator publishes the
+  complete document.
+- The scheduler is deliberately single-process and polls SQLite; it is not a
+  distributed multi-replica queue. The Paddle worker downloads large models on
+  first start and should remain on a trusted private network.
+- OCR extracts text and table structure only. VLM descriptions, raw-image
+  answering, web ingestion, citation links, and page jumps are not included.
+- Document files remain global to the deployment; v0.3.1 does not add
   tenant-separated knowledge bases or external vector storage.
 - `VectorStore` isolates local vector operations, but a network vector database still requires asynchronous contracts, health handling, and consistency tests.
 - Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Grounding thresholds are governed through the versioned Quality Lab rather than changed automatically.

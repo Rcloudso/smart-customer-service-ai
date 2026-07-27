@@ -133,6 +133,9 @@ export function initSchema(database: Database.Database): void {
       heading_path TEXT NOT NULL DEFAULT '[]',
       representation_version TEXT,
       chunker_version TEXT,
+      extraction_job_id TEXT,
+      extraction_engine TEXT,
+      extraction_engine_version TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(document_id, chunk_index)
     );
@@ -561,6 +564,9 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'document_chunks', 'heading_path', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(database, 'document_chunks', 'representation_version', 'TEXT');
   ensureColumn(database, 'document_chunks', 'chunker_version', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'extraction_job_id', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'extraction_engine', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'extraction_engine_version', 'TEXT');
   ensureColumn(database, 'document_processing_tasks', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
 

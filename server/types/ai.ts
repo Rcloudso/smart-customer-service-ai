@@ -19,6 +19,10 @@ export interface RetrievalResult {
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
+  sourceBlockIds?: string[];
+  extractionJobId?: string;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  extractionEngineVersion?: string;
 }
 
 export interface IntentResult {

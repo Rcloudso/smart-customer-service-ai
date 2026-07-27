@@ -29,6 +29,7 @@ async function main(): Promise<void> {
   process.env.OPENAI_API_KEY = '';
   process.env.EMBED_PROVIDER = 'other';
   process.env.EMBED_API_KEY = '';
+  process.env.OCR_BACKGROUND_ENABLED = 'false';
   let ocrRequestCount = 0;
   let ocrServer: Server | null = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -218,13 +219,21 @@ async function main(): Promise<void> {
       { headers: auth },
     )).json() as {
       data: {
-        extractionSummary: { status: string; engine: string; blockCount: number };
+        extractionSummary: {
+          jobId: string;
+          status: string;
+          engine: string;
+          blockCount: number;
+        };
+        extractionHistory: Array<{ jobId: string; role: string; status: string }>;
         reviewDraftSummary: { status: string; revision: number; blockCount: number };
       };
     };
     assert.equal(imageDetail.data.extractionSummary.status, 'succeeded');
     assert.equal(imageDetail.data.extractionSummary.engine, 'paddleocr_ppstructurev3');
     assert.equal(imageDetail.data.extractionSummary.blockCount, 1);
+    assert.equal(imageDetail.data.extractionHistory.length, 1);
+    assert.equal(imageDetail.data.extractionHistory[0].jobId, imageDetail.data.extractionSummary.jobId);
     assert.equal(imageDetail.data.reviewDraftSummary.status, 'open');
     assert.equal(imageDetail.data.reviewDraftSummary.revision, 1);
     assert.equal(imageDetail.data.reviewDraftSummary.blockCount, 1);
@@ -304,10 +313,43 @@ async function main(): Promise<void> {
     const publishedImageChunks = await (await fetch(
       `${base}/api/admin/documents/${imageBody.data.id}/chunks?page=1&pageSize=20`,
       { headers: auth },
-    )).json() as { data: { items: Array<{ content: string; sourceBlockIds: string[] }> } };
+    )).json() as {
+      data: {
+        items: Array<{
+          content: string;
+          sourceBlockIds: string[];
+          extractionJobId: string;
+          extractionEngine: string;
+          extractionEngineVersion: string;
+        }>;
+      };
+    };
     assert.ok(publishedImageChunks.data.items.some((chunk) => (
       chunk.content.includes('七个自然日')
       && chunk.sourceBlockIds.includes('block-000001')
+      && chunk.extractionJobId === imageDetail.data.extractionSummary.jobId
+      && chunk.extractionEngine === 'paddleocr_ppstructurev3'
+      && chunk.extractionEngineVersion === '3.0.0'
+    )));
+    const ocrChat = await fetch(`${base}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({
+        message: '图片中的退款政策要求几个自然日内申请退款？',
+        userIdent: 'ocr-document-chat-user',
+      }),
+    });
+    const ocrEvents = parseSse(await ocrChat.text());
+    const ocrDone = ocrEvents.find((event) => event.type === 'done')?.content as {
+      knowledgeSources: Array<Record<string, unknown>>;
+    };
+    assert.ok(ocrDone.knowledgeSources.some((source) => (
+      source.documentId === imageBody.data.id
+      && source.extractionJobId === imageDetail.data.extractionSummary.jobId
+      && source.extractionEngine === 'paddleocr_ppstructurev3'
+      && source.extractionEngineVersion === '3.0.0'
+      && Array.isArray(source.sourceBlockIds)
+      && source.sourceBlockIds.includes('block-000001')
     )));
     assert.equal((await fetch(
       `${base}/api/admin/documents/${imageBody.data.id}`,
