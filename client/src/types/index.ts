@@ -263,11 +263,25 @@ export interface DocumentBlock {
   exclusionReason: string | null;
   manuallyEdited?: boolean;
   text?: string;
+  variant?: 'plain' | 'code';
+  level?: number;
+  ordered?: boolean;
   items?: Array<{ ordinal: number; text: string }>;
-  cells?: Array<{ rowIndex: number; columnIndex: number; text: string; isHeader: boolean }>;
+  rowCount?: number;
+  columnCount?: number;
+  cells?: Array<{
+    rowIndex: number;
+    columnIndex: number;
+    rowSpan: number;
+    columnSpan: number;
+    text: string;
+    isHeader: boolean;
+  }>;
   pairs?: Array<{ key: string; value: string }>;
   altText?: string | null;
   relationshipId?: string | null;
+  contentType?: string | null;
+  requiresVisualProcessing?: true;
 }
 
 export interface KnowledgeReviewItem {

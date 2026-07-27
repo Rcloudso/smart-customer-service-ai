@@ -322,6 +322,35 @@ export async function listDocumentReviewDraftBlocks(
   return get(`/admin/documents/${id}/review-draft`, { page, pageSize });
 }
 
+export async function updateDocumentReviewDraft(
+  id: string,
+  expectedRevision: number,
+  blocks: DocumentBlock[],
+): Promise<{
+  draftId: string;
+  revision: number;
+  status: 'open' | 'published' | 'superseded';
+  items: DocumentBlock[];
+  total: number;
+}> {
+  return put(
+    `/admin/documents/${id}/review-draft`,
+    { expectedRevision, blocks },
+    idempotentRequest(),
+  );
+}
+
+export async function publishDocumentReviewDraft(
+  id: string,
+  expectedRevision: number,
+): Promise<DocumentDetail> {
+  return post<DocumentDetail>(
+    `/admin/documents/${id}/review-draft/publish`,
+    { expectedRevision },
+    idempotentRequest(),
+  );
+}
+
 export async function updateDocument(id: string, isActive: boolean): Promise<DocumentItem> {
   return put<DocumentItem>(
     `/admin/documents/${id}`,

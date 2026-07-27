@@ -245,6 +245,70 @@ async function main(): Promise<void> {
     assert.equal(imageDraft.data.items[0].manuallyEdited, false);
     assert.equal(imageDraft.data.revision, 1);
     assert.equal(imageDraft.data.status, 'open');
+    const editedImageBlocks = imageDraft.data.items.map((item) => ({
+      ...item,
+      text: '图片中的退款政策：签收后七个自然日内可以申请退款。',
+    }));
+    const imageDraftUpdate = await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}/review-draft`,
+      {
+        method: 'PUT',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedRevision: 1,
+          blocks: editedImageBlocks,
+        }),
+      },
+    );
+    assert.equal(imageDraftUpdate.status, 200);
+    const imageDraftUpdateBody = await imageDraftUpdate.json() as {
+      data: { revision: number; items: Array<{ text?: string; manuallyEdited: boolean }> };
+    };
+    assert.equal(imageDraftUpdateBody.data.revision, 2);
+    assert.equal(imageDraftUpdateBody.data.items[0].manuallyEdited, true);
+    assert.match(imageDraftUpdateBody.data.items[0].text ?? '', /七个自然日/);
+
+    const staleImageDraftUpdate = await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}/review-draft`,
+      {
+        method: 'PUT',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedRevision: 1,
+          blocks: editedImageBlocks,
+        }),
+      },
+    );
+    assert.equal(staleImageDraftUpdate.status, 409);
+
+    const imagePublish = await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}/review-draft/publish`,
+      {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedRevision: 2 }),
+      },
+    );
+    assert.equal(imagePublish.status, 200);
+    const imagePublishBody = await imagePublish.json() as {
+      data: {
+        status: string;
+        indexStatus: string;
+        reviewDraftSummary: { status: string; revision: number };
+      };
+    };
+    assert.equal(imagePublishBody.data.status, 'ready');
+    assert.equal(imagePublishBody.data.indexStatus, 'published');
+    assert.equal(imagePublishBody.data.reviewDraftSummary.status, 'published');
+    assert.equal(imagePublishBody.data.reviewDraftSummary.revision, 2);
+    const publishedImageChunks = await (await fetch(
+      `${base}/api/admin/documents/${imageBody.data.id}/chunks?page=1&pageSize=20`,
+      { headers: auth },
+    )).json() as { data: { items: Array<{ content: string; sourceBlockIds: string[] }> } };
+    assert.ok(publishedImageChunks.data.items.some((chunk) => (
+      chunk.content.includes('七个自然日')
+      && chunk.sourceBlockIds.includes('block-000001')
+    )));
     assert.equal((await fetch(
       `${base}/api/admin/documents/${imageBody.data.id}`,
       { method: 'DELETE', headers: auth },

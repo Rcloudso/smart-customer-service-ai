@@ -1008,8 +1008,8 @@
     "en": "Document Knowledge"
   },
   "documents.description": {
-    "zh": "上传 TXT、Markdown、PDF 或 DOCX，让客服基于企业文档回答问题。",
-    "en": "Upload TXT, Markdown, PDF, or DOCX files for document-grounded answers."
+    "zh": "上传 TXT、Markdown、PDF、DOCX 或图片；图片经 OCR 人工复核后整篇发布。",
+    "en": "Upload TXT, Markdown, PDF, DOCX, or images. OCR image content is published after full human review."
   },
   "documents.searchPlaceholder": {
     "zh": "搜索文件名",
@@ -1063,6 +1063,10 @@
     "zh": "处理失败",
     "en": "Failed"
   },
+  "documents.status.review_required": {
+    "zh": "等待复核",
+    "en": "Awaiting review"
+  },
   "documents.view": {
     "zh": "查看",
     "en": "View"
@@ -1070,6 +1074,150 @@
   "documents.retry": {
     "zh": "重试",
     "en": "Retry"
+  },
+  "documents.review": {
+    "zh": "复核",
+    "en": "Review"
+  },
+  "documents.reviewTitle": {
+    "zh": "OCR 内容复核",
+    "en": "OCR content review"
+  },
+  "documents.reviewDescription": {
+    "zh": "按来源顺序检查全部 Block，保存修订后再整篇发布。未发布内容不会进入检索。",
+    "en": "Review every block in source order, save corrections, then publish the whole document. Unpublished content is not searchable."
+  },
+  "documents.reviewCalloutTitle": {
+    "zh": "OCR 内容已准备好复核",
+    "en": "OCR content is ready for review"
+  },
+  "documents.reviewCalloutDescription": {
+    "zh": "{engine} 已提取 {count} 个 Block，当前为第 {revision} 版草稿。",
+    "en": "{engine} extracted {count} blocks. The draft is at revision {revision}."
+  },
+  "documents.reviewRevision": {
+    "zh": "草稿 v{revision}",
+    "en": "Draft v{revision}"
+  },
+  "documents.reviewBlockCount": {
+    "zh": "{count} 个 Block",
+    "en": "{count} blocks"
+  },
+  "documents.reviewUnsaved": {
+    "zh": "有未保存修改",
+    "en": "Unsaved changes"
+  },
+  "documents.reviewSavedState": {
+    "zh": "已保存",
+    "en": "Saved"
+  },
+  "documents.reviewBlockNavigation": {
+    "zh": "OCR Block 导航",
+    "en": "OCR block navigation"
+  },
+  "documents.reviewPage": {
+    "zh": "第 {page} 页",
+    "en": "Page {page}"
+  },
+  "documents.reviewBlockTitle": {
+    "zh": "Block {index}",
+    "en": "Block {index}"
+  },
+  "documents.reviewInclude": {
+    "zh": "纳入知识",
+    "en": "Include in knowledge"
+  },
+  "documents.reviewConfidence": {
+    "zh": "置信度 {confidence}%",
+    "en": "Confidence {confidence}%"
+  },
+  "documents.reviewLayout": {
+    "zh": "位置 {x},{y} · {width}×{height}",
+    "en": "Layout {x},{y} · {width}×{height}"
+  },
+  "documents.reviewPrevious": {
+    "zh": "上一个",
+    "en": "Previous"
+  },
+  "documents.reviewNext": {
+    "zh": "下一个",
+    "en": "Next"
+  },
+  "documents.reviewProgress": {
+    "zh": "{current} / {total}",
+    "en": "{current} / {total}"
+  },
+  "documents.reviewEditedCount": {
+    "zh": "已人工修改 {count} 个 Block",
+    "en": "{count} blocks manually edited"
+  },
+  "documents.reviewReload": {
+    "zh": "重新加载",
+    "en": "Reload"
+  },
+  "documents.reviewPublish": {
+    "zh": "整篇发布",
+    "en": "Publish document"
+  },
+  "documents.reviewPublishConfirm": {
+    "zh": "确认将当前已保存草稿整篇发布到检索？",
+    "en": "Publish the current saved draft to retrieval as one document?"
+  },
+  "documents.reviewSaved": {
+    "zh": "审核草稿已保存",
+    "en": "Review draft saved"
+  },
+  "documents.reviewPublished": {
+    "zh": "文档已整篇发布并加入检索",
+    "en": "The full document was published and indexed"
+  },
+  "documents.reviewConflict": {
+    "zh": "草稿已被其他操作更新，已重新加载最新版本",
+    "en": "The draft changed elsewhere. The latest revision has been reloaded."
+  },
+  "documents.reviewLoadFailed": {
+    "zh": "OCR 审核草稿加载失败",
+    "en": "Failed to load the OCR review draft"
+  },
+  "documents.reviewSaveFailed": {
+    "zh": "OCR 审核草稿保存失败",
+    "en": "Failed to save the OCR review draft"
+  },
+  "documents.reviewPublishFailed": {
+    "zh": "整篇发布失败，草稿仍保留，可修正后重试",
+    "en": "Publication failed. The draft is preserved for correction and retry."
+  },
+  "documents.reviewDiscardConfirm": {
+    "zh": "仍有未保存修改，确认放弃并关闭？",
+    "en": "You have unsaved changes. Discard them and close?"
+  },
+  "documents.reviewEmpty": {
+    "zh": "该文档没有可复核的 OCR Block",
+    "en": "This document has no OCR blocks to review"
+  },
+  "documents.reviewTextPlaceholder": {
+    "zh": "修正 OCR 识别文本",
+    "en": "Correct the OCR text"
+  },
+  "documents.reviewListPlaceholder": {
+    "zh": "每行一个列表项",
+    "en": "One list item per line"
+  },
+  "documents.reviewTableCell": {
+    "zh": "第 {row} 行，第 {column} 列",
+    "en": "Row {row}, column {column}"
+  },
+  "documents.reviewKeyPlaceholder": {
+    "zh": "键",
+    "en": "Key"
+  },
+  "documents.reviewValuePlaceholder": {
+    "zh": "值",
+    "en": "Value"
+  },
+  "documents.reviewImagePlaceholder": {
+    "zh": "修正图片替代文本",
+    "en": "Correct the image alternative text"
   },
   "documents.deleteConfirm": {
     "zh": "确认删除该文档及全部切片？",

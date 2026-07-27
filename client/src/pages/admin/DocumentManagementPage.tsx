@@ -23,6 +23,7 @@ import {
   UploadIcon,
 } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
+import { DocumentReviewDialog } from '../../components/DocumentReviewDialog';
 import type {
   DocumentBlock,
   DocumentChunk,
@@ -61,6 +62,7 @@ export function DocumentManagementPage(): React.ReactElement {
   const [appliedActiveFilter, setAppliedActiveFilter] = useState<'' | 'true' | 'false'>('');
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [selected, setSelected] = useState<DocumentDetail | null>(null);
+  const [reviewDocument, setReviewDocument] = useState<DocumentItem | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<DocumentChunk | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
@@ -302,6 +304,11 @@ export function DocumentManagementPage(): React.ReactElement {
     }
   };
 
+  const handleReviewPublished = async (document: DocumentItem) => {
+    await fetchDocuments();
+    if (selected?.id === document.id) await openDetails(document);
+  };
+
   const columns = [
     {
       colKey: 'fileName', title: t('documents.fileName'), width: 220, ellipsis: true,
@@ -319,8 +326,13 @@ export function DocumentManagementPage(): React.ReactElement {
       colKey: 'status', title: t('common.status'), width: 150,
       cell: ({ row }: { row: DocumentItem }) => (
         <div className="app-document-status">
-          <Tag theme={STATUS_THEMES[row.status]} variant="light">
-            {t(`documents.status.${row.status}`)}
+          <Tag
+            theme={row.failureCode === 'ocr_review_required' ? 'warning' : STATUS_THEMES[row.status]}
+            variant="light"
+          >
+            {t(row.failureCode === 'ocr_review_required'
+              ? 'documents.status.review_required'
+              : `documents.status.${row.status}`)}
           </Tag>
           {row.qualityDecision && (
             <Tag theme={QUALITY_THEMES[row.qualityDecision]} variant="light">
@@ -356,7 +368,19 @@ export function DocumentManagementPage(): React.ReactElement {
           <Button theme="primary" variant="text" size="small" className="app-table-action-button" onClick={() => openDetails(row)} data-testid="document-view">
             {t('documents.view')}
           </Button>
-          {row.status === 'failed' && (
+          {row.failureCode === 'ocr_review_required' && (
+            <Button
+              variant="text"
+              theme="primary"
+              size="small"
+              className="app-table-action-button"
+              onClick={() => setReviewDocument(row)}
+              data-testid="document-review"
+            >
+              {t('documents.review')}
+            </Button>
+          )}
+          {row.status === 'failed' && row.failureCode !== 'ocr_review_required' && (
             <Button variant="text" theme="primary" size="small" className="app-table-action-button" loading={busyId === row.id} onClick={() => handleRetry(row)} data-testid="document-retry">
               {t('documents.retry')}
             </Button>
@@ -509,8 +533,13 @@ export function DocumentManagementPage(): React.ReactElement {
               <span><strong>{t('documents.size')}</strong>{formatBytes(selected.sizeBytes)}</span>
               <span>
                 <strong>{t('common.status')}</strong>
-                <Tag theme={STATUS_THEMES[selected.status]} variant="light">
-                  {t(`documents.status.${selected.status}`)}
+                <Tag
+                  theme={selected.failureCode === 'ocr_review_required' ? 'warning' : STATUS_THEMES[selected.status]}
+                  variant="light"
+                >
+                  {t(selected.failureCode === 'ocr_review_required'
+                    ? 'documents.status.review_required'
+                    : `documents.status.${selected.status}`)}
                 </Tag>
               </span>
               <span>
@@ -567,6 +596,31 @@ export function DocumentManagementPage(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            {selected.reviewDraftSummary?.status === 'open' && (
+              <div className="app-document-review-callout" role="status">
+                <div>
+                  <strong>{t('documents.reviewCalloutTitle')}</strong>
+                  <span>
+                    {t('documents.reviewCalloutDescription', {
+                      engine: selected.extractionSummary?.engine ?? 'OCR',
+                      count: selected.reviewDraftSummary.blockCount,
+                      revision: selected.reviewDraftSummary.revision,
+                    })}
+                  </span>
+                </div>
+                <Button
+                  theme="primary"
+                  onClick={() => {
+                    setSelected(null);
+                    setReviewDocument(selected);
+                  }}
+                  data-testid="document-detail-review"
+                >
+                  {t('documents.review')}
+                </Button>
+              </div>
+            )}
 
             {selected.status === 'ready' && selected.representationVersion !== 'document-ir-v1' && (
               <div className="app-document-upgrade" role="status">
@@ -726,6 +780,12 @@ export function DocumentManagementPage(): React.ReactElement {
           </div>
         )}
       </Dialog>
+
+      <DocumentReviewDialog
+        document={reviewDocument}
+        onClose={() => setReviewDocument(null)}
+        onPublished={handleReviewPublished}
+      />
     </div>
   );
 }

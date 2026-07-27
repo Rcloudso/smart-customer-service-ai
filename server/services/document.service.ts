@@ -20,9 +20,11 @@ import {
   DocumentBlock,
   DocumentIRValidationError,
   StructuredDocument,
+  createStructuredDocument,
 } from '../ai/document-ir';
 import { DocumentParserError, parseDocument } from '../ai/document-parser';
 import { structuredDocumentToSemanticUnits } from '../ai/document-parser-adapter';
+import { OcrContractValidationError } from '../ai/ocr-contract';
 import {
   OcrExtractionError,
   OcrExtractor,
@@ -35,6 +37,8 @@ import {
 import { DocumentRepo } from '../db/repos/document.repo';
 import {
   DocumentReviewBlock,
+  DocumentReviewConflictError,
+  DocumentReviewDraft,
   DocumentReviewRepo,
   OcrExtractionJob,
 } from '../db/repos/document-review.repo';
@@ -235,6 +239,87 @@ export class DocumentService {
       items: result.items,
       total: result.total,
     };
+  }
+
+  updateReviewDraft(
+    documentId: string,
+    expectedRevision: number,
+    blocks: unknown,
+    updatedBy: string,
+  ): {
+    draftId: string;
+    revision: number;
+    status: 'open' | 'published' | 'superseded';
+    items: DocumentReviewBlock[];
+    total: number;
+  } {
+    const record = this.requireDocument(documentId);
+    if (!isVisualDocumentFormat(record.format)) {
+      throw new ConflictError('Only OCR documents have review drafts');
+    }
+    const draft = this.reviewRepo.findLatestDraft(documentId);
+    if (!draft) throw new NotFoundError('Document review draft not found');
+    try {
+      return this.toReviewDraftResult(
+        this.reviewRepo.replaceDraftBlocks(
+          draft.id,
+          expectedRevision,
+          stripReviewBlockPayloadMetadata(blocks),
+          updatedBy,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof DocumentReviewConflictError) {
+        throw new ConflictError('Review draft changed; refresh before saving');
+      }
+      if (error instanceof OcrContractValidationError) {
+        throw new ValidationError('Review draft blocks are invalid');
+      }
+      throw error;
+    }
+  }
+
+  async publishReviewDraft(
+    documentId: string,
+    expectedRevision: number,
+  ): Promise<DocumentDetail> {
+    const record = this.requireDocument(documentId);
+    if (!isVisualDocumentFormat(record.format)) {
+      throw new ConflictError('Only OCR documents have review drafts');
+    }
+    const draft = this.reviewRepo.findLatestDraft(documentId);
+    if (!draft) throw new NotFoundError('Document review draft not found');
+    if (draft.status !== 'open' || draft.revision !== expectedRevision) {
+      throw new ConflictError('Review draft changed; refresh before publishing');
+    }
+    const job = this.reviewRepo.getExtractionJob(draft.sourceJobId);
+    if (
+      !job
+      || job.documentId !== documentId
+      || job.role !== 'authoritative'
+      || job.status !== 'succeeded'
+      || !job.result
+    ) {
+      throw new ConflictError('Authoritative OCR extraction is unavailable');
+    }
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(this.resolveStoragePath(record.storagePath));
+    } catch {
+      throw new ServiceUnavailableError('Document source file is unavailable');
+    }
+    await this.process(record, buffer, {
+      retryOf: record.latestTaskId,
+      reviewDraft: {
+        id: draft.id,
+        expectedRevision,
+        blocks: draft.blocks.map(stripReviewBlockMetadata),
+        parserName: job.engine,
+        parserVersion: job.engineVersion,
+        warnings: job.result.warnings,
+      },
+    });
+    return this.get(documentId);
   }
 
   async retry(documentId: string): Promise<Document> {
@@ -495,15 +580,36 @@ export class DocumentService {
   private async process(
     record: DocumentRecord,
     buffer: Buffer,
-    options: { shadow?: boolean; retryOf?: string | null } = {},
+    options: {
+      shadow?: boolean;
+      retryOf?: string | null;
+      reviewDraft?: {
+        id: string;
+        expectedRevision: number;
+        blocks: DocumentBlock[];
+        parserName: string;
+        parserVersion: string;
+        warnings: StructuredDocument['warnings'];
+      };
+    } = {},
   ): Promise<DocumentRecord> {
-    if (isVisualDocumentFormat(record.format)) {
+    if (isVisualDocumentFormat(record.format) && !options.reviewDraft) {
       throw new DocumentProcessingError('ocr_required');
     }
-    const parsedFormat: ParsedDocumentFormat = record.format;
-    const previousChunks = options.shadow
+    const parsedFormat = isVisualDocumentFormat(record.format)
+      ? null
+      : record.format as ParsedDocumentFormat;
+    const previousChunks = options.shadow || options.reviewDraft
       ? this.repo.listChunks(record.id, 300, 0).items
       : [];
+    const preservePublishedState = Boolean(
+      options.shadow
+      || (
+        options.reviewDraft
+        && record.status === 'ready'
+        && previousChunks.length > 0
+      ),
+    );
     const taskId = this.repo.createProcessingTask({
       documentId: record.id,
       sourceVersion: record.sourceVersion,
@@ -520,17 +626,38 @@ export class DocumentService {
       await this.runStage(taskId, 'validate', buffer.byteLength, async () => {
         const format = this.validateUpload(record.fileName, record.mimeType, buffer);
         if (format !== record.format) throw new DocumentProcessingError('format_changed');
+        const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+        if (sha256 !== record.sha256) throw new DocumentProcessingError('source_file_changed');
         return 1;
       }, (count) => count);
 
       const parsed = await this.runStage(taskId, 'parse', buffer.byteLength, () => (
-        parseDocument(buffer, parsedFormat, {
-          documentId: record.id,
-          sourceVersion: record.sourceVersion,
-          fileName: record.fileName,
-          mimeType: record.mimeType,
-          sha256: record.sha256,
-        })
+        options.reviewDraft
+          ? {
+            representation: createStructuredDocument({
+              source: {
+                documentId: record.id,
+                sourceVersion: record.sourceVersion,
+                format: record.format,
+                fileName: record.fileName,
+                mimeType: record.mimeType,
+                sha256: record.sha256,
+              },
+              parser: {
+                name: `${options.reviewDraft.parserName}-reviewed`,
+                version: options.reviewDraft.parserVersion,
+              },
+              blocks: options.reviewDraft.blocks,
+              warnings: options.reviewDraft.warnings,
+            }),
+          }
+          : parseDocument(buffer, parsedFormat as ParsedDocumentFormat, {
+            documentId: record.id,
+            sourceVersion: record.sourceVersion,
+            fileName: record.fileName,
+            mimeType: record.mimeType,
+            sha256: record.sha256,
+          })
       ), (result) => result.representation.blocks.length);
       if (parsed.representation.metrics.inputCharacters > MAX_EXTRACTED_CHARACTERS) {
         throw new DocumentProcessingError('text_too_large');
@@ -663,7 +790,7 @@ export class DocumentService {
             if (publication && typeof publication.then === 'function') {
               await publication;
             }
-            this.db.transaction(() => this.repo.replaceChunksAndMarkReady(
+            const replacePublishedDocument = () => this.repo.replaceChunksAndMarkReady(
               record.id,
               chunks,
               representation?.metrics.includedCharacters ?? 0,
@@ -678,7 +805,16 @@ export class DocumentService {
                 qualityReasons: [],
                 indexStatus: 'published',
               },
-            ))();
+            );
+            if (options.reviewDraft) {
+              this.reviewRepo.publishDraft(
+                options.reviewDraft.id,
+                options.reviewDraft.expectedRevision,
+                replacePublishedDocument,
+              );
+            } else {
+              this.db.transaction(replacePublishedDocument)();
+            }
             databaseReplaced = true;
             return chunks.length;
           },
@@ -708,13 +844,17 @@ export class DocumentService {
           representation,
           qualityDecision,
           qualityReasons,
-          shadow: Boolean(options.shadow),
+          shadow: preservePublishedState,
           databaseReplaced,
         });
+        if (error instanceof DocumentReviewConflictError) {
+          throw new ConflictError('Review draft changed; refresh before publishing');
+        }
         return this.requireDocument(record.id);
       }
       return this.requireDocument(record.id);
     } catch (error) {
+      if (error instanceof ConflictError) throw error;
       const parserRejected = error instanceof DocumentParserError
         || error instanceof DocumentIRValidationError;
       const unsafeStructure = error instanceof ChunkingError
@@ -732,7 +872,7 @@ export class DocumentService {
         : unsafeStructure
           ? ['unsupported_structure']
           : qualityReasons;
-      if (!options.shadow) {
+      if (!preservePublishedState) {
         this.db.transaction(() => this.repo.markFailed(record.id, failureCode, {
           taskId,
           representationId,
@@ -1150,6 +1290,22 @@ export class DocumentService {
     };
   }
 
+  private toReviewDraftResult(draft: DocumentReviewDraft): {
+    draftId: string;
+    revision: number;
+    status: 'open' | 'published' | 'superseded';
+    items: DocumentReviewBlock[];
+    total: number;
+  } {
+    return {
+      draftId: draft.id,
+      revision: draft.revision,
+      status: draft.status,
+      items: draft.blocks,
+      total: draft.blocks.length,
+    };
+  }
+
 }
 
 class DocumentProcessingError extends Error {
@@ -1160,6 +1316,20 @@ class DocumentProcessingError extends Error {
 
 function isVisualDocumentFormat(format: DocumentFormat): format is VisualDocumentFormat {
   return format === 'png' || format === 'jpeg' || format === 'webp';
+}
+
+function stripReviewBlockMetadata(block: DocumentReviewBlock): DocumentBlock {
+  const { manuallyEdited: _manuallyEdited, ...documentBlock } = block;
+  return documentBlock;
+}
+
+function stripReviewBlockPayloadMetadata(blocks: unknown): unknown {
+  if (!Array.isArray(blocks)) return blocks;
+  return blocks.map((block) => {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) return block;
+    const { manuallyEdited: _manuallyEdited, ...documentBlock } = block as Record<string, unknown>;
+    return documentBlock;
+  });
 }
 
 function processingFailureCode(error: unknown): string {

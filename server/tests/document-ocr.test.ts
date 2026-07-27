@@ -12,7 +12,9 @@ import {
   OcrExtractionError,
   OcrExtractor,
 } from '../ai/ocr-extractor';
+import { DocumentReviewRepo } from '../db/repos/document-review.repo';
 import { DocumentService } from '../services/document.service';
+import { ConflictError } from '../utils/errors';
 
 const png = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -247,10 +249,182 @@ async function testVisualUploadWithoutWorkerFailsSafely(): Promise<void> {
   }
 }
 
+async function testReviewedDraftPublishesWholeDocument(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-publish-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const extractor = new FakePaddleExtractor();
+  let publishedContents: string[] = [];
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: extractor,
+    embedTexts: async (texts) => texts.map((text) => [text.length, 1]),
+    publishChunks: (chunks) => {
+      publishedContents = chunks.map((chunk) => chunk.content);
+    },
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'reviewed-refund-policy.png',
+      mimeType: 'image/png',
+      buffer: png,
+      uploadedBy: 'admin',
+    });
+    const draft = service.listReviewDraftBlocks(document.id, { page: 1, pageSize: 100 });
+    const editedBlocks = draft.items.map(({ manuallyEdited: _manuallyEdited, ...block }) => (
+      block.kind === 'paragraph'
+        ? { ...block, text: '签收后七个自然日内可以申请退款，并提供订单号。' }
+        : block
+    ));
+
+    const updated = service.updateReviewDraft(
+      document.id,
+      draft.revision as number,
+      editedBlocks,
+      'reviewer',
+    );
+    assert.equal(updated.revision, 2);
+    assert.equal(updated.items[1].manuallyEdited, true);
+    assert.throws(
+      () => service.updateReviewDraft(document.id, 1, editedBlocks, 'reviewer'),
+      ConflictError,
+    );
+    await assert.rejects(
+      service.publishReviewDraft(document.id, 1),
+      ConflictError,
+    );
+    assert.equal([...publishedContents].length, 0);
+
+    const published = await service.publishReviewDraft(document.id, 2);
+    assert.equal(published.status, 'ready');
+    assert.equal(published.failureCode, null);
+    assert.equal(published.indexStatus, 'published');
+    assert.equal(published.qualityDecision, 'ready');
+    assert.equal(published.reviewDraftSummary?.status, 'published');
+    assert.equal(published.reviewDraftSummary?.revision, 2);
+    assert.ok(published.chunkCount > 0);
+    assert.ok(publishedContents.some((content) => content.includes('七个自然日')));
+    const chunks = service.listChunks(document.id, { page: 1, pageSize: 20 });
+    assert.ok(chunks.items.some((chunk) => (
+      chunk.content.includes('七个自然日')
+      && chunk.sourceBlockIds?.includes('block-000002')
+      && chunk.pageStart === 1
+    )));
+    const immutableResult = db.prepare(`
+      SELECT result_json AS resultJson
+      FROM document_extraction_jobs
+      WHERE document_id = ? AND role = 'authoritative'
+      ORDER BY created_at DESC, rowid DESC LIMIT 1
+    `).get(document.id) as { resultJson: string };
+    assert.match(immutableResult.resultJson, /签收后七天内可以申请退款/);
+    assert.doesNotMatch(immutableResult.resultJson, /七个自然日/);
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testPublishFailureLeavesDraftOpenAndUnindexed(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-publish-failure-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: new FakePaddleExtractor(),
+    embedTexts: async (texts) => texts.map((text) => [text.length, 1]),
+    publishChunks: () => {
+      throw new Error('simulated index failure');
+    },
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'publish-failure.png',
+      mimeType: 'image/png',
+      buffer: png,
+      uploadedBy: 'admin',
+    });
+    const result = await service.publishReviewDraft(document.id, 1);
+    assert.equal(result.status, 'failed');
+    assert.equal(result.failureCode, 'publish_failed');
+    assert.equal(result.indexStatus, 'failed');
+    assert.equal(result.reviewDraftSummary?.status, 'open');
+    assert.equal(service.listChunks(document.id, { page: 1, pageSize: 20 }).total, 0);
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testReplacementFailurePreservesPublishedKnowledge(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-replacement-failure-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  let failPublication = false;
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: new FakePaddleExtractor(),
+    embedTexts: async (texts) => texts.map((text) => [text.length, 1]),
+    publishChunks: () => {
+      if (failPublication) throw new Error('simulated replacement index failure');
+    },
+    synchronizeIndex: async () => {},
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'replacement-policy.png',
+      mimeType: 'image/png',
+      buffer: png,
+      uploadedBy: 'admin',
+    });
+    const firstPublication = await service.publishReviewDraft(document.id, 1);
+    assert.equal(firstPublication.status, 'ready');
+    const publishedChunks = service.listChunks(
+      document.id,
+      { page: 1, pageSize: 20 },
+    ).items.map((chunk) => chunk.content);
+
+    const reviewRepo = new DocumentReviewRepo(db);
+    const replacementJob = reviewRepo.createExtractionJob({
+      documentId: document.id,
+      sourceVersion: 1,
+      role: 'authoritative',
+      engine: 'paddleocr_ppstructurev3',
+      engineVersion: '3.0.0',
+    });
+    reviewRepo.startExtractionJob(replacementJob.id);
+    reviewRepo.completeExtractionJob(replacementJob.id, extractedResult());
+    reviewRepo.createDraftFromAuthoritativeJob(replacementJob.id, 'reviewer');
+
+    failPublication = true;
+    const failedReplacement = await service.publishReviewDraft(document.id, 1);
+    assert.equal(failedReplacement.status, 'ready');
+    assert.equal(failedReplacement.failureCode, null);
+    assert.equal(failedReplacement.indexStatus, 'published');
+    assert.equal(failedReplacement.reviewDraftSummary?.status, 'open');
+    assert.deepEqual(
+      service.listChunks(document.id, { page: 1, pageSize: 20 })
+        .items.map((chunk) => chunk.content),
+      publishedChunks,
+    );
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await testVisualUploadCreatesReviewDraftWithoutPublishing();
   await testFailedVisualExtractionCanRetryIntoReview();
   await testVisualUploadWithoutWorkerFailsSafely();
+  await testReviewedDraftPublishesWholeDocument();
+  await testPublishFailureLeavesDraftOpenAndUnindexed();
+  await testReplacementFailurePreservesPublishedKnowledge();
   console.log('document OCR tests passed');
 }
 

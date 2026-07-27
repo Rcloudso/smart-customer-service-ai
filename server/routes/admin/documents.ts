@@ -6,6 +6,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { documentService } from '../../services/document-runtime';
 import { ValidationError } from '../../utils/errors';
 import { idempotencyMiddleware } from '../../middleware/idempotency';
+import { MAX_DOCUMENT_BLOCKS } from '../../ai/document-ir';
 
 const router = Router();
 router.use(authMiddleware);
@@ -26,6 +27,20 @@ const chunkListSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
+
+const reviewDraftListSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(MAX_DOCUMENT_BLOCKS).default(100),
+});
+
+const reviewDraftUpdateSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  blocks: z.array(z.unknown()).max(MAX_DOCUMENT_BLOCKS),
+}).strict();
+
+const reviewDraftPublishSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+}).strict();
 
 const updateSchema = z.object({ isActive: z.boolean() }).strict();
 const idSchema = z.string().uuid('Invalid document id');
@@ -63,7 +78,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id/review-draft', (req: Request, res: Response, next: NextFunction) => {
   try {
     const documentId = parseDocumentId(req.params.id);
-    const parsed = chunkListSchema.safeParse(req.query);
+    const parsed = reviewDraftListSchema.safeParse(req.query);
     if (!parsed.success) throw validationFrom(parsed.error);
     const result = documentService.listReviewDraftBlocks(documentId, parsed.data);
     res.json({
@@ -71,6 +86,42 @@ router.get('/:id/review-draft', (req: Request, res: Response, next: NextFunction
       data: { ...result, ...parsed.data },
       message: 'ok',
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id/review-draft', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const documentId = parseDocumentId(req.params.id);
+    const parsed = reviewDraftUpdateSchema.safeParse(req.body);
+    if (!parsed.success) throw validationFrom(parsed.error);
+    const result = documentService.updateReviewDraft(
+      documentId,
+      parsed.data.expectedRevision,
+      parsed.data.blocks,
+      req.user?.username ?? 'unknown',
+    );
+    res.json({ code: 0, data: result, message: 'Review draft saved' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id/review-draft/publish', async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const documentId = parseDocumentId(req.params.id);
+    const parsed = reviewDraftPublishSchema.safeParse(req.body);
+    if (!parsed.success) throw validationFrom(parsed.error);
+    const result = await documentService.publishReviewDraft(
+      documentId,
+      parsed.data.expectedRevision,
+    );
+    res.json({ code: 0, data: result, message: 'Review draft published' });
   } catch (error) {
     next(error);
   }
