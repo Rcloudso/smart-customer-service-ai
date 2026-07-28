@@ -16,7 +16,7 @@
 **Chinese version**: [README_CN.md](README_CN.md)
 
 Development version: **v0.3.1 (pre-1.0)**. The latest published release is
-v0.2.9; APIs and persisted data remain subject to change before 1.0.
+v0.3.1; APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
@@ -269,7 +269,7 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `DOCUMENT_UPLOAD_DIR` | Private document file directory; defaults to `./data/uploads` |
 | `OCR_SERVICE_URL` | Optional PaddleOCR/PP-StructureV3 worker base URL; when empty, existing FAQ and text-document features still work |
 | `OCR_SERVICE_TOKEN` | Optional bearer token sent only to the configured OCR worker |
-| `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Required worker version match and request timeout; defaults to `3.0.0` / `120000` ms |
+| `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Required worker version match and request timeout; defaults to `3.0.3` / `120000` ms |
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | Durable SQLite queue polling; defaults to `true` / `1000` ms |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | Optional comparison-only DeepSeek-OCR-2-compatible worker; never replaces Paddle review content |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API rate limits |

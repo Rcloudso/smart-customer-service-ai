@@ -4,6 +4,8 @@ import re
 from html.parser import HTMLParser
 from typing import Any
 
+MAX_TABLE_CELLS = 20_000
+
 
 def has_expected_signature(mime_type: str, content: bytes) -> bool:
     if mime_type == "application/pdf":
@@ -28,12 +30,22 @@ def map_ppstructure_results(
 ) -> dict[str, Any]:
     blocks: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
+    page_numbers: set[int] = set()
     for page_offset, page in enumerate(page_results):
         page_number = int(page.get("page_index", page_offset) or 0) + 1
+        page_numbers.add(page_number)
         parsing = page.get("parsing_res_list")
         if not isinstance(parsing, list):
             parsing = []
-        page_blocks = _map_parsing_blocks(parsing, page_number, len(blocks))
+        table_results = page.get("table_res_list")
+        if not isinstance(table_results, list):
+            table_results = []
+        page_blocks = _map_parsing_blocks(
+            parsing,
+            table_results,
+            page_number,
+            len(blocks),
+        )
         if not page_blocks:
             page_blocks = _map_ocr_lines(page.get("overall_ocr_res"), page_number, len(blocks))
         if not page_blocks:
@@ -55,7 +67,6 @@ def map_ppstructure_results(
                 "blockIds": [block["id"]],
             })
 
-    pages = {block["pageNumber"] for block in blocks}
     return {
         "contractVersion": "ocr-extraction-v1",
         "engine": {
@@ -65,7 +76,7 @@ def map_ppstructure_results(
         "blocks": blocks,
         "warnings": warnings,
         "metrics": {
-            "pageCount": len(pages),
+            "pageCount": len(page_numbers),
             "blockCount": len(blocks),
             "elapsedMs": max(0.0, float(elapsed_ms)),
         },
@@ -74,11 +85,13 @@ def map_ppstructure_results(
 
 def _map_parsing_blocks(
     parsing: list[Any],
+    table_results: list[Any],
     page_number: int,
     start_index: int,
 ) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
     heading_path: list[str] = []
+    table_index = 0
     for item in parsing:
         if not isinstance(item, dict):
             continue
@@ -103,25 +116,18 @@ def _map_parsing_blocks(
                 "text": content,
             })
         elif label in {"table", "table_text"}:
-            rows = _table_rows(item)
-            if rows:
+            table_source = (
+                table_results[table_index]
+                if table_index < len(table_results)
+                else item
+            )
+            table_index += 1
+            table = _table_structure(table_source)
+            if table["cells"]:
                 blocks.append({
                     **common,
                     "kind": "table",
-                    "rowCount": len(rows),
-                    "columnCount": max(len(row) for row in rows),
-                    "cells": [
-                        {
-                            "rowIndex": row_index,
-                            "columnIndex": column_index,
-                            "rowSpan": 1,
-                            "columnSpan": 1,
-                            "text": value,
-                            "isHeader": row_index == 0,
-                        }
-                        for row_index, row in enumerate(rows)
-                        for column_index, value in enumerate(row)
-                    ],
+                    **table,
                 })
             elif content:
                 blocks.append({**common, "kind": "paragraph", "text": content})
@@ -243,7 +249,9 @@ def _layout(raw_box: Any) -> dict[str, float] | None:
     }
 
 
-def _table_rows(item: dict[str, Any]) -> list[list[str]]:
+def _table_structure(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return {"rowCount": 0, "columnCount": 0, "cells": []}
     direct_rows = item.get("rows")
     if isinstance(direct_rows, list):
         rows = [
@@ -251,16 +259,45 @@ def _table_rows(item: dict[str, Any]) -> list[list[str]]:
             for row in direct_rows
             if isinstance(row, list)
         ]
-        return [row for row in rows if any(row)]
+        rows = [row for row in rows if any(row)]
+        return {
+            "rowCount": len(rows),
+            "columnCount": max((len(row) for row in rows), default=0),
+            "cells": [
+                {
+                    "rowIndex": row_index,
+                    "columnIndex": column_index,
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                    "text": value,
+                    "isHeader": row_index == 0,
+                }
+                for row_index, row in enumerate(rows)
+                for column_index, value in enumerate(row)
+            ],
+        }
+    nested = item.get("res")
+    if isinstance(nested, dict):
+        nested_structure = _table_structure(nested)
+        if nested_structure["cells"]:
+            return nested_structure
     html = item.get("pred_html")
     if not isinstance(html, str):
         table_result = item.get("table_res")
-        html = table_result.get("pred_html") if isinstance(table_result, dict) else None
+        if isinstance(table_result, dict):
+            nested_structure = _table_structure(table_result)
+            if nested_structure["cells"]:
+                return nested_structure
+            html = table_result.get("pred_html")
     if not isinstance(html, str):
-        return []
+        return {"rowCount": 0, "columnCount": 0, "cells": []}
     parser = _TableParser()
     parser.feed(html)
-    return [row for row in parser.rows if any(row)]
+    return {
+        "rowCount": parser.row_count,
+        "columnCount": parser.column_count,
+        "cells": parser.cells,
+    }
 
 
 def _clean_text(value: Any) -> str:
@@ -270,24 +307,67 @@ def _clean_text(value: Any) -> str:
 class _TableParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
-        self.rows: list[list[str]] = []
-        self._row: list[str] | None = None
-        self._cell: list[str] | None = None
+        self.cells: list[dict[str, Any]] = []
+        self.row_count = 0
+        self.column_count = 0
+        self._row_index = -1
+        self._column_index = 0
+        self._occupied: set[tuple[int, int]] = set()
+        self._cell: dict[str, Any] | None = None
+        self._cell_text: list[str] | None = None
 
-    def handle_starttag(self, tag: str, _attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "tr":
-            self._row = []
-        elif tag in {"td", "th"} and self._row is not None:
-            self._cell = []
+            self._row_index += 1
+            self._column_index = 0
+        elif tag in {"td", "th"} and self._row_index >= 0:
+            while (self._row_index, self._column_index) in self._occupied:
+                self._column_index += 1
+            attributes = dict(attrs)
+            row_span = _positive_span(attributes.get("rowspan"))
+            column_span = _positive_span(attributes.get("colspan"))
+            span_cells = row_span * column_span
+            if span_cells > MAX_TABLE_CELLS or len(self._occupied) + span_cells > MAX_TABLE_CELLS:
+                raise ValueError("Table span exceeds the OCR contract limit")
+            self._cell = {
+                "rowIndex": self._row_index,
+                "columnIndex": self._column_index,
+                "rowSpan": row_span,
+                "columnSpan": column_span,
+                "text": "",
+                "isHeader": tag == "th",
+            }
+            self._cell_text = []
+            for row_offset in range(row_span):
+                for column_offset in range(column_span):
+                    self._occupied.add((
+                        self._row_index + row_offset,
+                        self._column_index + column_offset,
+                    ))
+            self._column_index += column_span
 
     def handle_data(self, data: str) -> None:
-        if self._cell is not None:
-            self._cell.append(data)
+        if self._cell_text is not None:
+            self._cell_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"td", "th"} and self._row is not None and self._cell is not None:
-            self._row.append(_clean_text("".join(self._cell)))
+        if tag in {"td", "th"} and self._cell is not None and self._cell_text is not None:
+            self._cell["text"] = _clean_text("".join(self._cell_text))
+            self.cells.append(self._cell)
+            self.row_count = max(
+                self.row_count,
+                self._cell["rowIndex"] + self._cell["rowSpan"],
+            )
+            self.column_count = max(
+                self.column_count,
+                self._cell["columnIndex"] + self._cell["columnSpan"],
+            )
             self._cell = None
-        elif tag == "tr" and self._row is not None:
-            self.rows.append(self._row)
-            self._row = None
+            self._cell_text = None
+
+
+def _positive_span(value: Any) -> int:
+    try:
+        return max(1, min(1_000, int(value or 1)))
+    except (TypeError, ValueError):
+        return 1

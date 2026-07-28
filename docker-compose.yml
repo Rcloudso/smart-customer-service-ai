@@ -18,6 +18,7 @@ services:
       ALLOWED_ORIGINS: http://localhost:5173
       EMBED_PROVIDER: other
       OCR_SERVICE_URL: ${OCR_SERVICE_URL:-}
+      OCR_SERVICE_TOKEN: ${OCR_SERVICE_TOKEN:-}
     volumes:
       - resolve-weave-data:/app/data
 
@@ -27,11 +28,10 @@ services:
       context: ./ocr-worker
     image: resolve-weave-ocr:local
     environment:
-      OCR_ENGINE_VERSION: 3.0.0
       PADDLE_DEVICE: cpu
       OCR_WORKER_TOKEN: ${OCR_SERVICE_TOKEN:-}
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
 
 volumes:
   resolve-weave-data:

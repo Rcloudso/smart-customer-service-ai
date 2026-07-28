@@ -14,7 +14,7 @@
 
 **English version**: [README.md](README.md)
 
-开发版本：**v0.3.1（pre-1.0）**。最新公开发布版仍为 v0.2.9；在 1.0
+开发版本：**v0.3.1（pre-1.0）**。最新公开发布版为 v0.3.1；在 1.0
 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
@@ -254,7 +254,7 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `DOCUMENT_UPLOAD_DIR` | 私有文档文件目录，默认 `./data/uploads` |
 | `OCR_SERVICE_URL` | 可选 PaddleOCR/PP-StructureV3 Worker 根地址；留空时原有 FAQ 和文本文档能力仍可运行 |
 | `OCR_SERVICE_TOKEN` | 可选 Bearer Token，只发送给已配置的 OCR Worker |
-| `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Worker 版本匹配和请求超时，默认 `3.0.0` / `120000` 毫秒 |
+| `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Worker 版本匹配和请求超时，默认 `3.0.3` / `120000` 毫秒 |
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | SQLite 持久化队列轮询，默认 `true` / `1000` 毫秒 |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | 可选、仅用于对照的 DeepSeek-OCR-2 兼容 Worker；不会替换 Paddle 复核内容 |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API 限流配置 |

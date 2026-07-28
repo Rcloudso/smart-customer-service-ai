@@ -193,6 +193,35 @@ async function main(): Promise<void> {
   assert.equal(draft.status, 'open');
   assert.equal(draft.blocks.length, 2);
   assert.equal(draft.blocks[1].manuallyEdited, false);
+  db.prepare(`
+    UPDATE document_review_blocks SET payload = ?
+    WHERE draft_id = ? AND block_id = ?
+  `).run('{malformed', draft.id, 'block-000001');
+  const recoveredDraft = repo.getDraft(draft.id);
+  assert.ok(recoveredDraft);
+  assert.equal(recoveredDraft.blocks[0].kind, 'heading');
+  assert.equal(recoveredDraft.blocks[0].confidence, 0);
+  assert.equal(
+    recoveredDraft.blocks[0].exclusionReason,
+    'malformed_historical_payload',
+  );
+  assert.throws(
+    () => repo.replaceDraftBlocks(
+      draft.id,
+      1,
+      recoveredDraft.blocks.map(({ manuallyEdited: _manuallyEdited, ...block }) => block),
+      'reviewer',
+    ),
+    DocumentReviewConflictError,
+  );
+  assert.throws(
+    () => repo.publishDraft(draft.id, 1, () => {}),
+    DocumentReviewConflictError,
+  );
+  db.prepare(`
+    UPDATE document_review_blocks SET payload = ?
+    WHERE draft_id = ? AND block_id = ?
+  `).run(JSON.stringify(extracted.blocks[0]), draft.id, 'block-000001');
 
   const editedBlocks = draft.blocks.map(({ manuallyEdited: _manuallyEdited, ...block }) => (
     block.kind === 'table'
@@ -275,6 +304,10 @@ async function main(): Promise<void> {
     ...extracted,
     blocks: [...extracted.blocks].reverse(),
   }), /invalid_ocr_result/);
+  assert.equal(validateOcrExtractionResult({
+    ...extracted,
+    metrics: { ...extracted.metrics, pageCount: 2 },
+  }).metrics.pageCount, 2);
 
   db.close();
   await testHttpExtractor();

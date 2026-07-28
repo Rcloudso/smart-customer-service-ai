@@ -110,11 +110,12 @@ class FakePaddleExtractor implements OcrExtractor {
   readonly engineVersion = '3.0.0';
   fail = false;
   calls = 0;
+  result = extractedResult();
 
   async extract(): Promise<OcrExtractionResult> {
     this.calls += 1;
     if (this.fail) throw new OcrExtractionError('ocr_worker_unavailable');
-    return extractedResult();
+    return this.result;
   }
 }
 
@@ -374,6 +375,129 @@ async function testReviewedDraftPublishesWholeDocument(): Promise<void> {
   }
 }
 
+async function testLowConfidenceBlockRequiresReviewAction(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-low-confidence-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const extractor = new FakePaddleExtractor();
+  extractor.result = {
+    ...extractedResult(),
+    blocks: extractedResult().blocks.map((block) => (
+      block.id === 'block-000002' ? { ...block, confidence: 0.45 } : block
+    )),
+    warnings: [{
+      code: 'ocr_low_confidence',
+      detail: 'Block confidence is 0.450',
+      blockIds: ['block-000002'],
+    }],
+  };
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: extractor,
+    embedTexts: async (texts) => texts.map((text) => [text.length, 1]),
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'low-confidence.png',
+      mimeType: 'image/png',
+      buffer: png,
+      uploadedBy: 'admin',
+    });
+    await assert.rejects(service.publishReviewDraft(document.id, 1), ConflictError);
+    const draft = service.listReviewDraftBlocks(document.id, { page: 1, pageSize: 20 });
+    const reviewed = draft.items.map(({ manuallyEdited: _manuallyEdited, ...block }) => (
+      block.id === 'block-000002' && block.kind === 'paragraph'
+        ? { ...block, text: `${block.text}（已人工复核）` }
+        : block
+    ));
+    service.updateReviewDraft(document.id, 1, reviewed, 'reviewer');
+    const published = await service.publishReviewDraft(document.id, 2);
+    assert.equal(published.status, 'ready');
+    assert.equal(published.reviewDraftSummary?.status, 'published');
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testIncompletePageWarningBlocksPublication(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-empty-page-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const extractor = new FakePaddleExtractor();
+  extractor.result = {
+    ...extractedResult(),
+    warnings: [{
+      code: 'ocr_empty_page',
+      detail: 'No text block was extracted from page 2',
+      blockIds: [],
+    }],
+    metrics: {
+      ...extractedResult().metrics,
+      pageCount: 2,
+    },
+  };
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: extractor,
+    embedTexts: async (texts) => texts.map((text) => [text.length, 1]),
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'empty-page.jpg',
+      mimeType: 'image/jpeg',
+      buffer: jpeg,
+      uploadedBy: 'admin',
+    });
+    await assert.rejects(service.publishReviewDraft(document.id, 1), ConflictError);
+    assert.equal(service.get(document.id).reviewDraftSummary?.status, 'open');
+    assert.equal(service.listChunks(document.id, { page: 1, pageSize: 20 }).total, 0);
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
+async function testInformationalRotationWarningCanPublish(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-rotation-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+  const extractor = new FakePaddleExtractor();
+  extractor.result = {
+    ...extractedResult(),
+    warnings: [{
+      code: 'ocr_rotation_corrected',
+      detail: 'Page orientation was normalized before extraction',
+      blockIds: [],
+    }],
+  };
+  const service = new DocumentService(db, {
+    uploadDir,
+    authoritativeOcr: extractor,
+    embedTexts: async (texts) => texts.map((text) => [text.length, 1]),
+  });
+
+  try {
+    const document = await service.upload({
+      originalName: 'rotated.webp',
+      mimeType: 'image/webp',
+      buffer: webp,
+      uploadedBy: 'admin',
+    });
+    const published = await service.publishReviewDraft(document.id, 1);
+    assert.equal(published.status, 'ready');
+    assert.equal(published.reviewDraftSummary?.status, 'published');
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
 async function testPublishFailureLeavesDraftOpenAndUnindexed(): Promise<void> {
   const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-publish-failure-'));
   const db = new Database(':memory:');
@@ -447,8 +571,41 @@ async function testReplacementFailurePreservesPublishedKnowledge(): Promise<void
     });
     reviewRepo.startExtractionJob(replacementJob.id);
     reviewRepo.completeExtractionJob(replacementJob.id, extractedResult());
-    reviewRepo.createDraftFromAuthoritativeJob(replacementJob.id, 'reviewer');
+    const replacementDraft = reviewRepo.createDraftFromAuthoritativeJob(
+      replacementJob.id,
+      'reviewer',
+    );
 
+    reviewRepo.replaceDraftBlocks(
+      replacementDraft.id,
+      1,
+      replacementDraft.blocks.map(({ manuallyEdited: _manuallyEdited, ...block }) => ({
+        ...block,
+        excluded: true,
+        exclusionReason: 'manual_exclusion',
+      })),
+      'reviewer',
+    );
+    const rejectedReplacement = await service.publishReviewDraft(document.id, 2);
+    assert.equal(rejectedReplacement.status, 'ready');
+    assert.equal(rejectedReplacement.failureCode, null);
+    assert.equal(rejectedReplacement.indexStatus, 'published');
+    assert.deepEqual(
+      service.listChunks(document.id, { page: 1, pageSize: 20 })
+        .items.map((chunk) => chunk.content),
+      publishedChunks,
+    );
+
+    const indexFailureJob = reviewRepo.createExtractionJob({
+      documentId: document.id,
+      sourceVersion: 1,
+      role: 'authoritative',
+      engine: 'paddleocr_ppstructurev3',
+      engineVersion: '3.0.0',
+    });
+    reviewRepo.startExtractionJob(indexFailureJob.id);
+    reviewRepo.completeExtractionJob(indexFailureJob.id, extractedResult());
+    reviewRepo.createDraftFromAuthoritativeJob(indexFailureJob.id, 'reviewer');
     failPublication = true;
     const failedReplacement = await service.publishReviewDraft(document.id, 1);
     assert.equal(failedReplacement.status, 'ready');
@@ -516,6 +673,10 @@ async function testQueuedExtractionSurvivesSchedulingAndKeepsShadowSeparate(): P
       shadowDone.extractionHistory.map((job) => [job.role, job.status]),
       [['shadow', 'succeeded'], ['authoritative', 'succeeded']],
     );
+    assert.deepEqual(
+      shadowDone.extractionHistory.map((job) => job.blockCount),
+      [2, 2],
+    );
     assert.equal(shadow.calls, 1);
     assert.equal(await service.processNextOcrJob(), false);
   } finally {
@@ -554,15 +715,54 @@ async function testScannedPdfRoutesThroughAuthoritativeOcr(): Promise<void> {
   }
 }
 
+async function testScannedPdfRetryUsesNewlyConfiguredWorker(): Promise<void> {
+  const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'document-ocr-scan-retry-'));
+  const db = new Database(':memory:');
+  db.pragma('foreign_keys = ON');
+  initSchema(db);
+
+  try {
+    const unavailable = new DocumentService(db, {
+      uploadDir,
+      embedTexts: async () => [],
+    });
+    const document = await unavailable.upload({
+      originalName: 'scan-retry.pdf',
+      mimeType: 'application/pdf',
+      buffer: createImagePdf(),
+      uploadedBy: 'admin',
+    });
+    assert.equal(document.failureCode, 'ocr_worker_unconfigured');
+
+    const extractor = new FakePaddleExtractor();
+    const configured = new DocumentService(db, {
+      uploadDir,
+      authoritativeOcr: extractor,
+      embedTexts: async () => [],
+    });
+    const retried = await configured.retry(document.id);
+    assert.equal(retried.failureCode, 'ocr_review_required');
+    assert.equal(extractor.calls, 1);
+    assert.equal(configured.get(document.id).reviewDraftSummary?.status, 'open');
+  } finally {
+    db.close();
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   await testVisualUploadCreatesReviewDraftWithoutPublishing();
   await testFailedVisualExtractionCanRetryIntoReview();
   await testVisualUploadWithoutWorkerFailsSafely();
   await testReviewedDraftPublishesWholeDocument();
+  await testLowConfidenceBlockRequiresReviewAction();
+  await testIncompletePageWarningBlocksPublication();
+  await testInformationalRotationWarningCanPublish();
   await testPublishFailureLeavesDraftOpenAndUnindexed();
   await testReplacementFailurePreservesPublishedKnowledge();
   await testQueuedExtractionSurvivesSchedulingAndKeepsShadowSeparate();
   await testScannedPdfRoutesThroughAuthoritativeOcr();
+  await testScannedPdfRetryUsesNewlyConfiguredWorker();
   console.log('document OCR tests passed');
 }
 

@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 import time
+from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,12 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from paddleocr import PPStructureV3
 
 from contract_mapper import has_expected_signature, map_ppstructure_results
+from request_contract import (
+    RequestContractError,
+    is_authorized,
+    parse_extraction_request,
+    read_request_body_bounded,
+)
 
 MAX_SOURCE_BYTES = 10 * 1024 * 1024
 MAX_REQUEST_BYTES = 15 * 1024 * 1024
@@ -23,7 +30,7 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg": ".jpg",
     "image/webp": ".webp",
 }
-ENGINE_VERSION = os.getenv("OCR_ENGINE_VERSION", "3.0.0").strip()
+ENGINE_VERSION = package_version("paddleocr")
 WORKER_TOKEN = os.getenv("OCR_WORKER_TOKEN", "").strip()
 DEVICE = os.getenv("PADDLE_DEVICE", "cpu").strip()
 
@@ -47,26 +54,17 @@ async def extract(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    if WORKER_TOKEN and authorization != f"Bearer {WORKER_TOKEN}":
+    if not is_authorized(WORKER_TOKEN, authorization):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    raw = await request.body()
-    if len(raw) > MAX_REQUEST_BYTES:
-        raise HTTPException(status_code=413, detail="Request is too large")
     try:
-        payload = json.loads(raw)
-        source = payload["source"]
-        requested_engine = payload["requestedEngine"]
-        mime_type = source["mimeType"]
-        encoded = source["contentBase64"]
-    except (KeyError, TypeError, json.JSONDecodeError):
-        raise HTTPException(status_code=400, detail="Invalid extraction request")
-    if (
-        payload.get("contractVersion") != "ocr-worker-request-v1"
-        or requested_engine.get("name") != "paddleocr_ppstructurev3"
-        or requested_engine.get("version") != ENGINE_VERSION
-        or mime_type not in ALLOWED_MIME_TYPES
-    ):
-        raise HTTPException(status_code=422, detail="Unsupported extraction contract")
+        raw = await read_request_body_bounded(request, MAX_REQUEST_BYTES)
+        _, source, mime_type, encoded = parse_extraction_request(
+            raw,
+            ENGINE_VERSION,
+            set(ALLOWED_MIME_TYPES),
+        )
+    except RequestContractError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
     try:
         content = base64.b64decode(encoded, validate=True)
     except (TypeError, ValueError):

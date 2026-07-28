@@ -13,9 +13,9 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.2.6 | Released | Document RAG Foundation | 支持 TXT、Markdown、含文本层 PDF 和 DOCX 的上传、语义切片、FAQ/文档混合检索、来源快照与无 Key 原文回退。 |
 | v0.2.7 | Released | Grounding, Citations & Refusal | 在生成前确定 FAQ 直答、基于证据生成或拒答，持久化来源，并将冲突与高风险业务请求转人工。 |
 | v0.2.8 | Released | RAG Quality Lab | 用版本化评测集比较检索与 Grounding 策略，并通过质量门禁安全发布和回滚。 |
-| v0.2.9 | Current | Structured Escalation & Triage | 以结构化交接包、确定性优先级和只读双语分流页承接转人工流程。 |
-| v0.3.0 | Implemented; verification pending | Structure-Aware Ingestion Foundation | 统一结构表示、质量门禁、结构切片、处理时间线和显式影子重处理已在功能分支完成；公开发布前仍需完整门禁。 |
-| v0.3.1 | Implemented; release verification pending | Multimodal Knowledge Review | PNG/JPEG/WebP/扫描 PDF 经持久化 PaddleOCR 队列进入可编辑复核草稿；可选 DeepSeek 影子对照，发布后保留引擎、页码和 Block 来源。 |
+| v0.2.9 | Released | Structured Escalation & Triage | 以结构化交接包、确定性优先级和只读双语分流页承接转人工流程。 |
+| v0.3.0 | Released | Structure-Aware Ingestion Foundation | 统一结构表示、质量门禁、结构切片、处理时间线和显式影子重处理已公开发布。 |
+| v0.3.1 | Current | Multimodal Knowledge Review | PNG/JPEG/WebP/扫描 PDF 经持久化 PaddleOCR 队列进入可编辑复核草稿；可选 DeepSeek 影子对照，发布后保留引擎、页码和 Block 来源。 |
 
 v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、转人工记录、满意度、知识审核、会话分析、双语后台、

@@ -28,6 +28,11 @@ export interface OcrExtractionJob {
   completedAt: string | null;
 }
 
+export type OcrExtractionJobSummaryRecord = OcrExtractionJob & {
+  summaryBlockCount: number;
+  summaryWarningCodes: string[];
+};
+
 export type DocumentReviewBlock = DocumentBlock & {
   manuallyEdited: boolean;
 };
@@ -112,7 +117,8 @@ export class DocumentReviewRepo {
     const result = this.db.prepare(`
       UPDATE document_extraction_jobs
       SET status = 'running', started_at = ?, completed_at = NULL,
-          result_json = NULL, error_code = NULL
+          result_json = NULL, result_block_count = 0,
+          result_warning_codes = '[]', error_code = NULL
       WHERE id = ? AND status = 'queued'
     `).run(new Date().toISOString(), id);
     if (result.changes !== 1) {
@@ -133,10 +139,16 @@ export class DocumentReviewRepo {
     }
     const updated = this.db.prepare(`
       UPDATE document_extraction_jobs
-      SET status = 'succeeded', result_json = ?, error_code = NULL,
-          completed_at = ?
+      SET status = 'succeeded', result_json = ?, result_block_count = ?,
+          result_warning_codes = ?, error_code = NULL, completed_at = ?
       WHERE id = ? AND status = 'running'
-    `).run(JSON.stringify(result), new Date().toISOString(), id);
+    `).run(
+      JSON.stringify(result),
+      result.blocks.length,
+      JSON.stringify(result.warnings.map((warning) => warning.code)),
+      new Date().toISOString(),
+      id,
+    );
     if (updated.changes !== 1) {
       throw new DocumentReviewConflictError('Extraction job is not running');
     }
@@ -149,8 +161,8 @@ export class DocumentReviewRepo {
     }
     const updated = this.db.prepare(`
       UPDATE document_extraction_jobs
-      SET status = 'failed', result_json = NULL, error_code = ?,
-          completed_at = ?
+      SET status = 'failed', result_json = NULL, result_block_count = 0,
+          result_warning_codes = '[]', error_code = ?, completed_at = ?
       WHERE id = ? AND status IN ('queued', 'running')
     `).run(errorCode, new Date().toISOString(), id);
     if (updated.changes !== 1) {
@@ -179,17 +191,29 @@ export class DocumentReviewRepo {
     return row ? mapExtractionJob(row) : null;
   }
 
-  listExtractionJobs(documentId: string, limit = 20): OcrExtractionJob[] {
+  listExtractionJobSummaries(
+    documentId: string,
+    limit = 20,
+  ): OcrExtractionJobSummaryRecord[] {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new Error('Extraction job list limit is invalid');
     }
     const rows = this.db.prepare(`
-      SELECT * FROM document_extraction_jobs
-      WHERE document_id = ?
-      ORDER BY created_at DESC, rowid DESC
+      SELECT jobs.id, jobs.document_id, jobs.source_version, jobs.role,
+             jobs.engine, jobs.engine_version, jobs.status, jobs.retry_of,
+             jobs.error_code, jobs.created_at, jobs.started_at, jobs.completed_at,
+             jobs.result_block_count AS summary_block_count,
+             jobs.result_warning_codes AS summary_warning_codes
+      FROM document_extraction_jobs AS jobs
+      WHERE jobs.document_id = ?
+      ORDER BY jobs.created_at DESC, jobs.rowid DESC
       LIMIT ?
     `).all(documentId, limit) as Record<string, unknown>[];
-    return rows.map(mapExtractionJob);
+    return rows.map((row) => ({
+      ...mapExtractionJob(row),
+      summaryBlockCount: Number(row.summary_block_count) || 0,
+      summaryWarningCodes: parseStringArray(row.summary_warning_codes),
+    }));
   }
 
   claimNextQueuedExtractionJob(): OcrExtractionJob | null {
@@ -204,7 +228,8 @@ export class DocumentReviewRepo {
       const updated = this.db.prepare(`
         UPDATE document_extraction_jobs
         SET status = 'running', started_at = ?, completed_at = NULL,
-            result_json = NULL, error_code = NULL
+            result_json = NULL, result_block_count = 0,
+            result_warning_codes = '[]', error_code = NULL
         WHERE id = ? AND status = 'queued'
       `).run(new Date().toISOString(), row.id);
       return updated.changes === 1 ? row.id : null;
@@ -217,7 +242,8 @@ export class DocumentReviewRepo {
     return this.db.prepare(`
       UPDATE document_extraction_jobs
       SET status = 'queued', started_at = NULL, completed_at = NULL,
-          result_json = NULL, error_code = NULL
+          result_json = NULL, result_block_count = 0,
+          result_warning_codes = '[]', error_code = NULL
       WHERE status = 'running'
     `).run().changes;
   }
@@ -324,11 +350,12 @@ export class DocumentReviewRepo {
       SELECT COUNT(*) AS total FROM document_review_blocks WHERE draft_id = ?
     `).get(draft.id) as { total: number };
     const items = rows.map((row) => {
-      const block = parseDraftBlock(row.payload);
+      const parsed = parseDraftBlock(row);
+      const block = parsed.block;
       if (
         block.id !== row.block_id
         || block.order !== row.block_order
-        || block.kind !== row.kind
+        || (!parsed.recovered && block.kind !== row.kind)
       ) {
         throw new Error('Review draft block metadata is inconsistent');
       }
@@ -354,6 +381,13 @@ export class DocumentReviewRepo {
       const draft = this.requireDraft(id);
       if (draft.status !== 'open' || draft.revision !== expectedRevision) {
         throw new DocumentReviewConflictError('Review draft revision is stale');
+      }
+      if (draft.blocks.some((block) => (
+        block.exclusionReason === 'malformed_historical_payload'
+      ))) {
+        throw new DocumentReviewConflictError(
+          'Review draft contains malformed historical payload',
+        );
       }
       if (
         blocks.length !== draft.blocks.length
@@ -404,6 +438,13 @@ export class DocumentReviewRepo {
       if (draft.status !== 'open' || draft.revision !== expectedRevision) {
         throw new DocumentReviewConflictError('Review draft revision is stale');
       }
+      if (draft.blocks.some((block) => (
+        block.exclusionReason === 'malformed_historical_payload'
+      ))) {
+        throw new DocumentReviewConflictError(
+          'Review draft contains malformed historical payload',
+        );
+      }
       const blocks = validateOcrDraftBlocks(
         draft.blocks.map((block) => stripReviewMetadata(block)),
       );
@@ -444,13 +485,12 @@ export class DocumentReviewRepo {
       SELECT * FROM document_review_blocks
       WHERE draft_id = ? ORDER BY block_order
     `).all(row.id) as Record<string, unknown>[];
-    const blocks = validateOcrDraftBlocks(blockRows.map((blockRow) => (
-      parseDraftBlock(blockRow.payload)
-    )));
+    const parsedBlocks = blockRows.map(parseDraftBlock);
+    const blocks = validateOcrDraftBlocks(parsedBlocks.map(({ block }) => block));
     if (blocks.some((block, index) => (
       block.id !== blockRows[index].block_id
       || block.order !== blockRows[index].block_order
-      || block.kind !== blockRows[index].kind
+      || (!parsedBlocks[index].recovered && block.kind !== blockRows[index].kind)
     ))) {
       throw new Error('Review draft block metadata is inconsistent');
     }
@@ -525,6 +565,18 @@ function mapExtractionJob(row: Record<string, unknown>): OcrExtractionJob {
   };
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function insertDraftBlocks(
   db: Database.Database,
   draftId: string,
@@ -550,11 +602,56 @@ function insertDraftBlocks(
   }
 }
 
-function parseDraftBlock(value: unknown): DocumentBlock {
+function parseDraftBlock(
+  row: Record<string, unknown>,
+): { block: DocumentBlock; recovered: boolean } {
   try {
-    return documentBlockSchema.parse(JSON.parse(value as string));
+    return {
+      block: documentBlockSchema.parse(JSON.parse(row.payload as string)),
+      recovered: false,
+    };
   } catch {
-    throw new Error('Review draft block is invalid');
+    const common = {
+      id: typeof row.block_id === 'string' && /^block-\d{6}$/.test(row.block_id)
+        ? row.block_id
+        : 'block-000001',
+      order: Number.isInteger(row.block_order) && Number(row.block_order) >= 0
+        ? Number(row.block_order)
+        : 0,
+      pageNumber: null,
+      headingPath: [],
+      confidence: 0,
+      layout: null,
+      excluded: true,
+      exclusionReason: 'malformed_historical_payload',
+    };
+    const block = row.kind === 'heading'
+      ? { ...common, kind: 'heading' as const, level: 1, text: '' }
+      : row.kind === 'list'
+        ? { ...common, kind: 'list' as const, ordered: false, items: [] }
+        : row.kind === 'table'
+          ? {
+            ...common,
+            kind: 'table' as const,
+            rowCount: 0,
+            columnCount: 0,
+            cells: [],
+          }
+          : row.kind === 'key_value'
+            ? { ...common, kind: 'key_value' as const, pairs: [] }
+            : row.kind === 'image_ref'
+              ? {
+                ...common,
+                kind: 'image_ref' as const,
+                relationshipId: null,
+                contentType: null,
+                altText: null,
+                requiresVisualProcessing: true as const,
+              }
+              : row.kind === 'text'
+                ? { ...common, kind: 'text' as const, text: '', variant: 'plain' as const }
+                : { ...common, kind: 'paragraph' as const, text: '' };
+    return { block: documentBlockSchema.parse(block), recovered: true };
   }
 }
 

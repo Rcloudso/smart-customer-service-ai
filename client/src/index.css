@@ -267,6 +267,7 @@ select {
 .app-content {
   min-width: 0;
   padding: 24px;
+  overflow-x: hidden;
   overflow-y: auto;
   background-color: var(--app-bg);
 }
@@ -1314,7 +1315,7 @@ html[data-theme='dark'] .app-triage-table .t-table--striped > .t-table__content 
   margin-top: 5px;
   color: var(--app-text-muted);
   font-family: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 @keyframes blink {
@@ -1934,7 +1935,7 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
   padding: 10px 12px;
   background: var(--app-surface);
   color: var(--app-text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .app-document-ocr-provenance__metrics strong {
@@ -1962,10 +1963,20 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
 
 .app-document-ocr-history__item {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto minmax(100px, auto);
+  grid-template-columns: minmax(240px, 1fr) auto auto minmax(100px, auto);
   align-items: center;
   gap: 8px;
   color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.app-document-ocr-history__identity {
+  display: grid;
+  gap: 2px;
+}
+
+.app-document-ocr-history__identity small {
+  color: var(--app-text-muted);
   font-size: 12px;
 }
 

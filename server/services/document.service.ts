@@ -60,6 +60,7 @@ import { logger } from '../utils/logger';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 200_000;
+const INFORMATIONAL_OCR_WARNING_CODES = new Set(['ocr_rotation_corrected']);
 const PROCESSING_STAGES: Record<DocumentProcessingStageName, number> = {
   validate: 0,
   parse: 1,
@@ -168,8 +169,11 @@ export class DocumentService {
       extractionSummary: this.toExtractionSummary(authoritative),
       shadowExtractionSummary: this.toExtractionSummary(shadow),
       extractionHistory: this.reviewRepo
-        .listExtractionJobs(documentId)
-        .map((job) => this.toExtractionSummary(job))
+        .listExtractionJobSummaries(documentId)
+        .map((job) => this.toExtractionSummary(job, {
+          blockCount: job.summaryBlockCount,
+          warningCodes: job.summaryWarningCodes,
+        }))
         .filter((summary): summary is NonNullable<typeof summary> => Boolean(summary)),
       ocrComparisonSummary: this.toOcrComparisonSummary(authoritative, shadow),
       reviewDraftSummary: this.reviewRepo.findLatestDraftSummary(documentId),
@@ -314,6 +318,32 @@ export class DocumentService {
       || !job.result
     ) {
       throw new ConflictError('Authoritative OCR extraction is unavailable');
+    }
+    if (draft.blocks.some((block) => (
+      block.exclusionReason === 'malformed_historical_payload'
+    ))) {
+      throw new ConflictError('Review draft is corrupted and must be re-extracted');
+    }
+    const blockById = new Map(draft.blocks.map((block) => [block.id, block]));
+    const unresolvedLowConfidence = draft.blocks.some((block) => (
+      !block.excluded
+      && block.confidence !== null
+      && block.confidence < 0.6
+      && !block.manuallyEdited
+    ));
+    const unresolvedExtractionWarning = job.result.warnings.some((warning) => {
+      if (INFORMATIONAL_OCR_WARNING_CODES.has(warning.code)) return false;
+      return warning.code !== 'ocr_low_confidence'
+        || warning.blockIds.length === 0
+        || warning.blockIds.some((blockId) => {
+          const block = blockById.get(blockId);
+          return !block || (!block.excluded && !block.manuallyEdited);
+        });
+    });
+    if (unresolvedLowConfidence || unresolvedExtractionWarning) {
+      throw new ConflictError(
+        'OCR warnings must be resolved by editing, exclusion, or re-extraction',
+      );
     }
     let buffer: Buffer;
     try {
@@ -809,7 +839,7 @@ export class DocumentService {
         const failureCode = quality.decision === 'review_required'
           ? 'quality_review_required'
           : `quality_rejected_${quality.reasons[0] ?? 'empty_content'}`;
-        if (!options.shadow) {
+        if (!preservePublishedState) {
           this.db.transaction(() => this.repo.markFailed(record.id, failureCode, {
             taskId,
             representationId,
@@ -1381,6 +1411,7 @@ export class DocumentService {
 
   private toExtractionSummary(
     job: OcrExtractionJob | null,
+    precomputed?: { blockCount: number; warningCodes: string[] },
   ): DocumentDetail['extractionSummary'] {
     if (!job) return null;
     return {
@@ -1391,8 +1422,10 @@ export class DocumentService {
       engineVersion: job.engineVersion,
       retryOf: job.retryOf,
       errorCode: job.errorCode,
-      blockCount: job.result?.blocks.length ?? 0,
-      warningCodes: job.result?.warnings.map((warning) => warning.code) ?? [],
+      blockCount: precomputed?.blockCount ?? job.result?.blocks.length ?? 0,
+      warningCodes: precomputed?.warningCodes
+        ?? job.result?.warnings.map((warning) => warning.code)
+        ?? [],
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       completedAt: job.completedAt,
@@ -1475,7 +1508,10 @@ function isOcrDocument(
     || latestExtraction !== null
     || (
       record.format === 'pdf'
-      && record.qualityReasons.includes('ocr_required')
+      && (
+        record.qualityReasons.includes('ocr_required')
+        || record.failureCode === 'ocr_worker_unconfigured'
+      )
     );
 }
 

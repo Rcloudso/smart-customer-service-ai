@@ -30,11 +30,16 @@ class ContractMapperTest(unittest.TestCase):
                         "block_label": "table",
                         "block_content": "",
                         "block_bbox": [[10, 60], [300, 60], [300, 160], [10, 160]],
+                    },
+                ],
+                "table_res_list": [
+                    {
                         "pred_html": (
                             "<table><tr><th>Method</th><th>Days</th></tr>"
-                            "<tr><td>Card</td><td>7</td></tr></table>"
+                            "<tr><td rowspan='2'>Card</td><td>7</td></tr>"
+                            "<tr><td>10</td></tr></table>"
                         ),
-                    },
+                    }
                 ],
             },
             {
@@ -45,18 +50,42 @@ class ContractMapperTest(unittest.TestCase):
                     "rec_boxes": [[12, 18, 320, 48]],
                 },
             },
+            {
+                "page_index": 2,
+            },
         ], "3.0.0", 25)
 
-        self.assertEqual(result["metrics"]["pageCount"], 2)
+        self.assertEqual(result["metrics"]["pageCount"], 3)
         self.assertEqual(result["metrics"]["blockCount"], 3)
         self.assertEqual(
             [block["kind"] for block in result["blocks"]],
             ["heading", "table", "paragraph"],
         )
-        self.assertEqual(result["blocks"][1]["cells"][3]["text"], "7")
+        self.assertEqual(result["blocks"][1]["rowCount"], 3)
+        self.assertEqual(result["blocks"][1]["columnCount"], 2)
+        self.assertEqual(result["blocks"][1]["cells"][2]["rowSpan"], 2)
+        self.assertEqual(result["blocks"][1]["cells"][4]["columnIndex"], 1)
+        self.assertEqual(result["blocks"][1]["cells"][4]["text"], "10")
         self.assertEqual(result["blocks"][2]["pageNumber"], 2)
-        self.assertEqual(result["warnings"][0]["code"], "ocr_low_confidence")
-        self.assertEqual(result["warnings"][0]["blockIds"], ["block-000003"])
+        self.assertEqual(result["warnings"][0]["code"], "ocr_empty_page")
+        self.assertEqual(result["warnings"][1]["code"], "ocr_low_confidence")
+        self.assertEqual(result["warnings"][1]["blockIds"], ["block-000003"])
+
+    def test_rejects_pathological_table_span(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Table span"):
+            map_ppstructure_results([{
+                "page_index": 0,
+                "parsing_res_list": [{
+                    "block_label": "table",
+                    "block_content": "",
+                }],
+                "table_res_list": [{
+                    "pred_html": (
+                        "<table><tr><td rowspan='1000' colspan='1000'>"
+                        "oversized</td></tr></table>"
+                    ),
+                }],
+            }], "3.0.3", 1)
 
 
 if __name__ == "__main__":

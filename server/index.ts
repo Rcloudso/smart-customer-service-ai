@@ -195,12 +195,11 @@ function registerGracefulShutdown(server: Server): void {
     const forceTimer = setTimeout(() => {
       logger.error({ signal }, 'Server shutdown timed out; closing active connections');
       server.closeAllConnections();
-      finalize(1);
+      process.exit(1);
     }, 10_000);
     forceTimer.unref();
 
     server.close((error) => {
-      clearTimeout(forceTimer);
       if (error) logger.error({ err: error, signal }, 'HTTP server shutdown failed');
       finalize(error ? 1 : 0);
     });

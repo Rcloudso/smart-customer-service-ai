@@ -9,7 +9,7 @@ RUN python -m pip install --no-cache-dir \
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY app.py contract_mapper.py ./
+COPY app.py contract_mapper.py request_contract.py ./
 
 EXPOSE 8001
 

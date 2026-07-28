@@ -15,12 +15,17 @@ source .venv/bin/activate
 python -m pip install paddlepaddle==3.0.0 \
   --index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
 python -m pip install -r requirements.txt
-OCR_ENGINE_VERSION=3.0.0 PADDLE_DEVICE=cpu \
+PADDLE_DEVICE=cpu \
   uvicorn app:app --host 127.0.0.1 --port 8001
 ```
 
-Configure the Node application with `OCR_SERVICE_URL=http://127.0.0.1:8001`.
+The worker reports the installed `paddleocr` package version (`3.0.3` in the
+pinned requirements) as its extraction engine version. Configure the Node
+application with `OCR_SERVICE_URL=http://127.0.0.1:8001` and the matching
+`OCR_ENGINE_VERSION=3.0.3`.
 Set the same optional secret in `OCR_WORKER_TOKEN` and `OCR_SERVICE_TOKEN`.
+`paddlex` is pinned to `3.0.3` as well because newer PaddleX releases are not
+runtime-compatible with PaddleOCR `3.0.3` pipeline initialization.
 
 ## Docker Compose
 

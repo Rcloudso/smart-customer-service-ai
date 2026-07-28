@@ -7,6 +7,8 @@ data/
 .DS_Store
 *.log
 npm-debug.log*
+__pycache__/
+*.py[cod]
 .playwright-cli/
 .npm-cache/
 playwright-report/

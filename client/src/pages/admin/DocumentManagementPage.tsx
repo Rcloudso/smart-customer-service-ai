@@ -690,13 +690,26 @@ export function DocumentManagementPage(): React.ReactElement {
                     <div className="app-document-ocr-history__list">
                       {selected.extractionHistory?.map((job) => (
                         <div key={job.jobId} className="app-document-ocr-history__item">
-                          <span>
-                            {job.role === 'authoritative'
-                              ? t('documents.ocrAuthoritative')
-                              : t('documents.ocrShadow')}
-                            {' · '}
-                            {t(`documents.ocrEngine.${job.engine}`)} {job.engineVersion}
-                          </span>
+                          <div className="app-document-ocr-history__identity">
+                            <span>
+                              {job.role === 'authoritative'
+                                ? t('documents.ocrAuthoritative')
+                                : t('documents.ocrShadow')}
+                              {' · '}
+                              {t(`documents.ocrEngine.${job.engine}`)} {job.engineVersion}
+                            </span>
+                            <small>
+                              {t('documents.ocrCreatedAt')}: {' '}
+                              {formatTimestamp(job.createdAt, language)}
+                              {job.completedAt && (
+                                <>
+                                  {' · '}
+                                  {t('documents.ocrCompletedAt')}: {' '}
+                                  {formatTimestamp(job.completedAt, language)}
+                                </>
+                              )}
+                            </small>
+                          </div>
                           <Tag
                             theme={
                               job.status === 'failed'
@@ -713,6 +726,11 @@ export function DocumentManagementPage(): React.ReactElement {
                           {job.retryOf && (
                             <span>
                               {t('documents.ocrRetryOf')}: <code>{job.retryOf.slice(0, 8)}</code>
+                            </span>
+                          )}
+                          {job.errorCode && (
+                            <span>
+                              {t('documents.ocrErrorCode')}: <code>{job.errorCode}</code>
                             </span>
                           )}
                         </div>
@@ -948,6 +966,10 @@ function formatStageDuration(startedAt: string, completedAt: string | null): str
   if (!completedAt) return '—';
   const milliseconds = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(2)} s`;
+}
+
+function formatTimestamp(value: string, language: 'zh' | 'en'): string {
+  return new Date(value).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US');
 }
 
 export default DocumentManagementPage;

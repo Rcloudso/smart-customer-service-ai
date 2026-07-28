@@ -57,7 +57,10 @@ export function validateOcrExtractionResult(input: unknown): OcrExtractionResult
     ids.add(block.id);
     pages.add(block.pageNumber);
   }
-  if (parsed.data.metrics.pageCount !== pages.size) {
+  if (
+    parsed.data.metrics.pageCount < pages.size
+    || [...pages].some((pageNumber) => pageNumber > parsed.data.metrics.pageCount)
+  ) {
     throw new OcrContractValidationError();
   }
   if (parsed.data.warnings.some((warning) => (

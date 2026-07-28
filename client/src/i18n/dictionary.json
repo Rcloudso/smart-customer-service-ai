@@ -1503,6 +1503,18 @@
     "zh": "重试自",
     "en": "Retry of"
   },
+  "documents.ocrCreatedAt": {
+    "zh": "创建",
+    "en": "Created"
+  },
+  "documents.ocrCompletedAt": {
+    "zh": "完成",
+    "en": "Completed"
+  },
+  "documents.ocrErrorCode": {
+    "zh": "错误码",
+    "en": "Error code"
+  },
   "documents.detailLoadFailed": {
     "zh": "文档详情加载失败",
     "en": "Failed to load document details"

@@ -1,6 +1,8 @@
 import { documentBlockText } from './document-ir';
 import { OcrExtractionResult } from './ocr-contract';
 
+const MAX_COMPARISON_CHARACTERS = 200_000;
+
 export interface OcrComparison {
   blockCountDelta: number;
   warningCountDelta: number;
@@ -43,32 +45,39 @@ function extractionText(result: OcrExtractionResult): string {
 }
 
 function normalizeText(value: string): string {
-  return value.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .slice(0, MAX_COMPARISON_CHARACTERS);
 }
 
 function diceAgreement(left: string, right: string): number {
   if (left === right) return 1;
   if (!left || !right) return 0;
-  const leftBigrams = bigrams(left);
-  const rightBigrams = bigrams(right);
+  const leftCount = Math.max(left.length - 1, 1);
+  const rightCount = Math.max(right.length - 1, 1);
   let overlap = 0;
   const remaining = new Map<string, number>();
-  for (const value of rightBigrams) {
+  for (const value of bigrams(right)) {
     remaining.set(value, (remaining.get(value) ?? 0) + 1);
   }
-  for (const value of leftBigrams) {
+  for (const value of bigrams(left)) {
     const count = remaining.get(value) ?? 0;
     if (count > 0) {
       overlap += 1;
       remaining.set(value, count - 1);
     }
   }
-  return (2 * overlap) / (leftBigrams.length + rightBigrams.length);
+  return (2 * overlap) / (leftCount + rightCount);
 }
 
-function bigrams(value: string): string[] {
-  if (value.length < 2) return [value];
-  return Array.from({ length: value.length - 1 }, (_, index) => (
-    value.slice(index, index + 2)
-  ));
+function* bigrams(value: string): Generator<string> {
+  if (value.length < 2) {
+    yield value;
+    return;
+  }
+  for (let index = 0; index < value.length - 1; index += 1) {
+    yield value.slice(index, index + 2);
+  }
 }

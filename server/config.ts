@@ -97,7 +97,7 @@ const envSchema = z.object({
   DOCUMENT_UPLOAD_DIR: z.string().default('./data/uploads'),
   OCR_SERVICE_URL: z.string().default(''),
   OCR_SERVICE_TOKEN: z.string().default(''),
-  OCR_ENGINE_VERSION: z.string().min(1).max(80).default('3.0.0'),
+  OCR_ENGINE_VERSION: z.string().min(1).max(80).default('3.0.3'),
   OCR_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30 * 60 * 1000).default(120000),
   OCR_BACKGROUND_ENABLED: z.enum(['true', 'false']).default('true'),
   OCR_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(1000),

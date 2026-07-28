@@ -237,6 +237,8 @@ export function initSchema(database: Database.Database): void {
       )),
       retry_of TEXT REFERENCES document_extraction_jobs(id),
       result_json TEXT,
+      result_block_count INTEGER NOT NULL DEFAULT 0,
+      result_warning_codes TEXT NOT NULL DEFAULT '[]',
       error_code TEXT,
       created_at TEXT NOT NULL,
       started_at TEXT,
@@ -568,6 +570,27 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'document_chunks', 'extraction_engine', 'TEXT');
   ensureColumn(database, 'document_chunks', 'extraction_engine_version', 'TEXT');
   ensureColumn(database, 'document_processing_tasks', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'document_extraction_jobs', 'result_block_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(database, 'document_extraction_jobs', 'result_warning_codes', "TEXT NOT NULL DEFAULT '[]'");
+  database.prepare(`
+    UPDATE document_extraction_jobs
+    SET result_block_count = CASE
+          WHEN json_valid(result_json)
+          THEN COALESCE(json_extract(result_json, '$.metrics.blockCount'), 0)
+          ELSE 0
+        END,
+        result_warning_codes = CASE
+          WHEN json_valid(result_json)
+          THEN COALESCE((
+            SELECT json_group_array(json_extract(warnings.value, '$.code'))
+            FROM json_each(json_extract(result_json, '$.warnings')) AS warnings
+          ), '[]')
+          ELSE '[]'
+        END
+    WHERE result_json IS NOT NULL
+      AND result_block_count = 0
+      AND result_warning_codes = '[]'
+  `).run();
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
 
   // v0.2.9 migration: preserve historical free-text escalations without
