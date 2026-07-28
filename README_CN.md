@@ -18,16 +18,15 @@
 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
-    <img src="docs/demo/v0.2.6-preview.gif" width="880" alt="Smart Customer Service v0.2.6 文档知识回答演示">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">
+    <img src="docs/demo/v0.3.1-preview.gif" width="880" alt="ResolveWeave v0.3.1 OCR 知识复核与可信回答演示">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">观看文档 RAG 演示（v0.2.6）</a>
-  · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI 辅助开发复盘</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">观看 OCR 知识复核演示（v0.3.1）</a>
   · <a href="docs/releases/v0.3.1.md">v0.3.1 版本说明</a>
-  · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 版本验证证据</a>
+  · <a href="docs/releases/v0.3.1-evidence.md">v0.3.1 版本验证证据</a>
 </p>
 
 ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
@@ -69,9 +68,12 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 
 ### 产品证据
 
-| 转人工分流队列 | 结构化交接包 | 移动端深色主题 |
+| Paddle / DeepSeek 对照 | Block 人工复核 | 可信回答来源 |
 | --- | --- | --- |
-| ![按优先级排列的转人工分流队列](docs/releases/assets/v0.2.9-triage-desktop.png) | ![包含事实与证据的结构化交接包](docs/releases/assets/v0.2.9-triage-detail.png) | ![移动端英文深色分流页面](docs/releases/assets/v0.2.9-triage-mobile-dark.png) |
+| ![Paddle 权威结果与 DeepSeek 影子结果对照](docs/releases/assets/v0.3.1-ocr-comparison.jpg) | ![OCR Block 人工复核工作区](docs/releases/assets/v0.3.1-block-review.jpg) | ![带 OCR 来源证据的客户回答](docs/releases/assets/v0.3.1-chat-provenance.jpg) |
+
+早期工程复盘：
+[用 AI 辅助开发构建 v0.2.6 文档 RAG 基础](docs/case-studies/ai-assisted-development-v0.2.6.md)。
 
 ---
 
@@ -95,7 +97,7 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 - **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
   Retrieval 分开交付，不进行一次性框架重写。
 
-| v0.3.1 分支已实现 | 下一阶段 — v0.3.2+ |
+| v0.3.1 已实现 | 下一阶段 — v0.3.2+ |
 | --- | --- |
 | 版本化结构入库、持久化 PaddleOCR 复核流程、可选 DeepSeek 影子对照，以及 v0.2.9 的 FAQ/RAG 基线 | 可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
 
