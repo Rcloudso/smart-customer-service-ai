@@ -159,6 +159,12 @@ async function start(): Promise<void> {
     await semanticSearch.initialize();
     logger.info('Semantic search index initialized');
 
+    const { documentOcrScheduler } = await import('./services/document-runtime');
+    if (config.ocr.backgroundEnabled) {
+      documentOcrScheduler.start();
+      logger.info('OCR scheduler initialized');
+    }
+
     const app = createApp();
 
     const server = app.listen(config.port, () => {
@@ -189,12 +195,11 @@ function registerGracefulShutdown(server: Server): void {
     const forceTimer = setTimeout(() => {
       logger.error({ signal }, 'Server shutdown timed out; closing active connections');
       server.closeAllConnections();
-      finalize(1);
+      process.exit(1);
     }, 10_000);
     forceTimer.unref();
 
     server.close((error) => {
-      clearTimeout(forceTimer);
       if (error) logger.error({ err: error, signal }, 'HTTP server shutdown failed');
       finalize(error ? 1 : 0);
     });
@@ -207,6 +212,8 @@ function registerGracefulShutdown(server: Server): void {
 
 async function closeDatabaseAndExit(code: number): Promise<void> {
   try {
+    const { documentOcrScheduler } = await import('./services/document-runtime');
+    await documentOcrScheduler.stop();
     const { closeDatabase } = await import('./db');
     closeDatabase();
   } catch (error) {

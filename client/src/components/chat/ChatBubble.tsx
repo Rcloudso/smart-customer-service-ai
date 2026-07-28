@@ -162,6 +162,30 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
                     </>
                   )}
                 </div>
+                {source.extractionEngine && (
+                  <div className="app-chat-document-reference__provenance">
+                    <span>
+                      {t('chat.documentOcrLabel', {
+                        engine: t(`documents.ocrEngine.${source.extractionEngine}`),
+                        version: source.extractionEngineVersion ?? '—',
+                      })}
+                    </span>
+                    {source.sourceBlockIds && source.sourceBlockIds.length > 0 && (
+                      <span>
+                        {t('chat.documentBlockLabel', {
+                          blocks: source.sourceBlockIds.join(', '),
+                        })}
+                      </span>
+                    )}
+                    {source.extractionJobId && (
+                      <span>
+                        {t('chat.documentExtractionLabel', {
+                          job: source.extractionJobId.slice(0, 8),
+                        })}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

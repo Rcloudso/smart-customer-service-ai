@@ -23,6 +23,7 @@ import {
   UploadIcon,
 } from 'tdesign-icons-react';
 import * as adminApi from '../../api/admin';
+import { DocumentReviewDialog } from '../../components/DocumentReviewDialog';
 import type {
   DocumentBlock,
   DocumentChunk,
@@ -61,6 +62,7 @@ export function DocumentManagementPage(): React.ReactElement {
   const [appliedActiveFilter, setAppliedActiveFilter] = useState<'' | 'true' | 'false'>('');
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [selected, setSelected] = useState<DocumentDetail | null>(null);
+  const [reviewDocument, setReviewDocument] = useState<DocumentItem | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<DocumentChunk | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
@@ -154,6 +156,13 @@ export function DocumentManagementPage(): React.ReactElement {
   }, [language]);
 
   useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
+  useEffect(() => {
+    if (!documents.some((document) => document.status === 'pending')) return undefined;
+    const timer = window.setInterval(() => {
+      void fetchDocuments();
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [documents, fetchDocuments]);
 
   const openDetails = async (document: DocumentItem) => {
     const detailRequestId = ++detailRequestIdRef.current;
@@ -188,7 +197,13 @@ export function DocumentManagementPage(): React.ReactElement {
     try {
       const document = await adminApi.uploadDocument(file);
       MessagePlugin[document.status === 'ready' ? 'success' : 'warning'](
-        document.status === 'ready' ? t('documents.uploaded') : t('documents.uploadFailedAccepted'),
+        document.status === 'ready'
+          ? t('documents.uploaded')
+          : document.status === 'pending'
+            ? t('documents.ocrQueued')
+          : document.failureCode === 'ocr_review_required'
+            ? t('documents.ocrReviewReady')
+            : t('documents.uploadFailedAccepted'),
       );
       setUploadFiles([]);
       setPage(1);
@@ -231,7 +246,13 @@ export function DocumentManagementPage(): React.ReactElement {
     try {
       const result = await adminApi.retryDocument(document.id);
       MessagePlugin[result.status === 'ready' ? 'success' : 'warning'](
-        result.status === 'ready' ? t('documents.retrySucceeded') : t('documents.retryFailed'),
+        result.status === 'ready'
+          ? t('documents.retrySucceeded')
+          : result.status === 'pending'
+            ? t('documents.ocrQueued')
+          : result.failureCode === 'ocr_review_required'
+            ? t('documents.ocrReviewReady')
+            : t('documents.retryFailed'),
       );
       await fetchDocuments();
     } catch {
@@ -294,6 +315,11 @@ export function DocumentManagementPage(): React.ReactElement {
     }
   };
 
+  const handleReviewPublished = async (document: DocumentItem) => {
+    await fetchDocuments();
+    if (selected?.id === document.id) await openDetails(document);
+  };
+
   const columns = [
     {
       colKey: 'fileName', title: t('documents.fileName'), width: 220, ellipsis: true,
@@ -311,8 +337,13 @@ export function DocumentManagementPage(): React.ReactElement {
       colKey: 'status', title: t('common.status'), width: 150,
       cell: ({ row }: { row: DocumentItem }) => (
         <div className="app-document-status">
-          <Tag theme={STATUS_THEMES[row.status]} variant="light">
-            {t(`documents.status.${row.status}`)}
+          <Tag
+            theme={row.failureCode === 'ocr_review_required' ? 'warning' : STATUS_THEMES[row.status]}
+            variant="light"
+          >
+            {t(row.failureCode === 'ocr_review_required'
+              ? 'documents.status.review_required'
+              : `documents.status.${row.status}`)}
           </Tag>
           {row.qualityDecision && (
             <Tag theme={QUALITY_THEMES[row.qualityDecision]} variant="light">
@@ -348,7 +379,19 @@ export function DocumentManagementPage(): React.ReactElement {
           <Button theme="primary" variant="text" size="small" className="app-table-action-button" onClick={() => openDetails(row)} data-testid="document-view">
             {t('documents.view')}
           </Button>
-          {row.status === 'failed' && (
+          {row.failureCode === 'ocr_review_required' && (
+            <Button
+              variant="text"
+              theme="primary"
+              size="small"
+              className="app-table-action-button"
+              onClick={() => setReviewDocument(row)}
+              data-testid="document-review"
+            >
+              {t('documents.review')}
+            </Button>
+          )}
+          {row.status === 'failed' && row.failureCode !== 'ocr_review_required' && (
             <Button variant="text" theme="primary" size="small" className="app-table-action-button" loading={busyId === row.id} onClick={() => handleRetry(row)} data-testid="document-retry">
               {t('documents.retry')}
             </Button>
@@ -444,7 +487,7 @@ export function DocumentManagementPage(): React.ReactElement {
             <Upload
               action="#"
               theme="file"
-              accept=".txt,.md,.pdf,.docx"
+              accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp"
               autoUpload={false}
               disabled={uploading}
               files={uploadFiles}
@@ -501,8 +544,13 @@ export function DocumentManagementPage(): React.ReactElement {
               <span><strong>{t('documents.size')}</strong>{formatBytes(selected.sizeBytes)}</span>
               <span>
                 <strong>{t('common.status')}</strong>
-                <Tag theme={STATUS_THEMES[selected.status]} variant="light">
-                  {t(`documents.status.${selected.status}`)}
+                <Tag
+                  theme={selected.failureCode === 'ocr_review_required' ? 'warning' : STATUS_THEMES[selected.status]}
+                  variant="light"
+                >
+                  {t(selected.failureCode === 'ocr_review_required'
+                    ? 'documents.status.review_required'
+                    : `documents.status.${selected.status}`)}
                 </Tag>
               </span>
               <span>
@@ -552,11 +600,171 @@ export function DocumentManagementPage(): React.ReactElement {
                       ? 'documents.failureAdvice.embedding_failed'
                       : selected.failureCode === 'processing_failed'
                         ? 'documents.failureAdvice.processing_failed'
+                        : selected.failureCode === 'ocr_review_required'
+                          ? 'documents.failureAdvice.ocr_review_required'
                         : 'documents.failureAdvice.default')}
                   </span>
                 </div>
               )}
             </div>
+
+            {selected.extractionSummary && (
+              <div
+                className="app-document-ocr-provenance"
+                role="status"
+                data-testid="document-ocr-provenance"
+              >
+                <div className="app-document-ocr-provenance__header">
+                  <div>
+                    <strong>{t('documents.ocrProvenanceTitle')}</strong>
+                    <span>{t('documents.ocrProvenanceDescription')}</span>
+                  </div>
+                  <div className="app-document-ocr-provenance__engines">
+                    <Tag
+                      theme={
+                        selected.extractionSummary.status === 'failed'
+                          ? 'danger'
+                          : selected.extractionSummary.status === 'succeeded'
+                            ? 'success'
+                            : 'warning'
+                      }
+                      variant="light"
+                    >
+                      {t('documents.ocrAuthoritative')}: {' '}
+                      {t(`documents.ocrEngine.${selected.extractionSummary.engine}`)} {' '}
+                      {selected.extractionSummary.engineVersion} · {' '}
+                      {t(`documents.extractionStatus.${selected.extractionSummary.status}`)}
+                    </Tag>
+                    {selected.shadowExtractionSummary && (
+                      <Tag
+                        theme={
+                          selected.shadowExtractionSummary.status === 'failed'
+                            ? 'danger'
+                            : selected.shadowExtractionSummary.status === 'succeeded'
+                              ? 'default'
+                              : 'warning'
+                        }
+                        variant="light"
+                      >
+                        {t('documents.ocrShadow')}: {' '}
+                        {t(`documents.ocrEngine.${selected.shadowExtractionSummary.engine}`)} {' '}
+                        {selected.shadowExtractionSummary.engineVersion} · {' '}
+                        {t(`documents.extractionStatus.${selected.shadowExtractionSummary.status}`)}
+                      </Tag>
+                    )}
+                  </div>
+                </div>
+                {selected.ocrComparisonSummary && (
+                  selected.ocrComparisonSummary.status === 'available'
+                    ? (
+                      <div className="app-document-ocr-provenance__metrics">
+                        <span>
+                          <strong>
+                            {Math.round((selected.ocrComparisonSummary.textAgreement ?? 0) * 100)}%
+                          </strong>
+                          {t('documents.ocrTextAgreement')}
+                        </span>
+                        <span>
+                          <strong>
+                            {Math.round((selected.ocrComparisonSummary.structureAgreement ?? 0) * 100)}%
+                          </strong>
+                          {t('documents.ocrStructureAgreement')}
+                        </span>
+                        <span>
+                          <strong>
+                            {selected.ocrComparisonSummary.blockCountDelta ?? 0}
+                          </strong>
+                          {t('documents.ocrBlockDelta')}
+                        </span>
+                      </div>
+                    )
+                    : (
+                      <span className="app-document-ocr-provenance__state">
+                        {t(`documents.ocrComparison.${selected.ocrComparisonSummary.status}`)}
+                      </span>
+                    )
+                )}
+                {(selected.extractionHistory?.length ?? 0) > 0 && (
+                  <details className="app-document-ocr-history">
+                    <summary>{t('documents.ocrHistoryTitle')}</summary>
+                    <div className="app-document-ocr-history__list">
+                      {selected.extractionHistory?.map((job) => (
+                        <div key={job.jobId} className="app-document-ocr-history__item">
+                          <div className="app-document-ocr-history__identity">
+                            <span>
+                              {job.role === 'authoritative'
+                                ? t('documents.ocrAuthoritative')
+                                : t('documents.ocrShadow')}
+                              {' · '}
+                              {t(`documents.ocrEngine.${job.engine}`)} {job.engineVersion}
+                            </span>
+                            <small>
+                              {t('documents.ocrCreatedAt')}: {' '}
+                              {formatTimestamp(job.createdAt, language)}
+                              {job.completedAt && (
+                                <>
+                                  {' · '}
+                                  {t('documents.ocrCompletedAt')}: {' '}
+                                  {formatTimestamp(job.completedAt, language)}
+                                </>
+                              )}
+                            </small>
+                          </div>
+                          <Tag
+                            theme={
+                              job.status === 'failed'
+                                ? 'danger'
+                                : job.status === 'succeeded'
+                                  ? 'success'
+                                  : 'warning'
+                            }
+                            variant="light"
+                          >
+                            {t(`documents.extractionStatus.${job.status}`)}
+                          </Tag>
+                          <code>{job.jobId.slice(0, 8)}</code>
+                          {job.retryOf && (
+                            <span>
+                              {t('documents.ocrRetryOf')}: <code>{job.retryOf.slice(0, 8)}</code>
+                            </span>
+                          )}
+                          {job.errorCode && (
+                            <span>
+                              {t('documents.ocrErrorCode')}: <code>{job.errorCode}</code>
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {selected.reviewDraftSummary?.status === 'open' && (
+              <div className="app-document-review-callout" role="status">
+                <div>
+                  <strong>{t('documents.reviewCalloutTitle')}</strong>
+                  <span>
+                    {t('documents.reviewCalloutDescription', {
+                      engine: selected.extractionSummary?.engine ?? 'OCR',
+                      count: selected.reviewDraftSummary.blockCount,
+                      revision: selected.reviewDraftSummary.revision,
+                    })}
+                  </span>
+                </div>
+                <Button
+                  theme="primary"
+                  onClick={() => {
+                    setSelected(null);
+                    setReviewDocument(selected);
+                  }}
+                  data-testid="document-detail-review"
+                >
+                  {t('documents.review')}
+                </Button>
+              </div>
+            )}
 
             {selected.status === 'ready' && selected.representationVersion !== 'document-ir-v1' && (
               <div className="app-document-upgrade" role="status">
@@ -716,6 +924,12 @@ export function DocumentManagementPage(): React.ReactElement {
           </div>
         )}
       </Dialog>
+
+      <DocumentReviewDialog
+        document={reviewDocument}
+        onClose={() => setReviewDocument(null)}
+        onPublished={handleReviewPublished}
+      />
     </div>
   );
 }
@@ -752,6 +966,10 @@ function formatStageDuration(startedAt: string, completedAt: string | null): str
   if (!completedAt) return '—';
   const milliseconds = Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime());
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(2)} s`;
+}
+
+function formatTimestamp(value: string, language: 'zh' | 'en'): string {
+  return new Date(value).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US');
 }
 
 export default DocumentManagementPage;

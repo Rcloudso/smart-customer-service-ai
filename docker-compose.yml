@@ -17,8 +17,21 @@ services:
       DB_PATH: /app/data/customer-service.db
       ALLOWED_ORIGINS: http://localhost:5173
       EMBED_PROVIDER: other
+      OCR_SERVICE_URL: ${OCR_SERVICE_URL:-}
+      OCR_SERVICE_TOKEN: ${OCR_SERVICE_TOKEN:-}
     volumes:
       - resolve-weave-data:/app/data
+
+  ocr-worker:
+    profiles: ["ocr"]
+    build:
+      context: ./ocr-worker
+    image: resolve-weave-ocr:local
+    environment:
+      PADDLE_DEVICE: cpu
+      OCR_WORKER_TOKEN: ${OCR_SERVICE_TOKEN:-}
+    ports:
+      - "127.0.0.1:8001:8001"
 
 volumes:
   resolve-weave-data:

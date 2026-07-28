@@ -43,6 +43,10 @@ function testDocumentSnapshotsRemainBackwardCompatible(): void {
     {
       knowledgeType: 'document', knowledgeId: 'chunk-1', documentId: 'document-1',
       title: 'policy.pdf', similarity: 0.9, source: 'hybrid', chunkIndex: 2, pageStart: 4, pageEnd: 5,
+      sourceBlockIds: ['block-000004', 'block-000005'],
+      extractionJobId: '11111111-1111-4111-8111-111111111111',
+      extractionEngine: 'paddleocr_ppstructurev3',
+      extractionEngineVersion: '3.0.0',
     },
   ]));
 
@@ -51,12 +55,18 @@ function testDocumentSnapshotsRemainBackwardCompatible(): void {
     knowledgeType: 'faq', knowledgeId: 'faq-1', title: '旧 FAQ', similarity: 0.8,
     source: undefined, keywordScore: undefined, vectorScore: undefined,
     documentId: undefined, chunkIndex: undefined, pageStart: undefined, pageEnd: undefined,
+    sourceBlockIds: undefined, extractionJobId: undefined,
+    extractionEngine: undefined, extractionEngineVersion: undefined,
   });
   assert.equal(parsed[1].knowledgeType, 'document');
   assert.equal(parsed[1].documentId, 'document-1');
   assert.equal(parsed[1].chunkIndex, 2);
   assert.equal(parsed[1].pageStart, 4);
   assert.equal(parsed[1].pageEnd, 5);
+  assert.deepEqual(parsed[1].sourceBlockIds, ['block-000004', 'block-000005']);
+  assert.equal(parsed[1].extractionJobId, '11111111-1111-4111-8111-111111111111');
+  assert.equal(parsed[1].extractionEngine, 'paddleocr_ppstructurev3');
+  assert.equal(parsed[1].extractionEngineVersion, '3.0.0');
 }
 
 testUntrustedKnowledgeCannotClosePromptDelimiter();

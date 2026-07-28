@@ -20,6 +20,14 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Run OCR worker contract tests
+        run: (cd ocr-worker && python -m unittest discover -s tests)
+
       - name: Install dependencies
         run: npm ci
 
@@ -34,6 +42,7 @@ jobs:
           EMBED_PROVIDER=other npm run eval:document
           EMBED_PROVIDER=other npm run eval:mixed
           EMBED_PROVIDER=other npm run eval:quality
+          EMBED_PROVIDER=other npm run eval:ocr
         env:
           JWT_SECRET: test-secret-123
 

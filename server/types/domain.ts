@@ -51,7 +51,9 @@ export enum KnowledgeReviewStatus {
 export type AnswerMode = 'direct_faq' | 'grounded_generation' | 'refusal';
 export type GroundingStatus = 'sufficient' | 'insufficient' | 'conflicting' | 'high_risk' | 'escalated';
 
-export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type ParsedDocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type VisualDocumentFormat = 'png' | 'jpeg' | 'webp';
+export type DocumentFormat = ParsedDocumentFormat | VisualDocumentFormat;
 export type DocumentStatus = 'pending' | 'ready' | 'failed';
 export type DocumentQualityDecision = 'ready' | 'review_required' | 'rejected';
 export type DocumentIndexStatus = 'legacy' | 'not_indexed' | 'published' | 'failed';
@@ -112,6 +114,9 @@ export interface DocumentChunk {
   headingPath?: string[];
   representationVersion?: string | null;
   chunkerVersion?: string | null;
+  extractionJobId?: string | null;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2' | null;
+  extractionEngineVersion?: string | null;
   createdAt: string;
 }
 
@@ -161,9 +166,50 @@ export interface DocumentRepresentationSummary {
   createdAt: string;
 }
 
+export interface DocumentExtractionSummary {
+  jobId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  role: 'authoritative' | 'shadow';
+  engine: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  engineVersion: string;
+  retryOf: string | null;
+  errorCode: string | null;
+  blockCount: number;
+  warningCodes: string[];
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface DocumentOcrComparisonSummary {
+  status: 'pending' | 'available' | 'failed';
+  authoritativeJobId: string;
+  shadowJobId: string;
+  blockCountDelta: number | null;
+  warningCountDelta: number | null;
+  textAgreement: number | null;
+  structureAgreement: number | null;
+}
+
+export interface DocumentReviewDraftSummary {
+  id: string;
+  revision: number;
+  status: 'open' | 'published' | 'superseded';
+  blockCount: number;
+  manuallyEditedBlockCount: number;
+  updatedBy: string;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
 export interface DocumentDetail extends Document {
   processingSummary: DocumentProcessingSummary | null;
   representationSummary: DocumentRepresentationSummary | null;
+  extractionSummary: DocumentExtractionSummary | null;
+  shadowExtractionSummary: DocumentExtractionSummary | null;
+  extractionHistory: DocumentExtractionSummary[];
+  ocrComparisonSummary: DocumentOcrComparisonSummary | null;
+  reviewDraftSummary: DocumentReviewDraftSummary | null;
 }
 
 export interface KnowledgeRetrievalSnapshot {
@@ -181,6 +227,10 @@ export interface KnowledgeRetrievalSnapshot {
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
+  sourceBlockIds?: string[];
+  extractionJobId?: string;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  extractionEngineVersion?: string;
 }
 
 export interface KnowledgeReviewItem {

@@ -95,6 +95,15 @@ const envSchema = z.object({
   ADMIN_PASSWORD: z.string().default('admin123'),
   DB_PATH: z.string().default('./data/customer-service.db'),
   DOCUMENT_UPLOAD_DIR: z.string().default('./data/uploads'),
+  OCR_SERVICE_URL: z.string().default(''),
+  OCR_SERVICE_TOKEN: z.string().default(''),
+  OCR_ENGINE_VERSION: z.string().min(1).max(80).default('3.0.3'),
+  OCR_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30 * 60 * 1000).default(120000),
+  OCR_BACKGROUND_ENABLED: z.enum(['true', 'false']).default('true'),
+  OCR_POLL_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(1000),
+  OCR_SHADOW_SERVICE_URL: z.string().default(''),
+  OCR_SHADOW_SERVICE_TOKEN: z.string().default(''),
+  OCR_SHADOW_ENGINE_VERSION: z.string().min(1).max(80).default('2.0.0'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   RATE_LIMIT_CHAT: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_ADMIN: z.coerce.number().int().positive().default(100),
@@ -152,6 +161,17 @@ export const config = {
     uploadDir: path.isAbsolute(env.DOCUMENT_UPLOAD_DIR)
       ? env.DOCUMENT_UPLOAD_DIR
       : path.resolve(process.cwd(), env.DOCUMENT_UPLOAD_DIR),
+  },
+  ocr: {
+    serviceUrl: env.OCR_SERVICE_URL.trim(),
+    serviceToken: env.OCR_SERVICE_TOKEN.trim(),
+    engineVersion: env.OCR_ENGINE_VERSION.trim(),
+    timeoutMs: env.OCR_TIMEOUT_MS,
+    backgroundEnabled: env.OCR_BACKGROUND_ENABLED === 'true',
+    pollIntervalMs: env.OCR_POLL_INTERVAL_MS,
+    shadowServiceUrl: env.OCR_SHADOW_SERVICE_URL.trim(),
+    shadowServiceToken: env.OCR_SHADOW_SERVICE_TOKEN.trim(),
+    shadowEngineVersion: env.OCR_SHADOW_ENGINE_VERSION.trim(),
   },
   cors: {
     origins: env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),

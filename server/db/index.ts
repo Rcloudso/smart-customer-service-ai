@@ -89,6 +89,7 @@ export function initSchema(database: Database.Database): void {
       file_name TEXT NOT NULL,
       storage_path TEXT NOT NULL,
       format TEXT NOT NULL CHECK(format IN ('txt', 'md', 'pdf', 'docx')),
+      source_format TEXT,
       mime_type TEXT NOT NULL,
       size_bytes INTEGER NOT NULL,
       sha256 TEXT NOT NULL UNIQUE,
@@ -132,6 +133,9 @@ export function initSchema(database: Database.Database): void {
       heading_path TEXT NOT NULL DEFAULT '[]',
       representation_version TEXT,
       chunker_version TEXT,
+      extraction_job_id TEXT,
+      extraction_engine TEXT,
+      extraction_engine_version TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(document_id, chunk_index)
     );
@@ -218,6 +222,74 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_document_representation_blocks_page
       ON document_representation_blocks(representation_id, page_number, block_order);
+
+    CREATE TABLE IF NOT EXISTS document_extraction_jobs (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      source_version INTEGER NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('authoritative', 'shadow')),
+      engine TEXT NOT NULL CHECK(engine IN (
+        'paddleocr_ppstructurev3', 'deepseek_ocr2'
+      )),
+      engine_version TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN (
+        'queued', 'running', 'succeeded', 'failed'
+      )),
+      retry_of TEXT REFERENCES document_extraction_jobs(id),
+      result_json TEXT,
+      result_block_count INTEGER NOT NULL DEFAULT 0,
+      result_warning_codes TEXT NOT NULL DEFAULT '[]',
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      CHECK(
+        (role = 'authoritative' AND engine = 'paddleocr_ppstructurev3')
+        OR (role = 'shadow' AND engine = 'deepseek_ocr2')
+      )
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_extraction_jobs_document
+      ON document_extraction_jobs(document_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_document_extraction_jobs_status
+      ON document_extraction_jobs(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS document_review_drafts (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      source_job_id TEXT NOT NULL UNIQUE
+        REFERENCES document_extraction_jobs(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'published', 'superseded')),
+      created_by TEXT NOT NULL,
+      updated_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      published_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_review_drafts_document
+      ON document_review_drafts(document_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_document_review_drafts_status
+      ON document_review_drafts(status, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS document_review_blocks (
+      draft_id TEXT NOT NULL
+        REFERENCES document_review_drafts(id) ON DELETE CASCADE,
+      block_id TEXT NOT NULL,
+      block_order INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      manually_edited INTEGER NOT NULL DEFAULT 0
+        CHECK(manually_edited IN (0, 1)),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(draft_id, block_id),
+      UNIQUE(draft_id, block_order)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_review_blocks_order
+      ON document_review_blocks(draft_id, block_order);
 
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -482,6 +554,7 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'documents', 'source_version', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(database, 'documents', 'source_format', 'TEXT');
   ensureColumn(database, 'documents', 'representation_version', 'TEXT');
   ensureColumn(database, 'documents', 'cleaner_version', 'TEXT');
   ensureColumn(database, 'documents', 'quality_decision', 'TEXT');
@@ -493,7 +566,31 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'document_chunks', 'heading_path', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(database, 'document_chunks', 'representation_version', 'TEXT');
   ensureColumn(database, 'document_chunks', 'chunker_version', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'extraction_job_id', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'extraction_engine', 'TEXT');
+  ensureColumn(database, 'document_chunks', 'extraction_engine_version', 'TEXT');
   ensureColumn(database, 'document_processing_tasks', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, 'document_extraction_jobs', 'result_block_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(database, 'document_extraction_jobs', 'result_warning_codes', "TEXT NOT NULL DEFAULT '[]'");
+  database.prepare(`
+    UPDATE document_extraction_jobs
+    SET result_block_count = CASE
+          WHEN json_valid(result_json)
+          THEN COALESCE(json_extract(result_json, '$.metrics.blockCount'), 0)
+          ELSE 0
+        END,
+        result_warning_codes = CASE
+          WHEN json_valid(result_json)
+          THEN COALESCE((
+            SELECT json_group_array(json_extract(warnings.value, '$.code'))
+            FROM json_each(json_extract(result_json, '$.warnings')) AS warnings
+          ), '[]')
+          ELSE '[]'
+        END
+    WHERE result_json IS NOT NULL
+      AND result_block_count = 0
+      AND result_warning_codes = '[]'
+  `).run();
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
 
   // v0.2.9 migration: preserve historical free-text escalations without

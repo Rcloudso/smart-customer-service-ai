@@ -1,7 +1,7 @@
 import { DOMParser } from '@xmldom/xmldom';
 import JSZip, { JSZipObject } from 'jszip';
 import { PDFParse } from 'pdf-parse';
-import { DocumentFormat } from '../types/domain';
+import { ParsedDocumentFormat } from '../types/domain';
 import {
   DocumentBlock,
   DocumentIRValidationError,
@@ -25,7 +25,7 @@ export interface DocumentParserAdapter {
   parse(buffer: Buffer, source: DocumentIRSource): Promise<StructuredDocument>;
 }
 
-const adapters: Record<DocumentFormat, DocumentParserAdapter> = {
+const adapters: Record<ParsedDocumentFormat, DocumentParserAdapter> = {
   txt: {
     name: 'plain-text',
     version: 'plain-text-v2',
@@ -61,7 +61,7 @@ const adapters: Record<DocumentFormat, DocumentParserAdapter> = {
   },
 };
 
-export function getDocumentParserAdapter(format: DocumentFormat): DocumentParserAdapter {
+export function getDocumentParserAdapter(format: ParsedDocumentFormat): DocumentParserAdapter {
   return adapters[format];
 }
 

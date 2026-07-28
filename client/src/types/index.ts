@@ -109,9 +109,13 @@ export interface KnowledgeRetrievalSnapshot {
   chunkIndex?: number;
   pageStart?: number;
   pageEnd?: number;
+  sourceBlockIds?: string[];
+  extractionJobId?: string;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  extractionEngineVersion?: string;
 }
 
-export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx';
+export type DocumentFormat = 'txt' | 'md' | 'pdf' | 'docx' | 'png' | 'jpeg' | 'webp';
 export type DocumentStatus = 'pending' | 'ready' | 'failed';
 export type DocumentQualityDecision = 'ready' | 'review_required' | 'rejected';
 export type DocumentIndexStatus = 'legacy' | 'not_indexed' | 'published' | 'failed';
@@ -166,6 +170,9 @@ export interface DocumentChunk {
   headingPath?: string[];
   representationVersion?: string | null;
   chunkerVersion?: string | null;
+  extractionJobId?: string | null;
+  extractionEngine?: 'paddleocr_ppstructurev3' | 'deepseek_ocr2' | null;
+  extractionEngineVersion?: string | null;
   createdAt: string;
 }
 
@@ -213,9 +220,46 @@ export interface DocumentRepresentationSummary {
   createdAt: string;
 }
 
+export interface DocumentExtractionSummary {
+  jobId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  role: 'authoritative' | 'shadow';
+  engine: 'paddleocr_ppstructurev3' | 'deepseek_ocr2';
+  engineVersion: string;
+  retryOf: string | null;
+  errorCode: string | null;
+  blockCount: number;
+  warningCodes: string[];
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface DocumentDetail extends DocumentItem {
   processingSummary: DocumentProcessingSummary | null;
   representationSummary: DocumentRepresentationSummary | null;
+  extractionSummary?: DocumentExtractionSummary | null;
+  shadowExtractionSummary?: DocumentExtractionSummary | null;
+  extractionHistory?: DocumentExtractionSummary[];
+  ocrComparisonSummary?: {
+    status: 'pending' | 'available' | 'failed';
+    authoritativeJobId: string;
+    shadowJobId: string;
+    blockCountDelta: number | null;
+    warningCountDelta: number | null;
+    textAgreement: number | null;
+    structureAgreement: number | null;
+  } | null;
+  reviewDraftSummary?: {
+    id: string;
+    revision: number;
+    status: 'open' | 'published' | 'superseded';
+    blockCount: number;
+    manuallyEditedBlockCount: number;
+    updatedBy: string;
+    updatedAt: string;
+    publishedAt: string | null;
+  } | null;
 }
 
 export type DocumentBlockKind =
@@ -234,14 +278,30 @@ export interface DocumentBlock {
   pageNumber: number | null;
   headingPath: string[];
   confidence: number | null;
+  layout?: { x: number; y: number; width: number; height: number } | null;
   excluded: boolean;
   exclusionReason: string | null;
+  manuallyEdited?: boolean;
   text?: string;
+  variant?: 'plain' | 'code';
+  level?: number;
+  ordered?: boolean;
   items?: Array<{ ordinal: number; text: string }>;
-  cells?: Array<{ rowIndex: number; columnIndex: number; text: string; isHeader: boolean }>;
+  rowCount?: number;
+  columnCount?: number;
+  cells?: Array<{
+    rowIndex: number;
+    columnIndex: number;
+    rowSpan: number;
+    columnSpan: number;
+    text: string;
+    isHeader: boolean;
+  }>;
   pairs?: Array<{ key: string; value: string }>;
   altText?: string | null;
   relationshipId?: string | null;
+  contentType?: string | null;
+  requiresVisualProcessing?: true;
 }
 
 export interface KnowledgeReviewItem {

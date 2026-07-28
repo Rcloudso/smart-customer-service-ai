@@ -228,6 +228,10 @@ export class DocumentKnowledgeAdapter implements KnowledgeAdapter {
         chunkIndex: chunk.chunkIndex,
         pageStart: chunk.pageStart ?? undefined,
         pageEnd: chunk.pageEnd ?? undefined,
+        sourceBlockIds: chunk.sourceBlockIds,
+        extractionJobId: chunk.extractionJobId ?? undefined,
+        extractionEngine: chunk.extractionEngine ?? undefined,
+        extractionEngineVersion: chunk.extractionEngineVersion ?? undefined,
       },
       embedding: chunk.embedding,
     };
@@ -254,6 +258,10 @@ export class DocumentKnowledgeAdapter implements KnowledgeAdapter {
           chunkIndex: chunk.chunkIndex,
           pageStart: chunk.pageStart ?? undefined,
           pageEnd: chunk.pageEnd ?? undefined,
+          sourceBlockIds: chunk.sourceBlockIds,
+          extractionJobId: chunk.extractionJobId ?? undefined,
+          extractionEngine: chunk.extractionEngine ?? undefined,
+          extractionEngineVersion: chunk.extractionEngineVersion ?? undefined,
         };
       })
       .sort((a, b) => b.similarity - a.similarity)

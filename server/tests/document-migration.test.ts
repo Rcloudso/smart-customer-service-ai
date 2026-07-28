@@ -82,6 +82,9 @@ try {
   assert.deepEqual(chunks.items[0].sourceBlockIds, []);
   assert.deepEqual(chunks.items[0].headingPath, []);
   assert.equal(chunks.items[0].representationVersion, null);
+  assert.equal(chunks.items[0].extractionJobId, null);
+  assert.equal(chunks.items[0].extractionEngine, null);
+  assert.equal(chunks.items[0].extractionEngineVersion, null);
   assert.equal(
     (db.prepare(`
       SELECT COUNT(*) AS total
@@ -90,10 +93,31 @@ try {
         'document_processing_tasks',
         'document_processing_stages',
         'document_representations',
-        'document_representation_blocks'
+        'document_representation_blocks',
+        'document_extraction_jobs',
+        'document_review_drafts',
+        'document_review_blocks'
       )
     `).get() as { total: number }).total,
-    4,
+    7,
+  );
+  const image = repo.createPending({
+    id: 'image-document',
+    fileName: 'legacy-compatible.png',
+    storagePath: 'image-document.png',
+    format: 'png',
+    mimeType: 'image/png',
+    sizeBytes: 32,
+    sha256: 'b'.repeat(64),
+    uploadedBy: 'admin',
+  });
+  assert.equal(image.format, 'png');
+  assert.deepEqual(
+    db.prepare(`
+      SELECT format, source_format AS sourceFormat
+      FROM documents WHERE id = 'image-document'
+    `).get(),
+    { format: 'txt', sourceFormat: 'png' },
   );
   db.close();
   console.log('document migration tests passed');

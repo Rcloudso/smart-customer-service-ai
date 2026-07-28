@@ -115,6 +115,10 @@ test.describe('Web automation: customer chat experience', () => {
               chunkIndex: 1,
               pageStart: 2,
               pageEnd: 2,
+              sourceBlockIds: ['block-000003', 'block-000004'],
+              extractionJobId: '11111111-1111-4111-8111-111111111111',
+              extractionEngine: 'paddleocr_ppstructurev3',
+              extractionEngineVersion: '3.0.0',
             }],
           },
         },
@@ -138,6 +142,9 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(page.getByTestId('chat-document-references')).toContainText('公司薪酬制度.pdf');
     await expect(page.getByTestId('chat-document-references')).toContainText('切片 2');
     await expect(page.getByTestId('chat-document-references')).toContainText('第 2 页');
+    await expect(page.getByTestId('chat-document-references')).toContainText('PaddleOCR PP-StructureV3 3.0.0');
+    await expect(page.getByTestId('chat-document-references')).toContainText('block-000003');
+    await expect(page.getByTestId('chat-document-references')).toContainText('提取任务 11111111');
     const grounding = page.getByTestId('chat-grounding-status');
     await expect(grounding).toContainText('检索支持生成');
     await expect(grounding).toContainText('检索阈值已满足');
@@ -1354,6 +1361,294 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
         expect(deleted.status()).toBe(200);
       }
     }
+  });
+
+  test('admin reviews, saves, and publishes OCR blocks as one document', async ({ page }) => {
+    await loginAsAdmin(page);
+    const documentId = '4f785280-bd31-4e70-a574-ef0f3745fb74';
+    let published = false;
+    let savedRevision = 1;
+    const draftBlocks = [{
+      id: 'block-000001',
+      order: 0,
+      kind: 'paragraph',
+      pageNumber: 1,
+      headingPath: [],
+      confidence: 0.94,
+      layout: { x: 12, y: 24, width: 480, height: 72 },
+      excluded: false,
+      exclusionReason: null,
+      text: '签收后七天内可以申请退款。',
+      manuallyEdited: savedRevision > 1,
+    }, {
+      id: 'block-000002',
+      order: 1,
+      kind: 'list',
+      pageNumber: 1,
+      headingPath: ['退款政策'],
+      confidence: 0.9,
+      layout: null,
+      excluded: false,
+      exclusionReason: null,
+      ordered: false,
+      items: [
+        { ordinal: 0, text: '保持商品完好' },
+        { ordinal: 1, text: '提交订单编号' },
+      ],
+      manuallyEdited: false,
+    }];
+    const documentItem = () => ({
+      id: documentId,
+      fileName: 'refund-policy.png',
+      format: 'png',
+      mimeType: 'image/png',
+      sizeBytes: 2_048,
+      status: published ? 'ready' : 'failed',
+      isActive: 1,
+      parserVersion: published ? 'paddleocr_ppstructurev3-reviewed' : 'ocr-pending',
+      chunkerVersion: published ? 'semantic-v1' : 'not_processed',
+      failureCode: published ? null : 'ocr_review_required',
+      characterCount: published ? 42 : 0,
+      chunkCount: published ? 1 : 0,
+      qualityDecision: published ? 'ready' : 'review_required',
+      qualityReasons: published ? [] : ['ocr_review_required'],
+      indexStatus: published ? 'published' : 'not_indexed',
+      uploadedBy: 'admin',
+      createdAt: '2026-07-27T10:00:00.000Z',
+      updatedAt: '2026-07-27T10:00:00.000Z',
+    });
+
+    await page.route('**/api/admin/documents?**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [documentItem()], total: 1, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/review-draft?**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            draftId: 'draft-1',
+            revision: savedRevision,
+            status: published ? 'published' : 'open',
+            items: draftBlocks,
+            total: draftBlocks.length,
+            page: 1,
+            pageSize: 2_000,
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/review-draft`, async (route) => {
+      const body = route.request().postDataJSON() as {
+        expectedRevision: number;
+        blocks: typeof draftBlocks;
+      };
+      expect(body.expectedRevision).toBe(1);
+      expect(body.blocks[0].text).toContain('七个自然日');
+      savedRevision = 2;
+      draftBlocks[0] = { ...body.blocks[0], manuallyEdited: true };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            draftId: 'draft-1',
+            revision: savedRevision,
+            status: 'open',
+            items: draftBlocks,
+            total: draftBlocks.length,
+          },
+          message: 'Review draft saved',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/review-draft/publish`, async (route) => {
+      const body = route.request().postDataJSON() as { expectedRevision: number };
+      expect(body.expectedRevision).toBe(2);
+      published = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            ...documentItem(),
+            processingSummary: null,
+            representationSummary: null,
+            reviewDraftSummary: {
+              id: 'draft-1',
+              revision: 2,
+              status: 'published',
+              blockCount: draftBlocks.length,
+              manuallyEditedBlockCount: 1,
+              updatedBy: 'admin',
+              updatedAt: '2026-07-27T10:05:00.000Z',
+              publishedAt: '2026-07-27T10:05:00.000Z',
+            },
+          },
+          message: 'Review draft published',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: {
+            ...documentItem(),
+            processingSummary: null,
+            representationSummary: null,
+            extractionSummary: {
+              jobId: '11111111-1111-4111-8111-111111111111',
+              status: 'succeeded',
+              role: 'authoritative',
+              engine: 'paddleocr_ppstructurev3',
+              engineVersion: '3.0.0',
+              retryOf: null,
+              errorCode: null,
+              blockCount: 2,
+              warningCodes: [],
+              createdAt: '2026-07-27T10:00:00.000Z',
+              startedAt: '2026-07-27T10:00:01.000Z',
+              completedAt: '2026-07-27T10:00:05.000Z',
+            },
+            shadowExtractionSummary: {
+              jobId: '22222222-2222-4222-8222-222222222222',
+              status: 'succeeded',
+              role: 'shadow',
+              engine: 'deepseek_ocr2',
+              engineVersion: '2.0.0',
+              retryOf: null,
+              errorCode: null,
+              blockCount: 2,
+              warningCodes: [],
+              createdAt: '2026-07-27T10:00:05.000Z',
+              startedAt: '2026-07-27T10:00:06.000Z',
+              completedAt: '2026-07-27T10:00:09.000Z',
+            },
+            extractionHistory: [
+              {
+                jobId: '22222222-2222-4222-8222-222222222222',
+                status: 'succeeded',
+                role: 'shadow',
+                engine: 'deepseek_ocr2',
+                engineVersion: '2.0.0',
+                retryOf: null,
+                errorCode: null,
+                blockCount: 2,
+                warningCodes: [],
+                createdAt: '2026-07-27T10:00:05.000Z',
+                startedAt: '2026-07-27T10:00:06.000Z',
+                completedAt: '2026-07-27T10:00:09.000Z',
+              },
+              {
+                jobId: '11111111-1111-4111-8111-111111111111',
+                status: 'succeeded',
+                role: 'authoritative',
+                engine: 'paddleocr_ppstructurev3',
+                engineVersion: '3.0.0',
+                retryOf: null,
+                errorCode: null,
+                blockCount: 2,
+                warningCodes: [],
+                createdAt: '2026-07-27T10:00:00.000Z',
+                startedAt: '2026-07-27T10:00:01.000Z',
+                completedAt: '2026-07-27T10:00:05.000Z',
+              },
+            ],
+            ocrComparisonSummary: {
+              status: 'available',
+              authoritativeJobId: '11111111-1111-4111-8111-111111111111',
+              shadowJobId: '22222222-2222-4222-8222-222222222222',
+              blockCountDelta: 0,
+              warningCountDelta: 0,
+              textAgreement: 0.96,
+              structureAgreement: 1,
+            },
+            reviewDraftSummary: {
+              id: 'draft-1',
+              revision: savedRevision,
+              status: published ? 'published' : 'open',
+              blockCount: 2,
+              manuallyEditedBlockCount: savedRevision > 1 ? 1 : 0,
+              updatedBy: 'admin',
+              updatedAt: '2026-07-27T10:05:00.000Z',
+              publishedAt: published ? '2026-07-27T10:05:00.000Z' : null,
+            },
+          },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/blocks?**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20, representationVersion: null },
+          message: 'ok',
+        }),
+      });
+    });
+    await page.route(`**/api/admin/documents/${documentId}/chunks?**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          data: { items: [], total: 0, page: 1, pageSize: 20 },
+          message: 'ok',
+        }),
+      });
+    });
+
+    await page.getByText('文档知识').click();
+    const row = documentRow(page, 'refund-policy.png');
+    await expect(row).toContainText('OCR 提取完成，等待人工复核');
+    await row.getByTestId('document-view').click();
+    await expect(page.getByTestId('document-ocr-provenance')).toContainText('PaddleOCR PP-StructureV3 3.0.0');
+    await expect(page.getByTestId('document-ocr-provenance')).toContainText('DeepSeek-OCR-2 2.0.0');
+    await expect(page.getByTestId('document-ocr-provenance')).toContainText('96%');
+    await page.getByTestId('document-detail-close').click();
+    await row.getByTestId('document-review').click();
+    await expect(page.getByTestId('document-review-dialog')).toBeVisible();
+    await expect(page.getByTestId('document-review-dialog')).toContainText('2 个 Block');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => page.getByTestId('document-review-dialog').evaluate((element) => (
+      element.scrollWidth <= element.clientWidth
+    ))).toBe(true);
+    await page.getByTestId('document-review-close').click();
+    await page.getByTestId('language-toggle').click();
+    await row.getByTestId('document-review').click();
+    await expect(page.getByText('OCR content review', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('document-review-dialog')).toContainText('2 blocks');
+    await expect(page.getByTestId('document-review-dialog')).toContainText('Previous');
+    await page.getByTestId('document-review-text').fill('签收后七个自然日内可以申请退款。');
+    await expect(page.getByTestId('document-review-publish')).toHaveClass(/t-is-disabled/);
+
+    await page.getByTestId('document-review-save').click();
+    await expect(page.getByTestId('document-review-dialog')).toContainText('Draft v2');
+    await expect(page.getByTestId('document-review-publish')).not.toHaveClass(/t-is-disabled/);
+    await page.getByTestId('document-review-publish').click();
+    await page.getByText(/^(确定|Confirm|OK)$/).last().click();
+
+    await expect(page.getByTestId('document-review-dialog')).toHaveCount(0);
+    await expect(row).toContainText('Ready');
+    await expect(row).toContainText('1');
   });
 
   test('document filters apply only after search is submitted', async ({ page }) => {

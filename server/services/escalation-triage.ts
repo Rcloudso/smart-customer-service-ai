@@ -211,6 +211,7 @@ export async function enrichEscalationPacket(
         },
         'Escalation extraction format failed; deterministic packet remains authoritative',
       );
+      if (error instanceof EscalationExtractionTimeoutError) break;
     }
   }
 
@@ -220,12 +221,18 @@ export async function enrichEscalationPacket(
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error('Escalation extraction timed out')), timeoutMs);
+    timer = setTimeout(() => reject(new EscalationExtractionTimeoutError()), timeoutMs);
   });
   try {
     return await Promise.race([operation, timeout]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+class EscalationExtractionTimeoutError extends Error {
+  constructor() {
+    super('Escalation extraction timed out');
   }
 }
 

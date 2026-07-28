@@ -127,6 +127,18 @@
     "zh": "第 {pages} 页",
     "en": "Page {pages}"
   },
+  "chat.documentOcrLabel": {
+    "zh": "{engine} {version}",
+    "en": "{engine} {version}"
+  },
+  "chat.documentBlockLabel": {
+    "zh": "Block {blocks}",
+    "en": "Blocks {blocks}"
+  },
+  "chat.documentExtractionLabel": {
+    "zh": "提取任务 {job}",
+    "en": "Extraction {job}"
+  },
   "chat.answerMode.direct_faq": {
     "zh": "FAQ 原文",
     "en": "Direct FAQ"
@@ -1008,8 +1020,8 @@
     "en": "Document Knowledge"
   },
   "documents.description": {
-    "zh": "上传 TXT、Markdown、PDF 或 DOCX，让客服基于企业文档回答问题。",
-    "en": "Upload TXT, Markdown, PDF, or DOCX files for document-grounded answers."
+    "zh": "上传 TXT、Markdown、PDF、DOCX 或图片；扫描 PDF 与图片经 OCR 人工复核后整篇发布。",
+    "en": "Upload TXT, Markdown, PDF, DOCX, or images. Scanned PDFs and images are published after full OCR review."
   },
   "documents.searchPlaceholder": {
     "zh": "搜索文件名",
@@ -1063,6 +1075,10 @@
     "zh": "处理失败",
     "en": "Failed"
   },
+  "documents.status.review_required": {
+    "zh": "等待复核",
+    "en": "Awaiting review"
+  },
   "documents.view": {
     "zh": "查看",
     "en": "View"
@@ -1070,6 +1086,150 @@
   "documents.retry": {
     "zh": "重试",
     "en": "Retry"
+  },
+  "documents.review": {
+    "zh": "复核",
+    "en": "Review"
+  },
+  "documents.reviewTitle": {
+    "zh": "OCR 内容复核",
+    "en": "OCR content review"
+  },
+  "documents.reviewDescription": {
+    "zh": "按来源顺序检查全部 Block，保存修订后再整篇发布。未发布内容不会进入检索。",
+    "en": "Review every block in source order, save corrections, then publish the whole document. Unpublished content is not searchable."
+  },
+  "documents.reviewCalloutTitle": {
+    "zh": "OCR 内容已准备好复核",
+    "en": "OCR content is ready for review"
+  },
+  "documents.reviewCalloutDescription": {
+    "zh": "{engine} 已提取 {count} 个 Block，当前为第 {revision} 版草稿。",
+    "en": "{engine} extracted {count} blocks. The draft is at revision {revision}."
+  },
+  "documents.reviewRevision": {
+    "zh": "草稿 v{revision}",
+    "en": "Draft v{revision}"
+  },
+  "documents.reviewBlockCount": {
+    "zh": "{count} 个 Block",
+    "en": "{count} blocks"
+  },
+  "documents.reviewUnsaved": {
+    "zh": "有未保存修改",
+    "en": "Unsaved changes"
+  },
+  "documents.reviewSavedState": {
+    "zh": "已保存",
+    "en": "Saved"
+  },
+  "documents.reviewBlockNavigation": {
+    "zh": "OCR Block 导航",
+    "en": "OCR block navigation"
+  },
+  "documents.reviewPage": {
+    "zh": "第 {page} 页",
+    "en": "Page {page}"
+  },
+  "documents.reviewBlockTitle": {
+    "zh": "Block {index}",
+    "en": "Block {index}"
+  },
+  "documents.reviewInclude": {
+    "zh": "纳入知识",
+    "en": "Include in knowledge"
+  },
+  "documents.reviewConfidence": {
+    "zh": "置信度 {confidence}%",
+    "en": "Confidence {confidence}%"
+  },
+  "documents.reviewLayout": {
+    "zh": "位置 {x},{y} · {width}×{height}",
+    "en": "Layout {x},{y} · {width}×{height}"
+  },
+  "documents.reviewPrevious": {
+    "zh": "上一个",
+    "en": "Previous"
+  },
+  "documents.reviewNext": {
+    "zh": "下一个",
+    "en": "Next"
+  },
+  "documents.reviewProgress": {
+    "zh": "{current} / {total}",
+    "en": "{current} / {total}"
+  },
+  "documents.reviewEditedCount": {
+    "zh": "已人工修改 {count} 个 Block",
+    "en": "{count} blocks manually edited"
+  },
+  "documents.reviewReload": {
+    "zh": "重新加载",
+    "en": "Reload"
+  },
+  "documents.reviewPublish": {
+    "zh": "整篇发布",
+    "en": "Publish document"
+  },
+  "documents.reviewPublishConfirm": {
+    "zh": "确认将当前已保存草稿整篇发布到检索？",
+    "en": "Publish the current saved draft to retrieval as one document?"
+  },
+  "documents.reviewSaved": {
+    "zh": "审核草稿已保存",
+    "en": "Review draft saved"
+  },
+  "documents.reviewPublished": {
+    "zh": "文档已整篇发布并加入检索",
+    "en": "The full document was published and indexed"
+  },
+  "documents.reviewConflict": {
+    "zh": "草稿已被其他操作更新，已重新加载最新版本",
+    "en": "The draft changed elsewhere. The latest revision has been reloaded."
+  },
+  "documents.reviewLoadFailed": {
+    "zh": "OCR 审核草稿加载失败",
+    "en": "Failed to load the OCR review draft"
+  },
+  "documents.reviewSaveFailed": {
+    "zh": "OCR 审核草稿保存失败",
+    "en": "Failed to save the OCR review draft"
+  },
+  "documents.reviewPublishFailed": {
+    "zh": "整篇发布失败，草稿仍保留，可修正后重试",
+    "en": "Publication failed. The draft is preserved for correction and retry."
+  },
+  "documents.reviewDiscardConfirm": {
+    "zh": "仍有未保存修改，确认放弃并关闭？",
+    "en": "You have unsaved changes. Discard them and close?"
+  },
+  "documents.reviewEmpty": {
+    "zh": "该文档没有可复核的 OCR Block",
+    "en": "This document has no OCR blocks to review"
+  },
+  "documents.reviewTextPlaceholder": {
+    "zh": "修正 OCR 识别文本",
+    "en": "Correct the OCR text"
+  },
+  "documents.reviewListPlaceholder": {
+    "zh": "每行一个列表项",
+    "en": "One list item per line"
+  },
+  "documents.reviewTableCell": {
+    "zh": "第 {row} 行，第 {column} 列",
+    "en": "Row {row}, column {column}"
+  },
+  "documents.reviewKeyPlaceholder": {
+    "zh": "键",
+    "en": "Key"
+  },
+  "documents.reviewValuePlaceholder": {
+    "zh": "值",
+    "en": "Value"
+  },
+  "documents.reviewImagePlaceholder": {
+    "zh": "修正图片替代文本",
+    "en": "Correct the image alternative text"
   },
   "documents.deleteConfirm": {
     "zh": "确认删除该文档及全部切片？",
@@ -1090,6 +1250,14 @@
   "documents.uploadFailedAccepted": {
     "zh": "文档已保存但处理失败，可在列表中重试",
     "en": "Document saved but processing failed; retry it from the list"
+  },
+  "documents.ocrReviewReady": {
+    "zh": "OCR 提取完成，内容等待人工复核，尚未加入检索",
+    "en": "OCR extraction completed; content is awaiting review and is not indexed"
+  },
+  "documents.ocrQueued": {
+    "zh": "文档已保存，OCR 提取任务已进入后台队列",
+    "en": "The document was saved and queued for background OCR extraction"
   },
   "documents.uploadFailed": {
     "zh": "文档上传失败",
@@ -1143,6 +1311,10 @@
     "zh": "请检查服务日志和模型配置，确认解析与 Embedding 服务可用后重试；若仍失败，请将错误代码提供给维护者。",
     "en": "Check the service logs and Model Configuration, confirm parsing and Embedding services are available, then retry. If it still fails, provide the error code to the maintainer."
   },
+  "documents.failureAdvice.ocr_review_required": {
+    "zh": "请检查 OCR 提取结果并完成整篇复核；发布前内容不会进入检索。",
+    "en": "Review the complete OCR extraction. It will not enter retrieval before publication."
+  },
   "documents.chunkIndex": {
     "zh": "序号",
     "en": "Index"
@@ -1184,8 +1356,8 @@
     "en": "The PDF is encrypted"
   },
   "documents.failure.pdf_no_text": {
-    "zh": "PDF 没有可提取文本，扫描件暂不支持",
-    "en": "No text layer found; scanned PDFs are not supported yet"
+    "zh": "PDF 没有可提取文本，需要 OCR",
+    "en": "No text layer was found; OCR is required"
   },
   "documents.failure.pdf_too_many_pages": {
     "zh": "PDF 页数超过处理上限",
@@ -1231,6 +1403,118 @@
     "zh": "原文件缺失，无法重试",
     "en": "Source file is missing and cannot be retried"
   },
+  "documents.failure.ocr_worker_unconfigured": {
+    "zh": "尚未配置 PaddleOCR Worker",
+    "en": "PaddleOCR worker is not configured"
+  },
+  "documents.failure.ocr_worker_unavailable": {
+    "zh": "PaddleOCR Worker 暂时不可用",
+    "en": "PaddleOCR worker is unavailable"
+  },
+  "documents.failure.ocr_worker_timeout": {
+    "zh": "PaddleOCR Worker 处理超时",
+    "en": "PaddleOCR worker timed out"
+  },
+  "documents.failure.ocr_worker_rejected": {
+    "zh": "PaddleOCR Worker 拒绝了提取请求",
+    "en": "PaddleOCR worker rejected the extraction request"
+  },
+  "documents.failure.ocr_worker_response_too_large": {
+    "zh": "OCR 返回结果超过安全上限",
+    "en": "OCR result exceeds the safe response limit"
+  },
+  "documents.failure.ocr_worker_engine_mismatch": {
+    "zh": "OCR Worker 返回的引擎或版本不匹配",
+    "en": "OCR worker engine or version does not match"
+  },
+  "documents.failure.invalid_ocr_result": {
+    "zh": "OCR 返回结果不符合结构契约",
+    "en": "OCR result does not match the structure contract"
+  },
+  "documents.failure.ocr_review_required": {
+    "zh": "OCR 提取完成，等待人工复核",
+    "en": "OCR extraction completed and awaits review"
+  },
+  "documents.ocrProvenanceTitle": {
+    "zh": "OCR 提取与对照",
+    "en": "OCR extraction and comparison"
+  },
+  "documents.ocrProvenanceDescription": {
+    "zh": "Paddle 结果是审核与发布的唯一权威来源；DeepSeek 仅用于影子对照。",
+    "en": "Paddle is the only authoritative review source. DeepSeek is comparison-only."
+  },
+  "documents.ocrAuthoritative": {
+    "zh": "权威",
+    "en": "Authoritative"
+  },
+  "documents.ocrShadow": {
+    "zh": "影子",
+    "en": "Shadow"
+  },
+  "documents.ocrEngine.paddleocr_ppstructurev3": {
+    "zh": "PaddleOCR PP-StructureV3",
+    "en": "PaddleOCR PP-StructureV3"
+  },
+  "documents.ocrEngine.deepseek_ocr2": {
+    "zh": "DeepSeek-OCR-2",
+    "en": "DeepSeek-OCR-2"
+  },
+  "documents.extractionStatus.queued": {
+    "zh": "排队中",
+    "en": "Queued"
+  },
+  "documents.extractionStatus.running": {
+    "zh": "提取中",
+    "en": "Running"
+  },
+  "documents.extractionStatus.succeeded": {
+    "zh": "已完成",
+    "en": "Completed"
+  },
+  "documents.extractionStatus.failed": {
+    "zh": "失败",
+    "en": "Failed"
+  },
+  "documents.ocrComparison.pending": {
+    "zh": "影子对照仍在处理中，不影响 Paddle 审核草稿。",
+    "en": "Shadow comparison is still running and does not block the Paddle review draft."
+  },
+  "documents.ocrComparison.failed": {
+    "zh": "影子对照失败，不影响 Paddle 审核与发布。",
+    "en": "Shadow comparison failed and does not block Paddle review or publication."
+  },
+  "documents.ocrTextAgreement": {
+    "zh": "文本一致度",
+    "en": "Text agreement"
+  },
+  "documents.ocrStructureAgreement": {
+    "zh": "结构一致度",
+    "en": "Structure agreement"
+  },
+  "documents.ocrBlockDelta": {
+    "zh": "影子 Block 差值",
+    "en": "Shadow block delta"
+  },
+  "documents.ocrHistoryTitle": {
+    "zh": "查看最近的提取与重试记录",
+    "en": "View recent extraction and retry history"
+  },
+  "documents.ocrRetryOf": {
+    "zh": "重试自",
+    "en": "Retry of"
+  },
+  "documents.ocrCreatedAt": {
+    "zh": "创建",
+    "en": "Created"
+  },
+  "documents.ocrCompletedAt": {
+    "zh": "完成",
+    "en": "Completed"
+  },
+  "documents.ocrErrorCode": {
+    "zh": "错误码",
+    "en": "Error code"
+  },
   "documents.detailLoadFailed": {
     "zh": "文档详情加载失败",
     "en": "Failed to load document details"
@@ -1266,6 +1550,10 @@
   "documents.qualityReason.ocr_required": {
     "zh": "需要 OCR",
     "en": "OCR required"
+  },
+  "documents.qualityReason.ocr_review_required": {
+    "zh": "OCR 内容必须人工复核后整篇发布",
+    "en": "OCR content requires human review before whole-document publication"
   },
   "documents.qualityReason.visual_processing_required": {
     "zh": "需要视觉处理",
