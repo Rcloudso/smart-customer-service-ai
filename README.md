@@ -19,16 +19,15 @@ Development version: **v0.3.1 (pre-1.0)**. The latest published release is
 v0.3.1; APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">
-    <img src="docs/demo/v0.2.6-preview.gif" width="880" alt="Smart Customer Service v0.2.6 document-grounded answer demo">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">
+    <img src="docs/demo/v0.3.1-preview.gif" width="880" alt="ResolveWeave v0.3.1 reviewed OCR knowledge and grounded answer demo">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4">Watch the document RAG demo (v0.2.6)</a>
-  · <a href="docs/case-studies/ai-assisted-development-v0.2.6.md">AI-assisted development case study</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">Watch the reviewed OCR knowledge demo (v0.3.1)</a>
   · <a href="docs/releases/v0.3.1.md">v0.3.1 release notes</a>
-  · <a href="docs/releases/v0.2.9-evidence.md">v0.2.9 release evidence</a>
+  · <a href="docs/releases/v0.3.1-evidence.md">v0.3.1 release evidence</a>
 </p>
 
 ## English
@@ -75,9 +74,12 @@ still required for serious production deployment.
 
 ### Product evidence
 
-| Escalation triage queue | Structured handoff packet | Mobile dark theme |
+| Paddle / DeepSeek comparison | Reviewed Block editor | Grounded answer provenance |
 | --- | --- | --- |
-| ![Priority-ordered escalation triage queue](docs/releases/assets/v0.2.9-triage-desktop.png) | ![Structured handoff packet with facts and evidence](docs/releases/assets/v0.2.9-triage-detail.png) | ![Responsive English triage workflow in dark theme](docs/releases/assets/v0.2.9-triage-mobile-dark.png) |
+| ![Paddle authoritative and DeepSeek shadow comparison](docs/releases/assets/v0.3.1-ocr-comparison.jpg) | ![OCR Block review workspace](docs/releases/assets/v0.3.1-block-review.jpg) | ![Customer answer with OCR source provenance](docs/releases/assets/v0.3.1-chat-provenance.jpg) |
+
+Earlier engineering case study:
+[building the v0.2.6 Document RAG foundation with AI-assisted development](docs/case-studies/ai-assisted-development-v0.2.6.md).
 
 ---
 
@@ -104,7 +106,7 @@ into one accountable customer-resolution flow.
   bounded Agentic Retrieval are planned as separately testable releases rather
   than one framework rewrite.
 
-| Implemented on v0.3.1 branch | Next — v0.3.2+ |
+| Implemented in v0.3.1 | Next — v0.3.2+ |
 | --- | --- |
 | Versioned structure-aware ingestion, durable PaddleOCR review workflow, optional DeepSeek shadow comparison, and the v0.2.9 FAQ/RAG baseline | Optional Qdrant, retrieval traces, bounded Agentic Retrieval, then mock-first business tools |
 
