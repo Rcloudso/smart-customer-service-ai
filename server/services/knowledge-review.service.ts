@@ -21,7 +21,7 @@ import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError 
 const KNOWLEDGE_GAP_THRESHOLD = 0.55;
 
 type IndexPreparation = (faq: FaqEntry) => Promise<PreparedFaqIndex | null | undefined>;
-type IndexCommit = (faq: FaqEntry) => void;
+type IndexCommit = (faq: FaqEntry) => void | Promise<void>;
 
 export class KnowledgeReviewService {
   private readonly reviewRepo: KnowledgeReviewRepo;
@@ -221,7 +221,7 @@ export class KnowledgeReviewService {
       isActive: 1,
     };
     try {
-      this.commitFaqIndex(preparedFaq);
+      await this.commitFaqIndex(preparedFaq);
     } catch {
       throw new ServiceUnavailableError('FAQ索引同步失败，请稍后重试');
     }
@@ -246,7 +246,7 @@ export class KnowledgeReviewService {
         return { review, faq };
       })();
     } catch (error) {
-      this.commitFaqIndex({ ...preparedFaq, isActive: 0 });
+      await this.commitFaqIndex({ ...preparedFaq, isActive: 0 });
       throw error;
     }
   }

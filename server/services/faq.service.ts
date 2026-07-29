@@ -166,7 +166,7 @@ export class FaqService {
     return this.faqRepo.listAllActive();
   }
 
-  getIndexStatus(): FaqIndexStatus {
+  getIndexStatus(): Promise<FaqIndexStatus> {
     return semanticSearch.getStatus();
   }
 

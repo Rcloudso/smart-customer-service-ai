@@ -81,7 +81,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
  */
 router.get('/index/status', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const status = faqService.getIndexStatus();
+    const status = await faqService.getIndexStatus();
     res.json({ code: 0, data: status, message: 'ok' });
   } catch (err) {
     next(err);

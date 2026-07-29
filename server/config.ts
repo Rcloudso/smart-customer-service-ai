@@ -6,6 +6,8 @@ import fs from 'fs';
 export const MODEL_PROVIDERS = ['openai', 'openai-compatible', 'other'] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 export const OPENAI_API_BASE = 'https://api.openai.com/v1';
+export const VECTOR_STORE_PROVIDERS = ['memory', 'qdrant'] as const;
+export type VectorStoreProvider = (typeof VECTOR_STORE_PROVIDERS)[number];
 
 export function resolveModelApiBase(provider: ModelProvider, customApiBase: string): string {
   return provider === 'openai' ? OPENAI_API_BASE : customApiBase.trim();
@@ -34,6 +36,63 @@ interface ModelEnvironmentSource {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
   OPENAI_EMBED_MODEL?: string;
+}
+
+interface VectorStoreEnvironmentSource {
+  VECTOR_STORE_PROVIDER?: string;
+  QDRANT_URL?: string;
+  QDRANT_API_KEY?: string;
+  QDRANT_COLLECTION_PREFIX?: string;
+  QDRANT_COLLECTION_ALIAS?: string;
+  QDRANT_TIMEOUT_MS?: string | number;
+  RETRIEVAL_TRACE_RETENTION_DAYS?: string | number;
+}
+
+export interface ResolvedVectorStoreEnvironment {
+  provider: VectorStoreProvider;
+  qdrantUrl: string;
+  qdrantApiKey: string;
+  collectionPrefix: string;
+  collectionAlias: string;
+  timeoutMs: number;
+  traceRetentionDays: number;
+}
+
+export function resolveVectorStoreEnvironment(
+  source: VectorStoreEnvironmentSource,
+): ResolvedVectorStoreEnvironment {
+  const provider = source.VECTOR_STORE_PROVIDER ?? 'memory';
+  if (!(VECTOR_STORE_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new Error('VECTOR_STORE_PROVIDER must be memory or qdrant');
+  }
+  const qdrantUrl = (source.QDRANT_URL ?? '').trim().replace(/\/+$/, '');
+  if (provider === 'qdrant' && !qdrantUrl) {
+    throw new Error('QDRANT_URL is required when VECTOR_STORE_PROVIDER=qdrant');
+  }
+  if (qdrantUrl) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(qdrantUrl);
+    } catch {
+      throw new Error('QDRANT_URL must be a valid http or https URL');
+    }
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('QDRANT_URL must use http or https');
+    }
+  }
+  const timeoutMs = z.coerce.number().int().min(500).max(60_000)
+    .parse(source.QDRANT_TIMEOUT_MS ?? 5_000);
+  const traceRetentionDays = z.coerce.number().int().min(1).max(90)
+    .parse(source.RETRIEVAL_TRACE_RETENTION_DAYS ?? 30);
+  return {
+    provider: provider as VectorStoreProvider,
+    qdrantUrl,
+    qdrantApiKey: (source.QDRANT_API_KEY ?? '').trim(),
+    collectionPrefix: (source.QDRANT_COLLECTION_PREFIX ?? 'resolveweave_knowledge').trim(),
+    collectionAlias: (source.QDRANT_COLLECTION_ALIAS ?? 'resolveweave_knowledge_active').trim(),
+    timeoutMs,
+    traceRetentionDays,
+  };
 }
 
 function resolveModelProvider(rawProvider: string | undefined, apiBase: string): ModelProvider {
@@ -104,6 +163,13 @@ const envSchema = z.object({
   OCR_SHADOW_SERVICE_URL: z.string().default(''),
   OCR_SHADOW_SERVICE_TOKEN: z.string().default(''),
   OCR_SHADOW_ENGINE_VERSION: z.string().min(1).max(80).default('2.0.0'),
+  VECTOR_STORE_PROVIDER: z.enum(VECTOR_STORE_PROVIDERS).default('memory'),
+  QDRANT_URL: z.string().default(''),
+  QDRANT_API_KEY: z.string().default(''),
+  QDRANT_COLLECTION_PREFIX: z.string().min(1).max(80).default('resolveweave_knowledge'),
+  QDRANT_COLLECTION_ALIAS: z.string().min(1).max(80).default('resolveweave_knowledge_active'),
+  QDRANT_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
+  RETRIEVAL_TRACE_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   RATE_LIMIT_CHAT: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_ADMIN: z.coerce.number().int().positive().default(100),
@@ -121,6 +187,7 @@ if (!parsed.success) {
 
 const env = parsed.data;
 const modelEnvironment = resolveModelEnvironment(env);
+const vectorStoreEnvironment = resolveVectorStoreEnvironment(env);
 
 if (env.NODE_ENV === 'production' && env.ADMIN_PASSWORD === 'admin123') {
   console.error('❌ ADMIN_PASSWORD must be changed from the default "admin123" in production.');
@@ -173,6 +240,7 @@ export const config = {
     shadowServiceToken: env.OCR_SHADOW_SERVICE_TOKEN.trim(),
     shadowEngineVersion: env.OCR_SHADOW_ENGINE_VERSION.trim(),
   },
+  vectorStore: vectorStoreEnvironment,
   cors: {
     origins: env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),
   },

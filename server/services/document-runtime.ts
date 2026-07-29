@@ -28,9 +28,9 @@ export const documentService = new DocumentService(getDatabase(), {
     : undefined,
   ocrMode: config.ocr.backgroundEnabled ? 'queued' : 'inline',
   embedTexts: async (texts) => (await getLLMClient().embed(texts)).map((result) => result.embedding),
-  publishChunks: (chunks, document) => {
+  publishChunks: async (chunks, document) => {
     if (!document) throw new Error('Document metadata is required for index publication');
-    knowledgeRetriever.replaceDocumentIndexItems(
+    await knowledgeRetriever.replaceDocumentIndexItems(
       document.id,
       chunks.map((chunk) => documentKnowledgeAdapter.toIndexItem(chunk, document.fileName)),
     );
@@ -38,7 +38,7 @@ export const documentService = new DocumentService(getDatabase(), {
   synchronizeIndex: async () => knowledgeRetriever.refreshSource('document'),
   removeDocumentFromIndex: async (_documentId, chunks) => {
     for (const chunk of chunks) {
-      knowledgeRetriever.deleteIndexItem('document', `document:${chunk.id}`);
+      await knowledgeRetriever.deleteIndexItem('document', `document:${chunk.id}`);
     }
   },
 });

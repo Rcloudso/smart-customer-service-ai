@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { KnowledgeType, RetrievalResult } from '../types/ai';
 import { logger } from '../utils/logger';
-import { VectorStore } from './vector-store';
+import { VectorRecord, VectorSearchResult, VectorStore } from './vector-store';
 import { expandRetrievalQuery } from './query-expansion';
 import { rankRetrievalResults } from './retrieval-ranking';
 import type { RetrievalPolicyConfig } from '../types/quality';
@@ -10,6 +10,7 @@ export interface KnowledgeIndexItem {
   id: string;
   result: RetrievalResult;
   embedding: number[];
+  revision?: string;
 }
 
 export interface KnowledgeIndexLoad {
@@ -21,6 +22,7 @@ export interface KnowledgeAdapter {
   readonly knowledgeType: KnowledgeType;
   getEmbeddingProfile?(): string;
   loadIndexItems(): Promise<KnowledgeIndexItem[] | KnowledgeIndexLoad>;
+  hydrateVectorMatches?(matches: VectorSearchResult[]): Promise<Map<string, KnowledgeIndexItem>>;
   searchKeyword(query: string, limit: number): RetrievalResult[] | Promise<RetrievalResult[]>;
 }
 
@@ -42,7 +44,7 @@ export class KnowledgeRetriever {
   private readonly refreshPromises = new Map<KnowledgeType, Promise<void>>();
 
   constructor(
-    private readonly vectorStore: VectorStore<KnowledgeIndexItem>,
+    private readonly vectorStore: VectorStore,
     private readonly embedTexts: (texts: string[]) => Promise<number[][]>,
     private readonly adapters: KnowledgeAdapter[],
   ) {}
@@ -124,8 +126,13 @@ export class KnowledgeRetriever {
         nextItems.set(item.id, item);
       }
       try {
-        for (const id of previousItems.keys()) this.vectorStore.delete(id);
-        for (const item of nextItems.values()) this.vectorStore.upsert(item, item.embedding);
+        if (this.vectorStore.supportsStartupSync) {
+          await this.vectorStore.delete([...previousItems.keys()], operationId);
+          await this.vectorStore.upsertBatch(
+            [...nextItems.values()].map((item) => this.toVectorRecord(item)),
+            operationId,
+          );
+        }
       } catch (applyError) {
         if (!Array.isArray(loaded) && loaded.rollbackPersisted) {
           try {
@@ -139,8 +146,13 @@ export class KnowledgeRetriever {
           }
         }
         try {
-          for (const id of nextItems.keys()) this.vectorStore.delete(id);
-          for (const item of previousItems.values()) this.vectorStore.upsert(item, item.embedding);
+          if (this.vectorStore.supportsStartupSync) {
+            await this.vectorStore.delete([...nextItems.keys()], operationId);
+            await this.vectorStore.upsertBatch(
+              [...previousItems.values()].map((item) => this.toVectorRecord(item)),
+              operationId,
+            );
+          }
         } catch (rollbackError) {
           logger.error({
             operationId,
@@ -218,7 +230,7 @@ export class KnowledgeRetriever {
     )));
   }
 
-  stats(): ReturnType<VectorStore<KnowledgeIndexItem>['stats']> {
+  stats(): ReturnType<VectorStore['stats']> {
     return this.vectorStore.stats();
   }
 
@@ -234,8 +246,8 @@ export class KnowledgeRetriever {
     return this.initialized;
   }
 
-  upsertIndexItem(item: KnowledgeIndexItem): void {
-    this.vectorStore.upsert(item, item.embedding);
+  async upsertIndexItem(item: KnowledgeIndexItem): Promise<void> {
+    await this.vectorStore.upsertBatch([this.toVectorRecord(item)]);
     const items = this.indexedItems.get(item.result.knowledgeType) ?? new Map<string, KnowledgeIndexItem>();
     items.set(item.id, item);
     this.indexedItems.set(item.result.knowledgeType, items);
@@ -244,7 +256,10 @@ export class KnowledgeRetriever {
     this.indexedIds.set(item.result.knowledgeType, ids);
   }
 
-  replaceDocumentIndexItems(documentId: string, nextItems: KnowledgeIndexItem[]): void {
+  async replaceDocumentIndexItems(
+    documentId: string,
+    nextItems: KnowledgeIndexItem[],
+  ): Promise<void> {
     const knowledgeType: KnowledgeType = 'document';
     const currentItems = this.indexedItems.get(knowledgeType) ?? new Map<string, KnowledgeIndexItem>();
     const previousDocumentItems = [...currentItems.values()].filter(
@@ -256,14 +271,14 @@ export class KnowledgeRetriever {
       throw new Error('Replacement document index items must use the target document namespace');
     }
     try {
-      for (const item of previousDocumentItems) this.vectorStore.delete(item.id);
-      for (const item of nextItems) this.vectorStore.upsert(item, item.embedding);
+      await this.vectorStore.delete(previousDocumentItems.map((item) => item.id));
+      await this.vectorStore.upsertBatch(nextItems.map((item) => this.toVectorRecord(item)));
     } catch (error) {
       try {
-        for (const item of nextItems) this.vectorStore.delete(item.id);
-        for (const item of previousDocumentItems) {
-          this.vectorStore.upsert(item, item.embedding);
-        }
+        await this.vectorStore.delete(nextItems.map((item) => item.id));
+        await this.vectorStore.upsertBatch(
+          previousDocumentItems.map((item) => this.toVectorRecord(item)),
+        );
       } catch (rollbackError) {
         logger.error({
           documentId,
@@ -279,8 +294,8 @@ export class KnowledgeRetriever {
     this.indexedIds.set(knowledgeType, new Set(replaced.keys()));
   }
 
-  deleteIndexItem(knowledgeType: KnowledgeType, namespacedId: string): void {
-    this.vectorStore.delete(namespacedId);
+  async deleteIndexItem(knowledgeType: KnowledgeType, namespacedId: string): Promise<void> {
+    await this.vectorStore.delete([namespacedId]);
     this.indexedItems.get(knowledgeType)?.delete(namespacedId);
     this.indexedIds.get(knowledgeType)?.delete(namespacedId);
   }
@@ -294,14 +309,16 @@ export class KnowledgeRetriever {
   }
 
   private async embedQueries(queries: string[]): Promise<Array<number[] | undefined>> {
-    if (this.vectorStore.stats().indexedCount === 0) return queries.map(() => undefined);
     try {
+      if ((await this.vectorStore.stats()).indexedCount === 0) {
+        return queries.map(() => undefined);
+      }
       return await this.embedTexts(queries);
     } catch (error) {
       logger.warn({
         errorName: error instanceof Error ? error.name : 'UnknownError',
         queryCount: queries.length,
-      }, 'Knowledge vector query batch failed; using keyword fallback');
+      }, 'Knowledge vector preparation failed; using keyword fallback');
       return queries.map(() => undefined);
     }
   }
@@ -317,18 +334,37 @@ export class KnowledgeRetriever {
     const allowed = new Set(knowledgeTypes);
     const merged = new Map<string, RetrievalResult>();
     if (queryEmbedding) {
-      const vectorCandidates = [...allowed].flatMap((knowledgeType) => (
-        this.vectorStore.search(
-          queryEmbedding,
-          candidateLimit,
-          (entry) => entry.result.knowledgeType === knowledgeType,
-        )
-      )).sort((left, right) => right.score - left.score);
+      let vectorCandidates: Awaited<ReturnType<VectorStore['search']>> = [];
+      try {
+        vectorCandidates = (await Promise.all([...allowed].map((knowledgeType) => (
+          this.vectorStore.search(queryEmbedding, {
+            limit: candidateLimit,
+            knowledgeTypes: [knowledgeType],
+            traceId: operationId,
+          })
+        )))).flat().sort((left, right) => right.score - left.score);
+      } catch (error) {
+        logger.warn({
+          operationId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        }, 'Knowledge vector search failed; using keyword fallback');
+      }
+      const hydrated = await this.hydrateVectorCandidates(vectorCandidates, allowed, operationId);
       for (const [index, match] of vectorCandidates.entries()) {
+        const adapter = this.adapters.find((candidate) => (
+          candidate.knowledgeType === match.knowledgeType
+        ));
+        const item = hydrated.get(match.id);
+        if (
+          !adapter
+          || !item
+          || this.itemRevision(item) !== match.revision
+          || (adapter.getEmbeddingProfile?.() ?? 'legacy') !== match.embeddingProfile
+        ) continue;
         const vectorScore = match.score;
         const vectorRank = index + 1;
-        merged.set(this.resultKey(match.entry.result), {
-          ...match.entry.result,
+        merged.set(this.resultKey(item.result), {
+          ...item.result,
           similarity: vectorScore,
           source: 'vector',
           vectorScore,
@@ -379,6 +415,52 @@ export class KnowledgeRetriever {
       }
     }
     return [...merged.values()];
+  }
+
+  private toVectorRecord(item: KnowledgeIndexItem): VectorRecord {
+    const adapter = this.adapters.find((candidate) => (
+      candidate.knowledgeType === item.result.knowledgeType
+    ));
+    return {
+      id: item.id,
+      knowledgeType: item.result.knowledgeType,
+      revision: this.itemRevision(item),
+      embeddingProfile: adapter?.getEmbeddingProfile?.() ?? 'legacy',
+      embedding: item.embedding,
+    };
+  }
+
+  private async hydrateVectorCandidates(
+    matches: VectorSearchResult[],
+    allowed: Set<KnowledgeType>,
+    operationId: string,
+  ): Promise<Map<string, KnowledgeIndexItem>> {
+    const hydrated = new Map<string, KnowledgeIndexItem>();
+    await Promise.all(this.adapters
+      .filter((adapter) => allowed.has(adapter.knowledgeType))
+      .map(async (adapter) => {
+        const adapterMatches = matches.filter((match) => (
+          match.knowledgeType === adapter.knowledgeType
+        ));
+        if (adapterMatches.length === 0) return;
+        try {
+          const items = adapter.hydrateVectorMatches
+            ? await adapter.hydrateVectorMatches(adapterMatches)
+            : this.indexedItems.get(adapter.knowledgeType) ?? new Map();
+          for (const [id, item] of items) hydrated.set(id, item);
+        } catch (error) {
+          logger.warn({
+            operationId,
+            knowledgeType: adapter.knowledgeType,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }, 'Knowledge vector matches could not be hydrated');
+        }
+      }));
+    return hydrated;
+  }
+
+  private itemRevision(item: KnowledgeIndexItem): string {
+    return item.revision ?? 'legacy';
   }
 
 }

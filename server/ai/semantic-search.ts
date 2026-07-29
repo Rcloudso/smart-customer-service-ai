@@ -45,9 +45,9 @@ class SemanticSearch {
     return this.getStatus();
   }
 
-  getStatus(): FaqIndexStatus {
+  async getStatus(): Promise<FaqIndexStatus> {
     const activeEntries = this.faqRepo.listAllActive();
-    const stats = knowledgeRetriever.stats();
+    const stats = await knowledgeRetriever.stats();
     const isDegraded = knowledgeRetriever.getFailedSources().includes('faq');
     return {
       initialized: knowledgeRetriever.hasInitialized() && !isDegraded,
@@ -87,7 +87,7 @@ class SemanticSearch {
       query,
       topK,
       generatedAt: new Date().toISOString(),
-      indexStatus: this.getStatus(),
+      indexStatus: await this.getStatus(),
       matches: matches.map((match, index) => this.toDebugMatch(match, index)),
     };
   }
@@ -102,16 +102,16 @@ class SemanticSearch {
     };
   }
 
-  commitPreparedIndex(entry: FaqEntry): void {
-    knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+  async commitPreparedIndex(entry: FaqEntry): Promise<void> {
+    await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
     if (entry.isActive && entry.embedding) {
-      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(entry));
+      await knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(entry));
     }
   }
 
   async updateIndex(entry: FaqEntry): Promise<void> {
     if (!entry.isActive) {
-      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+      await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
       return;
     }
     try {
@@ -121,12 +121,12 @@ class SemanticSearch {
         (current) => this.prepareIndex(current),
       );
       if (!updated || !updated.isActive) {
-        knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+        await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
         return;
       }
-      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(updated));
+      await knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(updated));
     } catch (error) {
-      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+      await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
       this.lastError = error instanceof Error ? error.message : String(error);
       logger.warn({ err: error, entryId: entry.id }, 'Failed to update FAQ index entry');
     }
@@ -135,7 +135,9 @@ class SemanticSearch {
   async updateIndexBatch(entries: FaqEntry[]): Promise<void> {
     const active = entries.filter((entry) => entry.isActive);
     const currentProfile = currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION);
-    for (const entry of entries) knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+    for (const entry of entries) {
+      await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+    }
     const updates: Array<{
       id: string;
       embedding: number[];
@@ -167,7 +169,7 @@ class SemanticSearch {
     const refreshed = new Map(this.faqRepo.listAllActive().map((entry) => [entry.id, entry]));
     for (const entry of active) {
       const indexedEntry = refreshed.get(entry.id) ?? entry;
-      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(indexedEntry));
+      await knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(indexedEntry));
     }
   }
 

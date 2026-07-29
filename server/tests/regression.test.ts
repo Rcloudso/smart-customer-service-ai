@@ -102,11 +102,12 @@ function testVectorStoreContractExists(): void {
 
   const source = fs.readFileSync(vectorStorePath, 'utf8');
   assert.match(source, /export interface VectorStore/, 'vector store should expose a swappable interface');
-  assert.match(source, /upsert\(/, 'vector store should support upsert');
+  assert.match(source, /upsertBatch\(/, 'vector store should support batch upsert');
   assert.match(source, /delete\(/, 'vector store should support delete');
   assert.match(source, /search\(/, 'vector store should support vector search');
   assert.match(source, /stats\(/, 'vector store should expose index stats');
-  assert.match(source, /clear\(/, 'vector store should support full rebuilds');
+  assert.match(source, /health\(/, 'vector store should expose backend health');
+  assert.match(source, /Promise</, 'vector store operations should be asynchronous');
   assert.match(source, /export class InMemoryVectorStore/, 'default vector store should be in-memory');
 }
 

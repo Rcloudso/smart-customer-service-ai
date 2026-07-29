@@ -211,6 +211,16 @@ export class FaqRepo {
     return rows.map((row) => this.mapRow(row));
   }
 
+  findActiveByIds(ids: string[]): FaqEntry[] {
+    const uniqueIds = [...new Set(ids)].slice(0, 100);
+    if (uniqueIds.length === 0) return [];
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const rows = this.db.prepare(
+      `SELECT * FROM faq_entries WHERE is_active = 1 AND id IN (${placeholders})`,
+    ).all(...uniqueIds) as Record<string, unknown>[];
+    return rows.map((row) => this.mapRow(row));
+  }
+
   listByCategory(category: IntentCategory): FaqEntry[] {
     const rows = this.listByCategoryStmt.all(category) as Record<string, unknown>[];
     return rows.map((row) => this.mapRow(row));
