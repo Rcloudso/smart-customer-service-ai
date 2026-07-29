@@ -14,6 +14,10 @@ export type QualityRunStatus =
   | 'stale';
 export type RerankerMode = 'none' | 'local_overlap_v1';
 
+export type QualityBackendTarget =
+  | { provider: 'memory' }
+  | { provider: 'qdrant'; indexJobId: string };
+
 export interface RetrievalPolicyConfig {
   directFaqThreshold: number;
   generationEvidenceThreshold: number;
@@ -109,6 +113,7 @@ export interface QualityCaseResult {
 
 export interface QualityCandidateResult {
   key: string;
+  backendTarget: QualityBackendTarget;
   policy: RetrievalPolicyConfig;
   metrics: QualityMetrics;
   recommended: boolean;
@@ -119,6 +124,7 @@ export interface QualityRun {
   id: string;
   datasetVersionIds: string[];
   policies: RetrievalPolicyConfig[];
+  backendTargets: QualityBackendTarget[];
   status: QualityRunStatus;
   progress: number;
   totalCases: number;

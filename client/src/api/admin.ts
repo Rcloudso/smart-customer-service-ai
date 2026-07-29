@@ -38,6 +38,7 @@ import type {
   QualityCase,
   QualityDatasetVersion,
   QualityRun,
+  QualityBackendTarget,
   RetrievalPolicy,
   RetrievalPolicyEvent,
   RetrievalPolicyConfig,
@@ -448,6 +449,7 @@ export async function getQualityRun(runId: string): Promise<QualityRun> {
 export async function createQualityRun(data: {
   datasetVersionIds: string[];
   policies: RetrievalPolicyConfig[];
+  backendTargets?: QualityBackendTarget[];
 }): Promise<QualityRun> {
   return post('/admin/quality/runs', data, idempotentRequest());
 }

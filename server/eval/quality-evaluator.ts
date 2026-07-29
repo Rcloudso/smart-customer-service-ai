@@ -7,6 +7,7 @@ import type {
   QualityCandidateResult,
   QualityCase,
   QualityCaseResult,
+  QualityBackendTarget,
   RetrievalPolicyConfig,
 } from '../types/quality';
 
@@ -21,9 +22,11 @@ export function evaluateQualityCandidates(params: {
   policies: RetrievalPolicyConfig[];
   embeddingCallCount: number;
   estimatedTokenCount: number;
+  backendTarget?: QualityBackendTarget;
 }): QualityCandidateResult[] {
+  const backendTarget = params.backendTarget ?? { provider: 'memory' as const };
   const results: QualityCandidateResult[] = params.policies.map((policy) => {
-    const candidateKey = policyKey(policy);
+    const candidateKey = qualityCandidateKey(backendTarget, policy);
     const caseResults = params.cases.map(({ testCase, candidates, latencyMs }) => {
       const started = performance.now();
       const result = evaluateCase(testCase, candidates, latencyMs, policy, candidateKey);
@@ -64,6 +67,7 @@ export function evaluateQualityCandidates(params: {
     const denominator = Math.max(answerable.length, 1);
     return {
       key: candidateKey,
+      backendTarget,
       policy,
       recommended: false,
       cases: caseResults,
@@ -92,6 +96,16 @@ export function evaluateQualityCandidates(params: {
 
 export function policyKey(policy: RetrievalPolicyConfig): string {
   return createHash('sha256').update(JSON.stringify(policy)).digest('hex').slice(0, 16);
+}
+
+export function qualityCandidateKey(
+  target: QualityBackendTarget,
+  policy: RetrievalPolicyConfig,
+): string {
+  const backend = target.provider === 'memory'
+    ? 'memory'
+    : `qdrant:${target.indexJobId}`;
+  return `${backend}:${policyKey(policy)}`;
 }
 
 function evaluateCase(

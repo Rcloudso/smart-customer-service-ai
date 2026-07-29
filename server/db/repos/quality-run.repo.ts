@@ -5,6 +5,7 @@ import type {
   QualityCaseResult,
   QualityRun,
   QualityRunStatus,
+  QualityBackendTarget,
   RetrievalPolicyConfig,
 } from '../../types/quality';
 
@@ -12,6 +13,7 @@ interface RunRow {
   id: string;
   dataset_version_ids: string;
   policy_grid: string;
+  backend_targets: string;
   status: QualityRunStatus;
   progress: number;
   total_cases: number;
@@ -27,6 +29,7 @@ interface RunRow {
 
 interface CandidateRow {
   candidate_key: string;
+  backend_target: string;
   policy_config: string;
   metrics: string;
   recommended: number;
@@ -49,6 +52,7 @@ export class QualityRunRepo {
   create(params: {
     datasetVersionIds: string[];
     policies: RetrievalPolicyConfig[];
+    backendTargets: QualityBackendTarget[];
     totalCases: number;
     knowledgeFingerprint: string | null;
     activePolicyId: string;
@@ -58,14 +62,15 @@ export class QualityRunRepo {
     const id = uuidv4();
     this.db.prepare(
       `INSERT INTO quality_runs (
-         id, dataset_version_ids, policy_grid, status, progress, total_cases,
+         id, dataset_version_ids, policy_grid, backend_targets, status, progress, total_cases,
          knowledge_fingerprint, active_policy_id, failure_code, cancel_requested,
          created_by, created_at, started_at, completed_at
-       ) VALUES (?, ?, ?, 'queued', 0, ?, ?, ?, NULL, 0, ?, ?, NULL, NULL)`,
+       ) VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?, NULL, 0, ?, ?, NULL, NULL)`,
     ).run(
       id,
       JSON.stringify(params.datasetVersionIds),
       JSON.stringify(params.policies),
+      JSON.stringify(params.backendTargets),
       params.totalCases,
       params.knowledgeFingerprint,
       params.activePolicyId,
@@ -103,6 +108,7 @@ export class QualityRunRepo {
     }
     const candidates: QualityCandidateResult[] = candidateRows.map((candidate) => ({
       key: candidate.candidate_key,
+      backendTarget: JSON.parse(candidate.backend_target) as QualityBackendTarget,
       policy: JSON.parse(candidate.policy_config) as RetrievalPolicyConfig,
       metrics: JSON.parse(candidate.metrics) as QualityCandidateResult['metrics'],
       recommended: Boolean(candidate.recommended),
@@ -112,6 +118,7 @@ export class QualityRunRepo {
       id: row.id,
       datasetVersionIds: JSON.parse(row.dataset_version_ids) as string[],
       policies: JSON.parse(row.policy_grid) as RetrievalPolicyConfig[],
+      backendTargets: JSON.parse(row.backend_targets) as QualityBackendTarget[],
       status: row.status,
       progress: row.progress,
       totalCases: row.total_cases,
@@ -165,8 +172,8 @@ export class QualityRunRepo {
     this.db.transaction(() => {
       const insertCandidate = this.db.prepare(
         `INSERT INTO quality_run_candidates (
-           run_id, candidate_key, policy_config, metrics, recommended
-         ) VALUES (?, ?, ?, ?, ?)`,
+           run_id, candidate_key, backend_target, policy_config, metrics, recommended
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
       );
       const insertCase = this.db.prepare(
         `INSERT INTO quality_case_results (
@@ -178,6 +185,7 @@ export class QualityRunRepo {
         insertCandidate.run(
           id,
           candidate.key,
+          JSON.stringify(candidate.backendTarget),
           JSON.stringify(candidate.policy),
           JSON.stringify(candidate.metrics),
           candidate.recommended ? 1 : 0,

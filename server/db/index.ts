@@ -493,6 +493,7 @@ export function initSchema(database: Database.Database): void {
       id TEXT PRIMARY KEY,
       dataset_version_ids TEXT NOT NULL,
       policy_grid TEXT NOT NULL,
+      backend_targets TEXT NOT NULL DEFAULT '[{"provider":"memory"}]',
       status TEXT NOT NULL
         CHECK(status IN ('queued', 'running', 'completed', 'failed', 'interrupted', 'cancelled', 'stale')),
       progress INTEGER NOT NULL DEFAULT 0,
@@ -513,6 +514,7 @@ export function initSchema(database: Database.Database): void {
     CREATE TABLE IF NOT EXISTS quality_run_candidates (
       run_id TEXT NOT NULL REFERENCES quality_runs(id) ON DELETE CASCADE,
       candidate_key TEXT NOT NULL,
+      backend_target TEXT NOT NULL DEFAULT '{"provider":"memory"}',
       policy_config TEXT NOT NULL,
       metrics TEXT NOT NULL,
       recommended INTEGER NOT NULL DEFAULT 0 CHECK(recommended IN (0, 1)),
@@ -536,6 +538,35 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_quality_case_results_run_failure
       ON quality_case_results(run_id, passed, case_id);
+
+    CREATE TABLE IF NOT EXISTS retrieval_index_jobs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL CHECK(status IN (
+        'queued', 'running', 'interrupted', 'ready', 'active',
+        'rolled_back', 'failed', 'stale'
+      )),
+      collection_name TEXT NOT NULL UNIQUE,
+      embedding_profile TEXT NOT NULL,
+      vector_dimension INTEGER NOT NULL CHECK(vector_dimension > 0),
+      knowledge_fingerprint TEXT NOT NULL,
+      expected_count INTEGER NOT NULL CHECK(expected_count >= 0),
+      completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
+      batch_checkpoint INTEGER NOT NULL DEFAULT 0 CHECK(batch_checkpoint >= 0),
+      previous_collection TEXT,
+      failure_code TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      ready_at TEXT,
+      activated_at TEXT,
+      rolled_back_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_index_jobs_status_created
+      ON retrieval_index_jobs(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_index_jobs_fingerprint
+      ON retrieval_index_jobs(knowledge_fingerprint, embedding_profile, created_at DESC);
   `);
 
   // v0.2.6 security migration: model credentials are environment-injected only.
@@ -572,6 +603,18 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'document_processing_tasks', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(database, 'document_extraction_jobs', 'result_block_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(database, 'document_extraction_jobs', 'result_warning_codes', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(
+    database,
+    'quality_runs',
+    'backend_targets',
+    `TEXT NOT NULL DEFAULT '[{"provider":"memory"}]'`,
+  );
+  ensureColumn(
+    database,
+    'quality_run_candidates',
+    'backend_target',
+    `TEXT NOT NULL DEFAULT '{"provider":"memory"}'`,
+  );
   database.prepare(`
     UPDATE document_extraction_jobs
     SET result_block_count = CASE

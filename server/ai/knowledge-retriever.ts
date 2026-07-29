@@ -230,6 +230,27 @@ export class KnowledgeRetriever {
     )));
   }
 
+  async searchCandidatesBatchWithEmbeddings(
+    queries: string[],
+    embeddings: Array<number[] | undefined>,
+    limit: number = MAX_CANDIDATE_POOL,
+    knowledgeTypes: KnowledgeType[] = ['faq', 'document'],
+  ): Promise<RetrievalResult[][]> {
+    if (queries.length !== embeddings.length) {
+      throw new Error('Query and embedding batches must have the same length');
+    }
+    await this.initialize();
+    const expanded = queries.map(expandRetrievalQuery);
+    const candidateLimit = Math.min(MAX_CANDIDATE_POOL, Math.max(1, limit));
+    return Promise.all(queries.map((query, index) => this.retrieveCandidates(
+      query,
+      expanded[index],
+      embeddings[index],
+      candidateLimit,
+      knowledgeTypes,
+    )));
+  }
+
   stats(): ReturnType<VectorStore['stats']> {
     return this.vectorStore.stats();
   }

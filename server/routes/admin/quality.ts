@@ -38,6 +38,10 @@ const policySchema = z.object({
   (value) => value.generationEvidenceThreshold <= value.directFaqThreshold,
   { message: 'generationEvidenceThreshold cannot exceed directFaqThreshold' },
 );
+const backendTargetSchema = z.discriminatedUnion('provider', [
+  z.object({ provider: z.literal('memory') }).strict(),
+  z.object({ provider: z.literal('qdrant'), indexJobId: uuid }).strict(),
+]);
 const paginationSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
@@ -83,6 +87,7 @@ router.post('/runs', (req, res, next) => handle(res, next, () => {
   const data = parse(z.object({
     datasetVersionIds: z.array(resourceId).min(1).max(20),
     policies: z.array(policySchema).max(64),
+    backendTargets: z.array(backendTargetSchema).min(1).max(10).optional(),
   }).strict(), req.body);
   return qualityRuns.createRun({ ...data, createdBy: actor(req) });
 }, 202));

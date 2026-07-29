@@ -18,6 +18,7 @@ let adminKnowledgeReviewRoutes: express.Router;
 let adminDocumentRoutes: express.Router;
 let adminQualityRoutes: express.Router;
 let adminEscalationRoutes: express.Router;
+let adminRetrievalRoutes: express.Router;
 let ready = false;
 
 function createApp(): express.Application {
@@ -113,6 +114,13 @@ function createApp(): express.Application {
     return adminEscalationRoutes(_req, _res, next);
   });
 
+  app.use('/api/admin/retrieval', (_req, _res, next) => {
+    if (!adminRetrievalRoutes) {
+      adminRetrievalRoutes = require('./routes/admin/retrieval').default;
+    }
+    return adminRetrievalRoutes(_req, _res, next);
+  });
+
   // ---- Health check ----
   app.get('/api/health', (_req, res) => {
     res.json({ code: 0, data: { status: 'ok', uptime: process.uptime() }, message: 'ok' });
@@ -147,6 +155,10 @@ async function start(): Promise<void> {
     getQualityLabService().bootstrap();
     const { getQualityRunService } = await import('./services/quality-run.service');
     getQualityRunService().start();
+    const { getRetrievalIndexJobService } = await import(
+      './services/retrieval-index-job.service'
+    );
+    getRetrievalIndexJobService().start();
     logger.info('RAG quality lab initialized');
 
     // Hydrate runtime config from environment-owned model settings.
