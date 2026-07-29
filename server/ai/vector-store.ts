@@ -36,6 +36,7 @@ export interface VectorStoreHealth {
 }
 
 export interface VectorStore {
+  readonly backend: 'memory' | 'qdrant';
   readonly supportsStartupSync: boolean;
   upsertBatch(records: VectorRecord[], traceId?: string): Promise<void>;
   delete(ids: string[], traceId?: string): Promise<void>;
@@ -45,6 +46,7 @@ export interface VectorStore {
 }
 
 export class InMemoryVectorStore implements VectorStore {
+  readonly backend = 'memory';
   readonly supportsStartupSync = true;
   private items = new Map<string, VectorRecord>();
   private updatedAt: string | null = null;

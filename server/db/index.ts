@@ -567,6 +567,49 @@ export function initSchema(database: Database.Database): void {
       ON retrieval_index_jobs(status, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_retrieval_index_jobs_fingerprint
       ON retrieval_index_jobs(knowledge_fingerprint, embedding_profile, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS retrieval_traces (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      user_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      assistant_message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+      policy_id TEXT NOT NULL,
+      backend TEXT NOT NULL CHECK(backend IN ('memory', 'qdrant')),
+      status TEXT NOT NULL CHECK(status IN ('completed', 'degraded', 'failed')),
+      error_code TEXT,
+      total_latency_ms REAL NOT NULL CHECK(total_latency_ms >= 0),
+      created_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_created
+      ON retrieval_traces(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_status_created
+      ON retrieval_traces(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_backend_created
+      ON retrieval_traces(backend, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_session_created
+      ON retrieval_traces(session_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS retrieval_trace_stages (
+      trace_id TEXT NOT NULL REFERENCES retrieval_traces(id) ON DELETE CASCADE,
+      stage_name TEXT NOT NULL CHECK(stage_name IN (
+        'query_expand', 'embedding', 'vector_recall', 'keyword_recall',
+        'fusion', 'rerank', 'context_budget', 'grounding'
+      )),
+      stage_order INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('completed', 'degraded', 'failed', 'skipped')),
+      latency_ms REAL NOT NULL CHECK(latency_ms >= 0),
+      input_count INTEGER NOT NULL CHECK(input_count >= 0),
+      output_count INTEGER NOT NULL CHECK(output_count >= 0),
+      candidates TEXT NOT NULL DEFAULT '[]',
+      budget TEXT NOT NULL DEFAULT '{}',
+      error_code TEXT,
+      PRIMARY KEY(trace_id, stage_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_trace_stages_trace
+      ON retrieval_trace_stages(trace_id, stage_order);
   `);
 
   // v0.2.6 security migration: model credentials are environment-injected only.

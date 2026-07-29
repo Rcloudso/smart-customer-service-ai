@@ -110,6 +110,7 @@ class FailOnceVectorStore extends InMemoryVectorStore {
 }
 
 class ExternalReadOnlyVectorStore implements VectorStore {
+  readonly backend = 'qdrant';
   readonly supportsStartupSync = false;
 
   constructor(

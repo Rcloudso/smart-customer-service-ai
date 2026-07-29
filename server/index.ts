@@ -159,6 +159,8 @@ async function start(): Promise<void> {
       './services/retrieval-index-job.service'
     );
     getRetrievalIndexJobService().start();
+    const { getRetrievalTraceService } = await import('./services/retrieval-trace.service');
+    getRetrievalTraceService().start();
     logger.info('RAG quality lab initialized');
 
     // Hydrate runtime config from environment-owned model settings.
@@ -226,6 +228,8 @@ async function closeDatabaseAndExit(code: number): Promise<void> {
   try {
     const { documentOcrScheduler } = await import('./services/document-runtime');
     await documentOcrScheduler.stop();
+    const { getRetrievalTraceService } = await import('./services/retrieval-trace.service');
+    getRetrievalTraceService().stop();
     const { closeDatabase } = await import('./db');
     closeDatabase();
   } catch (error) {

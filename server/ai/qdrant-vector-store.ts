@@ -50,6 +50,7 @@ export interface QdrantVectorStoreOptions {
 }
 
 export class QdrantVectorStore implements VectorStore {
+  readonly backend = 'qdrant';
   readonly supportsStartupSync = false;
   private readonly client: QdrantClientLike;
   private readonly collectionAlias: string;

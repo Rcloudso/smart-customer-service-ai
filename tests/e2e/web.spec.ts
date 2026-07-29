@@ -2099,4 +2099,72 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       });
     }
   });
+
+  test('retrieval operations shows trace timeline across language, theme, mobile and keyboard states', async ({ page }) => {
+    const question = `retrieval-trace-web-${Date.now()}`;
+    const chatResponse = await page.request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: question, userIdent: `trace-web-${Date.now()}` },
+    });
+    expect(chatResponse.status()).toBe(200);
+    const stream = await chatResponse.text();
+    const sessionId = stream.match(/"sessionId":"([^"]+)"/)?.[1];
+    expect(sessionId).toBeTruthy();
+
+    await loginAsAdmin(page);
+    await page.getByText('检索运维').click();
+    await expect(page).toHaveURL(/\/admin\/retrieval-ops$/);
+    await expect(page.getByTestId('retrieval-ops-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '检索运维' })).toBeVisible();
+    await expect(page.getByText('内存', { exact: true })).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.getByText('登录成功').waitFor({ state: 'hidden' });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-retrieval-ops-desktop.png',
+        fullPage: true,
+      });
+    }
+
+    await page.getByText('检索 Trace').click();
+    await page.getByTestId('retrieval-trace-session-filter').locator('input').fill(sessionId!);
+    await page.getByRole('button', { name: '查询', exact: true }).click();
+    const traceRow = page.getByTestId('retrieval-trace-table').locator('tr').filter({
+      hasText: sessionId!,
+    });
+    await expect(traceRow).toBeVisible();
+    await traceRow.getByRole('button', { name: '查看' }).click();
+    await expect(page.getByText(question, { exact: true })).toBeVisible();
+    await expect(page.getByText('查询扩展', { exact: true })).toBeVisible();
+    await expect(page.getByText('Grounding 决策', { exact: true })).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.waitForTimeout(350);
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-retrieval-trace-desktop.png',
+        fullPage: true,
+      });
+    }
+    await page.locator('.t-dialog:visible .t-dialog__close').click();
+
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: 'Retrieval operations' })).toBeVisible();
+    await expect(page.getByText('Runtime overview')).toBeVisible();
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY');
+    await expect.poll(
+      () => page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+      { message: 'retrieval operations should not create page-level mobile overflow' },
+    ).toBe(true);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-retrieval-ops-mobile-dark.png',
+        fullPage: true,
+      });
+    }
+  });
 });

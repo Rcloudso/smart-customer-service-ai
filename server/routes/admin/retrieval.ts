@@ -5,6 +5,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { idempotencyMiddleware } from '../../middleware/idempotency';
 import { getRetrievalIndexJobService } from '../../services/retrieval-index-job.service';
 import { ValidationError } from '../../utils/errors';
+import { getRetrievalTraceService } from '../../services/retrieval-trace.service';
 
 const router = Router();
 router.use(authMiddleware);
@@ -12,6 +13,7 @@ router.use(adminOnlyMiddleware);
 router.use(idempotencyMiddleware);
 
 const service = getRetrievalIndexJobService();
+const traces = getRetrievalTraceService();
 const uuid = z.string().uuid();
 const pagination = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -58,6 +60,25 @@ router.get('/index-jobs/:id', (req, res, next) => handle(
   res,
   next,
   () => service.getJob(parse(uuid, req.params.id)),
+));
+router.get('/traces', (req, res, next) => handle(res, next, () => {
+  const data = parse(pagination.extend({
+    status: z.enum(['completed', 'degraded', 'failed']).optional(),
+    backend: z.enum(['memory', 'qdrant']).optional(),
+    sessionId: z.string().uuid().optional(),
+    createdFrom: z.string().datetime().optional(),
+    createdTo: z.string().datetime().optional(),
+  }), req.query);
+  return traces.listTraces({
+    ...data,
+    page: data.page ?? 1,
+    pageSize: data.pageSize ?? 20,
+  });
+}));
+router.get('/traces/:traceId', (req, res, next) => handle(
+  res,
+  next,
+  () => traces.getTraceDetail(parse(uuid, req.params.traceId)),
 ));
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {

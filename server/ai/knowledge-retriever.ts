@@ -5,6 +5,7 @@ import { VectorRecord, VectorSearchResult, VectorStore } from './vector-store';
 import { expandRetrievalQuery } from './query-expansion';
 import { rankRetrievalResults } from './retrieval-ranking';
 import type { RetrievalPolicyConfig } from '../types/quality';
+import type { RetrievalTraceCollector } from '../services/retrieval-trace-collector';
 
 export interface KnowledgeIndexItem {
   id: string;
@@ -186,29 +187,53 @@ export class KnowledgeRetriever {
     topK: number = 5,
     knowledgeTypes: KnowledgeType[] = ['faq', 'document'],
     policy?: RetrievalPolicyConfig,
+    trace?: RetrievalTraceCollector,
   ): Promise<RetrievalResult[]> {
     await this.initialize();
+    const expandStarted = performance.now();
     const expandedQuery = expandRetrievalQuery(query);
+    trace?.record('query_expand', {
+      status: 'completed',
+      latencyMs: performance.now() - expandStarted,
+      inputCount: 1,
+      outputCount: 1,
+    });
     const candidateLimit = Math.min(
       MAX_CANDIDATE_POOL,
       Math.max(MIN_CANDIDATE_POOL, topK * CANDIDATE_MULTIPLIER),
     );
-    const queryEmbedding = await this.embedQueries([expandedQuery]);
+    const queryEmbedding = await this.embedQueries([expandedQuery], trace);
     const candidates = await this.retrieveCandidates(
       query,
       expandedQuery,
       queryEmbedding[0],
       candidateLimit,
       knowledgeTypes,
+      trace,
     );
 
-    return rankRetrievalResults({
+    const rerankStarted = performance.now();
+    const ranked = rankRetrievalResults({
       query,
       candidates,
       topK,
       knowledgeTypes,
       policy,
     });
+    trace?.record('rerank', {
+      status: 'completed',
+      latencyMs: performance.now() - rerankStarted,
+      inputCount: candidates.length,
+      outputCount: ranked.length,
+      candidates: ranked.map((result, index) => ({
+        knowledgeType: result.knowledgeType,
+        knowledgeId: result.knowledgeId,
+        score: result.rerankScore ?? result.fusionScore ?? result.similarity,
+        rank: index + 1,
+        source: result.source,
+      })),
+    });
+    return ranked;
   }
 
   async searchCandidatesBatch(
@@ -329,17 +354,44 @@ export class KnowledgeRetriever {
     return weight / (RRF_RANK_CONSTANT + rank);
   }
 
-  private async embedQueries(queries: string[]): Promise<Array<number[] | undefined>> {
+  private async embedQueries(
+    queries: string[],
+    trace?: RetrievalTraceCollector,
+  ): Promise<Array<number[] | undefined>> {
+    const started = performance.now();
     try {
       if ((await this.vectorStore.stats()).indexedCount === 0) {
+        trace?.record('embedding', {
+          status: 'completed',
+          latencyMs: performance.now() - started,
+          inputCount: queries.length,
+          outputCount: 0,
+        });
         return queries.map(() => undefined);
       }
-      return await this.embedTexts(queries);
+      const embeddings = await this.embedTexts(queries);
+      trace?.record('embedding', {
+        status: 'completed',
+        latencyMs: performance.now() - started,
+        inputCount: queries.length,
+        outputCount: embeddings.length,
+        budget: { dimensions: embeddings[0]?.length ?? 0 },
+      });
+      return embeddings;
     } catch (error) {
       logger.warn({
         errorName: error instanceof Error ? error.name : 'UnknownError',
         queryCount: queries.length,
       }, 'Knowledge vector preparation failed; using keyword fallback');
+      trace?.record('embedding', {
+        status: 'degraded',
+        latencyMs: performance.now() - started,
+        inputCount: queries.length,
+        outputCount: 0,
+        errorCode: this.vectorStore.backend === 'qdrant'
+          ? 'qdrant_unavailable'
+          : 'embedding_unavailable',
+      });
       return queries.map(() => undefined);
     }
   }
@@ -350,12 +402,16 @@ export class KnowledgeRetriever {
     queryEmbedding: number[] | undefined,
     candidateLimit: number,
     knowledgeTypes: KnowledgeType[],
+    trace?: RetrievalTraceCollector,
   ): Promise<RetrievalResult[]> {
-    const operationId = uuidv4();
+    const operationId = trace?.id ?? uuidv4();
     const allowed = new Set(knowledgeTypes);
     const merged = new Map<string, RetrievalResult>();
     if (queryEmbedding) {
+      const vectorStarted = performance.now();
       let vectorCandidates: Awaited<ReturnType<VectorStore['search']>> = [];
+      let vectorStatus: 'completed' | 'degraded' = 'completed';
+      let vectorErrorCode: string | null = null;
       try {
         vectorCandidates = (await Promise.all([...allowed].map((knowledgeType) => (
           this.vectorStore.search(queryEmbedding, {
@@ -365,11 +421,29 @@ export class KnowledgeRetriever {
           })
         )))).flat().sort((left, right) => right.score - left.score);
       } catch (error) {
+        vectorStatus = 'degraded';
+        vectorErrorCode = this.vectorStore.backend === 'qdrant'
+          ? 'qdrant_unavailable'
+          : 'vector_search_failed';
         logger.warn({
           operationId,
           errorName: error instanceof Error ? error.name : 'UnknownError',
         }, 'Knowledge vector search failed; using keyword fallback');
       }
+      trace?.record('vector_recall', {
+        status: vectorStatus,
+        latencyMs: performance.now() - vectorStarted,
+        inputCount: 1,
+        outputCount: vectorCandidates.length,
+        candidates: vectorCandidates.map((match, index) => ({
+          knowledgeType: match.knowledgeType,
+          knowledgeId: match.id.replace(/^(faq|document):/, ''),
+          score: match.score,
+          rank: index + 1,
+          source: 'vector',
+        })),
+        errorCode: vectorErrorCode,
+      });
       const hydrated = await this.hydrateVectorCandidates(vectorCandidates, allowed, operationId);
       for (const [index, match] of vectorCandidates.entries()) {
         const adapter = this.adapters.find((candidate) => (
@@ -393,7 +467,17 @@ export class KnowledgeRetriever {
           fusionScore: this.rrfScore(vectorRank, VECTOR_RRF_WEIGHT),
         });
       }
+    } else {
+      trace?.record('vector_recall', {
+        status: 'skipped',
+        latencyMs: 0,
+        inputCount: 0,
+        outputCount: 0,
+        errorCode: trace.backend === 'qdrant' ? 'qdrant_unavailable' : null,
+      });
     }
+    const keywordStarted = performance.now();
+    let keywordDegraded = false;
     const keywordLists = await Promise.all(this.adapters
       .filter((adapter) => allowed.has(adapter.knowledgeType))
       .map(async (adapter) => {
@@ -403,6 +487,7 @@ export class KnowledgeRetriever {
             candidateLimit,
           );
         } catch (error) {
+          keywordDegraded = true;
           logger.warn({
             operationId,
             knowledgeType: adapter.knowledgeType,
@@ -411,6 +496,22 @@ export class KnowledgeRetriever {
           return [];
         }
       }));
+    const flattenedKeyword = keywordLists.flat();
+    trace?.record('keyword_recall', {
+      status: keywordDegraded ? 'degraded' : 'completed',
+      latencyMs: performance.now() - keywordStarted,
+      inputCount: this.adapters.filter((adapter) => allowed.has(adapter.knowledgeType)).length,
+      outputCount: flattenedKeyword.length,
+      candidates: flattenedKeyword.map((result, index) => ({
+        knowledgeType: result.knowledgeType,
+        knowledgeId: result.knowledgeId,
+        score: result.keywordScore ?? result.similarity,
+        rank: index + 1,
+        source: 'keyword',
+      })),
+      errorCode: keywordDegraded ? 'keyword_recall_partial' : null,
+    });
+    const fusionStarted = performance.now();
     for (const keywordResults of keywordLists) {
       for (const [index, result] of keywordResults.entries()) {
         const key = this.resultKey(result);
@@ -435,7 +536,23 @@ export class KnowledgeRetriever {
         });
       }
     }
-    return [...merged.values()];
+    const fused = [...merged.values()];
+    trace?.record('fusion', {
+      status: 'completed',
+      latencyMs: performance.now() - fusionStarted,
+      inputCount: (queryEmbedding ? 1 : 0) + flattenedKeyword.length,
+      outputCount: fused.length,
+      candidates: [...fused]
+        .sort((left, right) => (right.fusionScore ?? 0) - (left.fusionScore ?? 0))
+        .map((result, index) => ({
+          knowledgeType: result.knowledgeType,
+          knowledgeId: result.knowledgeId,
+          score: result.fusionScore ?? result.similarity,
+          rank: index + 1,
+          source: result.source,
+        })),
+    });
+    return fused;
   }
 
   private toVectorRecord(item: KnowledgeIndexItem): VectorRecord {

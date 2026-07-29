@@ -15,11 +15,52 @@ async function main(): Promise<void> {
   process.env.VECTOR_STORE_PROVIDER = 'memory';
   process.env.QDRANT_URL = '';
 
-  const [{ default: router }, { errorHandler }, databaseModule] = await Promise.all([
+  const [
+    { default: router },
+    { errorHandler },
+    databaseModule,
+    { RetrievalTraceCollector },
+    { getRetrievalTraceService },
+    { SessionRepo },
+    { MessageRepo },
+    { MessageRole },
+  ] = await Promise.all([
     import('../routes/admin/retrieval'),
     import('../middleware/errorHandler'),
     import('../db'),
+    import('../services/retrieval-trace-collector'),
+    import('../services/retrieval-trace.service'),
+    import('../db/repos/session.repo'),
+    import('../db/repos/message.repo'),
+    import('../types/domain'),
   ]);
+  const db = databaseModule.getDatabase();
+  const session = new SessionRepo(db).create('trace-api-user');
+  const messageRepo = new MessageRepo(db);
+  const userMessage = messageRepo.create({
+    sessionId: session.id,
+    role: MessageRole.USER,
+    content: 'authorized trace question',
+  });
+  const assistantMessage = messageRepo.create({
+    sessionId: session.id,
+    role: MessageRole.ASSISTANT,
+    content: 'authorized trace answer',
+    replyToMessageId: userMessage.id,
+  });
+  const collector = new RetrievalTraceCollector({ backend: 'memory' });
+  collector.record('grounding', {
+    status: 'completed',
+    latencyMs: 1,
+    inputCount: 0,
+    outputCount: 0,
+  });
+  getRetrievalTraceService().persist(collector.complete({
+    sessionId: session.id,
+    userMessageId: userMessage.id,
+    assistantMessageId: assistantMessage.id,
+    policyId: 'policy-test',
+  }));
   const app = express();
   app.use(express.json());
   app.use('/api/admin/retrieval', router);
@@ -45,6 +86,29 @@ async function main(): Promise<void> {
     assert.equal(statusBody.data.provider, 'memory');
     assert.equal(statusBody.data.qdrantConfigured, false);
     assert.equal(statusBody.data.qdrantHealth, 'not_configured');
+
+    const traceList = await fetch(
+      `${base}/traces?backend=memory&sessionId=${session.id}`,
+      { headers: auth },
+    );
+    assert.equal(traceList.status, 200);
+    const traceListBody = await traceList.json() as {
+      data: { total: number; items: Array<{ id: string }> };
+    };
+    assert.equal(traceListBody.data.total, 1);
+    const traceDetail = await fetch(
+      `${base}/traces/${traceListBody.data.items[0].id}`,
+      { headers: auth },
+    );
+    const traceDetailBody = await traceDetail.json() as {
+      data: {
+        trace: { stages: unknown[] };
+        messages: { user: { content: string }; assistant: { content: string } };
+      };
+    };
+    assert.equal(traceDetailBody.data.trace.stages.length, 8);
+    assert.equal(traceDetailBody.data.messages.user.content, 'authorized trace question');
+    assert.equal(traceDetailBody.data.messages.assistant.content, 'authorized trace answer');
 
     assert.equal(
       (await fetch(`${base}/index-jobs?pageSize=101`, { headers: auth })).status,
