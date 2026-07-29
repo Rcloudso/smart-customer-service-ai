@@ -15,19 +15,19 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Development version: **v0.3.1 (pre-1.0)**. The latest published release is
-v0.3.1; APIs and persisted data remain subject to change before 1.0.
+Development version: **v0.3.2 (pre-1.0)**. The latest published release is
+v0.3.2; APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">
-    <img src="docs/demo/v0.3.1-preview.gif" width="880" alt="ResolveWeave v0.3.1 reviewed OCR knowledge and grounded answer demo">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
+    <img src="docs/demo/v0.3.2-preview.gif" width="880" alt="ResolveWeave v0.3.2 Qdrant index activation, retrieval trace, and rollback demo">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">Watch the reviewed OCR knowledge demo (v0.3.1)</a>
-  · <a href="docs/releases/v0.3.1.md">v0.3.1 release notes</a>
-  · <a href="docs/releases/v0.3.1-evidence.md">v0.3.1 release evidence</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">Watch the retrieval operations demo (v0.3.2)</a>
+  · <a href="docs/releases/v0.3.2.md">v0.3.2 release notes</a>
+  · <a href="docs/releases/v0.3.2-evidence.md">v0.3.2 release evidence</a>
 </p>
 
 ## English
@@ -38,10 +38,10 @@ hand risky cases to people with useful context.
 
 The current release combines customer chat, FAQ and document knowledge,
 hybrid retrieval, persisted sources, deterministic Grounding decisions,
-structured escalation, an operations console, and repeatable quality
-evaluation. It starts without a paid model key and is evolving toward a
-bounded Agentic Retrieval architecture without giving the model authority over
-answer release or business actions.
+structured escalation, optional Qdrant, retrieval traces, an operations
+console, and repeatable quality evaluation. It starts without a paid model key
+or Qdrant and is evolving toward bounded Agentic Retrieval without giving the
+model authority over answer release or business actions.
 
 [Quick Start](#quick-start) · [Why This Project](#why-this-project) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Evaluation](#evaluation-and-debugging) · [Roadmap](ROADMAP.md)
 
@@ -65,7 +65,10 @@ ResolveWeave:
   Step 4: answer with persisted sources, or escalate high-risk/conflicting requests
 ```
 
-Admins can maintain FAQs, upload and manage documents, preview indexed chunks, inspect retrieval behavior, review conversations, and turn weak answers into reusable FAQs from the Knowledge Review page.
+Admins can maintain FAQs, upload and manage documents, preview indexed chunks,
+compare memory/Qdrant quality, build and activate Qdrant indexes, inspect
+retrieval traces, review conversations, and turn weak answers into reusable
+FAQs from the Knowledge Review page.
 
 The current release is suitable for learning, evaluation, demonstrations and
 small pre-production pilots. It deliberately keeps SQLite and an in-memory
@@ -74,9 +77,9 @@ still required for serious production deployment.
 
 ### Product evidence
 
-| Paddle / DeepSeek comparison | Reviewed Block editor | Grounded answer provenance |
+| Quality backend comparison | Qdrant activation gate | Retrieval trace |
 | --- | --- | --- |
-| ![Paddle authoritative and DeepSeek shadow comparison](docs/releases/assets/v0.3.1-ocr-comparison.jpg) | ![OCR Block review workspace](docs/releases/assets/v0.3.1-block-review.jpg) | ![Customer answer with OCR source provenance](docs/releases/assets/v0.3.1-chat-provenance.jpg) |
+| ![Quality Lab memory and Qdrant targets](docs/releases/assets/v0.3.2-quality-backends.png) | ![Qdrant activation gate with latency acknowledgement](docs/releases/assets/v0.3.2-activation-gate.png) | ![Eight-stage retrieval trace](docs/releases/assets/v0.3.2-retrieval-trace-desktop.png) |
 
 Earlier engineering case study:
 [building the v0.2.6 Document RAG foundation with AI-assisted development](docs/case-studies/ai-assisted-development-v0.2.6.md).
@@ -106,9 +109,9 @@ into one accountable customer-resolution flow.
   bounded Agentic Retrieval are planned as separately testable releases rather
   than one framework rewrite.
 
-| Implemented in v0.3.1 | Next — v0.3.2+ |
+| Implemented in v0.3.2 | Next — v0.3.3+ |
 | --- | --- |
-| Versioned structure-aware ingestion, durable PaddleOCR review workflow, optional DeepSeek shadow comparison, and the v0.2.9 FAQ/RAG baseline | Optional Qdrant, retrieval traces, bounded Agentic Retrieval, then mock-first business tools |
+| Optional Qdrant, recoverable index jobs, Quality Lab backend comparison, atomic alias activation/rollback, Retrieval Trace, plus the v0.3.1 reviewed OCR path | Bounded Agentic Retrieval, enterprise knowledge operations, then mock-first business tools |
 
 See [ROADMAP.md](ROADMAP.md) for release boundaries and non-goals.
 
@@ -134,12 +137,13 @@ flowchart LR
 - **Reviewed OCR ingestion** - route PNG, JPEG, WebP, and scan-only PDF sources to a durable PaddleOCR PP-StructureV3 queue; inspect and edit extracted Blocks before atomic publication, with optional non-authoritative DeepSeek-OCR-2 shadow comparison.
 - **Hybrid multi-source retrieval** - FAQ and document candidates use per-source vector recall plus field-aware keyword recall, then merge with score-aware reciprocal-rank fusion (RRF), deduplicate, and apply source-aware diversity.
 - **Compatible intent classification** - structured intent output negotiates `json_schema`, then `json_object`, then validated plain-text JSON before the deterministic keyword fallback.
-- **Open vector-store interface** - `VectorStore` keeps the default deployment simple while leaving room for Qdrant or pgvector later.
+- **Optional Qdrant backend** - the asynchronous `VectorStore` keeps memory as the default and adds Qdrant with stable IDs, safe metadata, health/stats, SQLite hydration, and explicit keyword degradation.
 - **Richer FAQ embeddings** - FAQ vectors are generated from question, answer, and keywords, not only the question.
-- **Index operations** - admin users can inspect indexed entries, active entries, missing embeddings, dimensions, rebuild time, and index errors.
+- **Recoverable index operations** - build checkpointed versioned collections from SQLite, validate fingerprint/profile/dimension/count, activate through an atomic alias switch, and roll back without deleting old collections.
 - **Retrieval debugging** - admin panel explains ranked matches, source, similarity, keyword score, vector score, and ranking reason.
 - **Retrieval evaluation** - repeatable FAQ and document evals report ranking metrics, score/source distributions, failures, and semantic-v1 versus structure-only comparison.
-- **RAG Quality Lab** - admins version evaluation sets, compare deterministic retrieval/Grounding strategies, inspect failures and safely publish or roll back an immutable runtime policy.
+- **RAG Quality Lab** - admins version evaluation sets, compare deterministic retrieval/Grounding strategies across memory and a ready Qdrant job, inspect failures, and safely publish or roll back an immutable runtime policy.
+- **Retrieval operations and traces** - a bilingual responsive admin page shows backend health, index jobs, activation gates, and fixed eight-stage traces with safe metadata and bounded candidate lists.
 - **Structured escalation and triage** - every new handoff persists a traceable packet with deterministic priority, risk flags, recommended queue, cited facts, missing information, and retrieval evidence; admins review it in a bilingual read-only queue.
 - **Language switching and bilingual dictionary** - fixed UI copy is read from an editable Chinese/English dictionary instead of being hard-coded across pages.
 - **Light/dark themes** - persisted theme preferences for both customer and admin workflows.
@@ -165,7 +169,21 @@ Query
   +-- return matches with similarity-compatible fields
 ```
 
-The default generic `VectorStore<KnowledgeIndexItem>` implementation is in-memory. FAQ and document-chunk embeddings are serialized in SQLite, then loaded into the shared process index under `faq:<id>` and `document:<chunkId>` namespaces. Each stored vector carries an embedding profile derived from provider, model, endpoint, and input-schema version; stale profiles are rebuilt atomically before the process index is replaced. This keeps local setup dependency-free while preventing vectors from different model configurations from being silently mixed.
+The asynchronous generic `VectorStore<KnowledgeIndexItem>` defaults to memory.
+FAQ and document-chunk embeddings are serialized in SQLite, then loaded into
+the shared process index under `faq:<id>` and `document:<chunkId>` namespaces.
+Each stored vector carries an embedding profile derived from provider, model,
+endpoint, and input-schema version; stale profiles are rebuilt atomically
+before the process index is replaced.
+
+When `VECTOR_STORE_PROVIDER=qdrant` is explicitly configured, the application
+uses the collection alias from deployment configuration. Qdrant payloads keep
+only knowledge identity/version/profile metadata; every vector candidate is
+batch-hydrated from SQLite and rejected if the current knowledge is missing,
+disabled, stale, or attached to an inactive source. A Qdrant timeout records a
+degraded trace and continues keyword/structured recall. It does not silently
+rebuild memory vectors. This keeps SQLite authoritative and the fresh-clone
+path dependency-free.
 
 FAQ remains a knowledge-source adapter rather than the permanent RAG boundary.
 TXT, Markdown, text-layer PDF, and DOCX now pass through the versioned
@@ -235,6 +253,18 @@ Docker exposes:
 
 The compose example uses `EMBED_PROVIDER=other`, so the project can start without paid model keys. The deterministic local path supports FAQ and document retrieval; document answers fall back to the highest-ranked source excerpt instead of inventing a summary.
 
+Start the optional pinned Qdrant backend and select it at deployment time:
+
+```bash
+VECTOR_STORE_PROVIDER=qdrant \
+QDRANT_URL=http://qdrant:6333 \
+docker compose --profile qdrant up --build
+```
+
+The provider is a deployment setting and requires an application restart.
+Retrieval Operations can atomically change the configured collection alias;
+it cannot edit the provider, URL, or API key.
+
 Start the optional CPU OCR worker with the Compose profile:
 
 ```bash
@@ -268,6 +298,11 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `LLM_PROVIDER` / `EMBED_PROVIDER` | `openai`, `openai-compatible`, or `other` |
 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | Chat model endpoint, environment-only credential, and model |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI-compatible embedding model |
+| `VECTOR_STORE_PROVIDER` | `memory` (default) or explicitly configured `qdrant`; changing it requires restart |
+| `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant REST endpoint and optional environment-only credential |
+| `QDRANT_COLLECTION_PREFIX` / `QDRANT_COLLECTION_ALIAS` | Versioned collection prefix and the alias used by the application |
+| `QDRANT_TIMEOUT_MS` | Bounded Qdrant request timeout; defaults to `5000` ms |
+| `RETRIEVAL_TRACE_RETENTION_DAYS` | Trace retention in days; defaults to `30`, accepted range `1`–`90` |
 | `DOCUMENT_UPLOAD_DIR` | Private document file directory; defaults to `./data/uploads` |
 | `OCR_SERVICE_URL` | Optional PaddleOCR/PP-StructureV3 worker base URL; when empty, existing FAQ and text-document features still work |
 | `OCR_SERVICE_TOKEN` | Optional bearer token sent only to the configured OCR worker |
@@ -296,6 +331,12 @@ npm run eval:triage
 ```
 
 The reports include FAQ Top1/Top3/no-match metrics, a 12-case document benchmark across TXT, Markdown, PDF, and DOCX, a six-case OCR contract benchmark covering screenshots, scan PDFs, tables, rotation/noise and low-quality gating, and deterministic triage coverage. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
+
+To exercise a real Qdrant instance separately from the default suite:
+
+```bash
+QDRANT_URL=http://localhost:6333 npm run test:qdrant
+```
 
 Document management is available at **Admin Console → Documents**. The detail
 dialog exposes quality/index status, structure metrics, warnings, a paginated
@@ -343,7 +384,9 @@ PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
 
-GitHub Actions runs `npm ci`, regression tests, Playwright E2E, and production build checks on pull requests and pushes to `main`.
+GitHub Actions runs `npm ci`, regression tests, Playwright E2E, production
+build checks, and an independent integration job against
+`qdrant/qdrant:v1.18.2` on pull requests and pushes to `main`.
 
 ---
 
@@ -363,8 +406,12 @@ data/          Local SQLite database files
 
 ## Current Limits
 
-- The default vector index is process-local memory and scans FAQ plus document-chunk embeddings, so it is suitable for demos and small knowledge collections.
-- Embeddings are stored as JSON in SQLite, not in a dedicated vector database.
+- The default vector index remains process-local memory and scans FAQ plus
+  document-chunk embeddings, so it is suitable for demos and small knowledge
+  collections. Qdrant is optional and must be selected explicitly.
+- SQLite keeps embedding vectors and remains the knowledge system of record.
+  Qdrant is a derived index; candidates are never trusted without SQLite
+  hydration.
 - Text-document parsing remains synchronous inside the Express process.
   Encrypted and damaged files are rejected. PNG, JPEG, WebP, and scan-only PDF
   sources use an optional external PaddleOCR worker through a durable SQLite
@@ -375,9 +422,17 @@ data/          Local SQLite database files
   first start and should remain on a trusted private network.
 - OCR extracts text and table structure only. VLM descriptions, raw-image
   answering, web ingestion, citation links, and page jumps are not included.
-- Document files remain global to the deployment; v0.3.1 does not add
-  tenant-separated knowledge bases or external vector storage.
-- `VectorStore` isolates local vector operations, but a network vector database still requires asynchronous contracts, health handling, and consistency tests.
+- Document files and Qdrant collections remain global to the deployment;
+  v0.3.2 does not add tenant-separated knowledge bases.
+- The backend provider cannot be changed at runtime. Qdrant failure keeps
+  keyword/structured retrieval but does not automatically fail over the
+  configured provider or rebuild memory vectors.
+- Old Qdrant collections are retained for rollback. Automatic cleanup,
+  snapshots, clustering, sparse/hybrid retrieval, and distributed index-job
+  leases are not included.
+- Retrieval traces are stored in SQLite and intentionally omit copied customer
+  questions, candidate content, credentials, and raw Qdrant responses. This is
+  not an OpenTelemetry platform.
 - Conflict detection is deliberately narrow: duplicate normalized direct-FAQ questions with different answers. Grounding thresholds are governed through the versioned Quality Lab rather than changed automatically.
 - Intent classification falls back to keyword rules when the LLM call fails.
 - Idempotency replay is scoped to one deployment and retained for 24 hours;
@@ -388,7 +443,10 @@ data/          Local SQLite database files
 - Optional LLM extraction has a two-second total budget and may improve only
   summaries, cited facts, and missing-information candidates. Deterministic
   priority, risk, queue, and next-step rules remain authoritative.
-- This is a pre-1.0 MVP foundation, not a production support platform. Add observability, stricter auth, backup strategy, and external vector storage before serious production use.
+- This is a pre-1.0 MVP foundation, not a complete production support
+  platform. Add stricter identity/RBAC, backup/disaster recovery,
+  multi-replica coordination, and infrastructure monitoring before serious
+  production use.
 
 ---
 
@@ -396,8 +454,7 @@ data/          Local SQLite database files
 
 The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
 
-- v0.3.1–v0.3.3: OCR/table/image knowledge, optional Qdrant with retrieval
-  traces, then bounded Agentic Retrieval behind a deterministic Grounding Gate.
+- v0.3.3: bounded Agentic Retrieval behind a deterministic Grounding Gate.
 - v0.3.4–v0.3.8: enterprise knowledge operations, mock-first read-only order
   tools, human collaboration, customer identity/memory and guarded actions.
 - v0.4.0: multi-knowledge-base and tenant boundaries, RBAC, audit, migration,

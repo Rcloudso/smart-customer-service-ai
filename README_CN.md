@@ -14,19 +14,19 @@
 
 **English version**: [README.md](README.md)
 
-开发版本：**v0.3.1（pre-1.0）**。最新公开发布版为 v0.3.1；在 1.0
+开发版本：**v0.3.2（pre-1.0）**。最新公开发布版为 v0.3.2；在 1.0
 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">
-    <img src="docs/demo/v0.3.1-preview.gif" width="880" alt="ResolveWeave v0.3.1 OCR 知识复核与可信回答演示">
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
+    <img src="docs/demo/v0.3.2-preview.gif" width="880" alt="ResolveWeave v0.3.2 Qdrant 索引激活、检索 Trace 与回滚演示">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.1/resolveweave-v0.3.1-demo.mp4">观看 OCR 知识复核演示（v0.3.1）</a>
-  · <a href="docs/releases/v0.3.1.md">v0.3.1 版本说明</a>
-  · <a href="docs/releases/v0.3.1-evidence.md">v0.3.1 版本验证证据</a>
+  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">观看检索运维演示（v0.3.2）</a>
+  · <a href="docs/releases/v0.3.2.md">v0.3.2 版本说明</a>
+  · <a href="docs/releases/v0.3.2-evidence.md">v0.3.2 版本验证证据</a>
 </p>
 
 ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
@@ -34,9 +34,9 @@ ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
 怎样携带有效上下文交给人工。
 
 当前版本已经把用户聊天、FAQ 与文档知识、混合检索、来源持久化、确定性
-Grounding 决策、结构化转人工、运营后台和可重复质量评测放在同一工程内。
-没有付费模型 Key 也可以启动基础路径；后续将演进到受限 Agentic Retrieval，
-但不会把答案放行或业务操作权限交给模型。
+Grounding 决策、结构化转人工、可选 Qdrant、检索 Trace、运营后台和可重复
+质量评测放在同一工程内。没有付费模型 Key 或 Qdrant 也可以启动基础路径；
+后续将演进到受限 Agentic Retrieval，但不会把答案放行或业务操作权限交给模型。
 
 [快速开始](#快速开始) · [为什么做这个项目](#为什么做这个项目) · [特性](#特性) · [架构](ARCHITECTURE.md) · [评测与调试](#评测与调试) · [路线图](ROADMAP.md)
 
@@ -60,7 +60,9 @@ ResolveWeave:
   Step 4: 返回并保存来源，或把高风险/冲突请求转人工
 ```
 
-管理员可以维护 FAQ，上传和管理文档，预览已索引切片，查看检索行为与会话记录，并在“知识审核”页面把答不好的问题沉淀成可复用 FAQ。
+管理员可以维护 FAQ，上传和管理文档，预览已索引切片，对比 memory/Qdrant
+质量，构建与激活 Qdrant 索引，查看检索 Trace 和会话记录，并在“知识审核”
+页面把答不好的问题沉淀成可复用 FAQ。
 
 当前版本适合学习、评测、演示和小规模预生产试用。项目刻意保留
 SQLite + 内存向量索引作为零基础设施路径，同时明确列出正式生产仍需补齐的
@@ -68,9 +70,9 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 
 ### 产品证据
 
-| Paddle / DeepSeek 对照 | Block 人工复核 | 可信回答来源 |
+| Quality 后端对比 | Qdrant 激活门禁 | 检索 Trace |
 | --- | --- | --- |
-| ![Paddle 权威结果与 DeepSeek 影子结果对照](docs/releases/assets/v0.3.1-ocr-comparison.jpg) | ![OCR Block 人工复核工作区](docs/releases/assets/v0.3.1-block-review.jpg) | ![带 OCR 来源证据的客户回答](docs/releases/assets/v0.3.1-chat-provenance.jpg) |
+| ![Quality Lab memory 与 Qdrant 目标](docs/releases/assets/v0.3.2-quality-backends.png) | ![带延迟确认的 Qdrant 激活门禁](docs/releases/assets/v0.3.2-activation-gate.png) | ![固定八阶段检索 Trace](docs/releases/assets/v0.3.2-retrieval-trace-desktop.png) |
 
 早期工程复盘：
 [用 AI 辅助开发构建 v0.2.6 文档 RAG 基础](docs/case-studies/ai-assisted-development-v0.2.6.md)。
@@ -97,9 +99,9 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 - **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
   Retrieval 分开交付，不进行一次性框架重写。
 
-| v0.3.1 已实现 | 下一阶段 — v0.3.2+ |
+| v0.3.2 已实现 | 下一阶段 — v0.3.3+ |
 | --- | --- |
-| 版本化结构入库、持久化 PaddleOCR 复核流程、可选 DeepSeek 影子对照，以及 v0.2.9 的 FAQ/RAG 基线 | 可选 Qdrant、检索 Trace、受限 Agentic Retrieval，之后再接 mock 业务工具 |
+| 可选 Qdrant、可恢复索引任务、Quality Lab 后端对比、alias 原子激活/回滚、检索 Trace，以及 v0.3.1 的 OCR 复核路径 | 受限 Agentic Retrieval、企业知识运营，之后再接 mock 业务工具 |
 
 完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
 
@@ -125,12 +127,13 @@ flowchart LR
 - **需复核的 OCR 入库** - PNG、JPEG、WebP 和扫描 PDF 进入持久化 PaddleOCR PP-StructureV3 队列；管理员检查、编辑 Block 后原子发布，并可启用不具发布权的 DeepSeek-OCR-2 影子对照。
 - **多知识源混合检索** - FAQ 与文档分别召回向量候选，再结合字段感知的关键词候选，由统一检索器通过分数感知的倒数排名融合（RRF）合并、去重并保持来源多样性。
 - **兼容意图分类** - 结构化输出依次尝试 `json_schema`、`json_object` 和经过严格校验的普通文本 JSON，最后才降级到确定性关键词规则。
-- **向量库接口抽象** - `VectorStore` 让默认部署保持简单，也方便后续接入 Qdrant 或 pgvector。
+- **可选 Qdrant 后端** - 异步 `VectorStore` 默认使用内存，并增加稳定 ID、安全元数据、健康/统计、SQLite 回查和明确关键词降级的 Qdrant 实现。
 - **更完整的 FAQ embedding** - embedding 文本由问题、回答和关键词共同组成，而不是只使用问题。
-- **索引状态管理** - 后台展示启用条目、已索引条目、缺失 embedding、向量维度、上次重建时间和索引错误。
+- **可恢复索引运维** - 从 SQLite 分批构建版本化 collection，校验指纹/profile/维度/数量，通过 alias 原子激活，并在保留旧 collection 的前提下回滚。
 - **检索调试面板** - 后台可以查看命中条目、source、similarity、keywordScore、vectorScore 和排序原因。
 - **检索评测能力** - FAQ 和文档固定评测集输出排序指标、分数/来源分布、失败样例，以及 semantic-v1 与仅结构切片的对比。
-- **RAG 质量实验室** - 管理员可维护版本化评测集、比较确定性检索与 Grounding 策略、下钻失败样例，并通过门禁发布或回滚不可变运行策略。
+- **RAG 质量实验室** - 管理员可维护版本化评测集，在 memory 与 ready Qdrant job 上比较同一检索/Grounding 策略、下钻失败样例，并通过门禁发布或回滚不可变运行策略。
+- **检索运维与 Trace** - 独立双语响应式后台展示后端健康、索引任务、激活门禁和固定八阶段 Trace，并限制候选数量和敏感内容。
 - **结构化转人工与分流** - 每条新转人工记录都会保存可追溯交接包，包括确定性优先级、风险标记、建议队列、带消息引用的事实、缺失信息和检索证据；管理员可在独立的双语只读队列中查看。
 - **中英文词典** - 固定 UI 文案从可编辑的中英文词典读取，减少硬编码散落在组件里。
 - **暗/亮主题切换** - 用户端和后台都支持持久化主题偏好。
@@ -156,7 +159,17 @@ Query
   +-- 返回兼容 similarity 字段的匹配结果
 ```
 
-默认泛型 `VectorStore<KnowledgeIndexItem>` 是内存实现。FAQ 与文档切片 embedding 会序列化存入 SQLite，再以 `faq:<id>` 和 `document:<chunkId>` 命名空间加载到共享进程索引。每条向量同时保存由 provider、模型、endpoint 和输入结构版本生成的 embedding profile；发现旧 profile 时先原子重建持久化向量，再替换进程索引，避免不同模型配置的向量被静默混用。
+异步泛型 `VectorStore<KnowledgeIndexItem>` 默认使用内存实现。FAQ 与文档切片
+embedding 会序列化存入 SQLite，再以 `faq:<id>` 和
+`document:<chunkId>` 命名空间加载到共享进程索引。每条向量同时保存由
+provider、模型、endpoint 和输入结构版本生成的 embedding profile；发现旧
+profile 时先原子重建持久化向量，再替换进程索引。
+
+显式配置 `VECTOR_STORE_PROVIDER=qdrant` 后，应用使用部署配置指定的 collection
+alias。Qdrant payload 只保存知识身份、版本和 profile；每个向量候选都要批量
+回查 SQLite，缺失、停用、旧版本或来源失效的候选直接丢弃。Qdrant 超时会记录
+degraded Trace，并继续关键词/结构化召回，不会静默重建内存向量。因此 SQLite
+始终权威，fresh-clone 仍不依赖外部基础设施。
 
 FAQ 仍然只是知识来源适配器，不是永久的 RAG 边界。TXT、Markdown、含文本层
 PDF 与 DOCX 现在统一进入
@@ -222,6 +235,17 @@ Docker 默认暴露：
 
 Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时也能启动。确定性本地路径支持 FAQ 与文档检索；文档回答会回退到最高分原文片段。
 
+通过部署配置选择可选、固定版本的 Qdrant 后端：
+
+```bash
+VECTOR_STORE_PROVIDER=qdrant \
+QDRANT_URL=http://qdrant:6333 \
+docker compose --profile qdrant up --build
+```
+
+后端类型变更需要重启应用。“检索运维”可以原子切换配置好的 collection
+alias，但不能修改 provider、URL 或 API Key。
+
 通过 Compose profile 启动可选 CPU OCR Worker：
 
 ```bash
@@ -253,6 +277,11 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `LLM_PROVIDER` / `EMBED_PROVIDER` | `openai`、`openai-compatible` 或 `other` |
 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | 对话模型地址、仅环境注入的凭据和模型名 |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI 兼容 embedding 模型 |
+| `VECTOR_STORE_PROVIDER` | `memory`（默认）或显式配置的 `qdrant`；变更后需重启 |
+| `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant REST 地址和可选、仅环境注入的凭据 |
+| `QDRANT_COLLECTION_PREFIX` / `QDRANT_COLLECTION_ALIAS` | 版本化 collection 前缀与应用使用的 alias |
+| `QDRANT_TIMEOUT_MS` | Qdrant 请求超时，默认 `5000` 毫秒 |
+| `RETRIEVAL_TRACE_RETENTION_DAYS` | Trace 保留天数，默认 `30`，范围 `1`–`90` |
 | `DOCUMENT_UPLOAD_DIR` | 私有文档文件目录，默认 `./data/uploads` |
 | `OCR_SERVICE_URL` | 可选 PaddleOCR/PP-StructureV3 Worker 根地址；留空时原有 FAQ 和文本文档能力仍可运行 |
 | `OCR_SERVICE_TOKEN` | 可选 Bearer Token，只发送给已配置的 OCR Worker |
@@ -281,6 +310,12 @@ npm run eval:triage
 ```
 
 评测包含 FAQ 的 Top1/Top3/无匹配指标、覆盖 TXT/Markdown/PDF/DOCX 的 12 条文档用例、覆盖截图/扫描 PDF/表格/旋转噪声/低质量门禁的 6 条 OCR 契约用例，以及确定性分流用例。文档评测会对比 `semantic-v1` 与仅结构切片基线，并要求 Top3 100%、MRR 不下降。
+
+需要独立验证真实 Qdrant 时运行：
+
+```bash
+QDRANT_URL=http://localhost:6333 npm run test:qdrant
+```
 
 文档管理入口位于 **管理后台 → 文档知识**。详情 Dialog 会展示质量/索引状态、
 结构指标、警告、分页 Block 检查、八个处理阶段和已发布切片。单文件上限
@@ -326,7 +361,8 @@ PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
 
-GitHub Actions 会在 PR 和推送到 `main` 时运行 `npm ci`、回归测试、Playwright E2E 和生产构建检查。
+GitHub Actions 会在 PR 和推送到 `main` 时运行 `npm ci`、回归测试、
+Playwright E2E、生产构建，以及使用 `qdrant/qdrant:v1.18.2` 的独立集成任务。
 
 ---
 
@@ -346,8 +382,10 @@ data/          本地 SQLite 数据库文件
 
 ## 当前限制
 
-- 默认向量索引在进程内存中，全量遍历 FAQ 与文档切片 embedding，适合 Demo 和小规模知识库，不适合大规模检索。
-- embedding 以 JSON 形式存储在 SQLite 中，没有使用专门的向量数据库。
+- 默认向量索引仍在进程内存中，全量遍历 FAQ 与文档切片 embedding，适合
+  Demo 和小规模知识库；Qdrant 是显式选择的可选后端。
+- SQLite 保存 embedding 并始终是知识权威源。Qdrant 只是派生索引，候选必须
+  回查 SQLite 后才能成为证据。
 - 文本文档解析仍同步运行在 Express 进程内，加密和损坏文件会被拒绝。PNG、
   JPEG、WebP 和扫描 PDF 通过可选 PaddleOCR Worker 进入 SQLite 持久化队列；
   管理员发布完整复核草稿前不会建立索引。
@@ -355,15 +393,21 @@ data/          本地 SQLite 数据库文件
   首次启动会下载较大的模型，应部署在可信私有网络中。
 - OCR 只提取文本与表格结构；VLM 图片描述、直接用原图回答、网页采集、引用
   跳转和页码跳转仍未包含。
-- 文档仍属于单一全局知识库；v0.3.1 不包含多租户分库或外部向量存储。
-- `VectorStore` 隔离了本地向量操作，但接入网络向量数据库仍需异步契约、健康检查和一致性测试。
+- 文档和 Qdrant collection 仍属于单一全局知识库；v0.3.2 不包含多租户分库。
+- 后端 provider 不能在运行时切换。Qdrant 故障时继续关键词/结构化召回，
+  但不会自动切换 provider 或重建内存向量。
+- 旧 Qdrant collection 为回滚而保留；自动清理、快照、集群、
+  sparse/hybrid 检索和分布式索引任务租约尚未包含。
+- 检索 Trace 存入 SQLite，并刻意不复制客户问题、候选正文、凭据和原始
+  Qdrant 响应；它不是 OpenTelemetry 平台。
 - 冲突检测刻意限制为“归一化后问题相同、答案不同”的直达 FAQ；Grounding 阈值通过版本化质量实验室治理，不会自动切换。
 - LLM 意图识别失败时会回退到关键词规则。
 - 幂等响应仅在单个部署范围内保留 24 小时；multipart 上传依赖各自工作流的重复检查，
   不使用通用响应重放。
 - v0.2.9 的转人工分流只读，不包含人工认领、分配、备注、解决动作、实时接管或业务工具。
 - 可选 LLM 提取共享 2 秒总预算，只能改进摘要、带引用事实和缺失信息候选；优先级、风险、队列和下一步始终由确定性规则控制。
-- 这是一个 pre-1.0 MVP 基座，不是完整生产客服平台。正式生产前应补充可观测性、更严格的鉴权、备份策略和外部向量存储。
+- 这是一个 pre-1.0 MVP 基座，不是完整生产客服平台。正式生产前还应补充
+  更严格的身份/RBAC、备份与灾难恢复、多副本协调和基础设施监控。
 
 ---
 
@@ -371,8 +415,7 @@ data/          本地 SQLite 数据库文件
 
 有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
 
-- v0.3.2–v0.3.3：带检索 Trace 的可选 Qdrant，再实现由确定性
-  Grounding Gate 约束的 Agentic Retrieval。
+- v0.3.3：实现由确定性 Grounding Gate 约束的受限 Agentic Retrieval。
 - v0.3.4–v0.3.8：企业知识运营、mock 优先的订单只读工具、人工协作、
   客户身份/记忆和受控写操作。
 - v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份恢复与生产可观测性。

@@ -56,3 +56,33 @@ jobs:
         run: EMBED_PROVIDER=other npm run build
         env:
           JWT_SECRET: test-secret-123
+
+  qdrant-integration:
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.18.2
+        ports:
+          - 6333:6333
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for Qdrant
+        run: curl --fail --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:6333/readyz
+
+      - name: Run Qdrant integration
+        run: npm run test:qdrant
+        env:
+          QDRANT_URL: http://127.0.0.1:6333
+          JWT_SECRET: test-secret-123

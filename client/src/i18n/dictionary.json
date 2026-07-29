@@ -419,6 +419,10 @@
     "zh": "取消",
     "en": "Cancel"
   },
+  "common.confirm": {
+    "zh": "确认",
+    "en": "Confirm"
+  },
   "common.close": {
     "zh": "关闭",
     "en": "Close"

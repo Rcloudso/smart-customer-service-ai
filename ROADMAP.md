@@ -15,10 +15,11 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.2.8 | Released | RAG Quality Lab | 用版本化评测集比较检索与 Grounding 策略，并通过质量门禁安全发布和回滚。 |
 | v0.2.9 | Released | Structured Escalation & Triage | 以结构化交接包、确定性优先级和只读双语分流页承接转人工流程。 |
 | v0.3.0 | Released | Structure-Aware Ingestion Foundation | 统一结构表示、质量门禁、结构切片、处理时间线和显式影子重处理已公开发布。 |
-| v0.3.1 | Current | Multimodal Knowledge Review | PNG/JPEG/WebP/扫描 PDF 经持久化 PaddleOCR 队列进入可编辑复核草稿；可选 DeepSeek 影子对照，发布后保留引擎、页码和 Block 来源。 |
+| v0.3.1 | Released | Multimodal Knowledge Review | PNG/JPEG/WebP/扫描 PDF 经持久化 PaddleOCR 队列进入可编辑复核草稿；可选 DeepSeek 影子对照，发布后保留引擎、页码和 Block 来源。 |
+| v0.3.2 | Current | Qdrant & Retrieval Observability | 可选 Qdrant、可恢复索引任务、Quality Lab 后端影子评测、alias 原子激活/回滚和八阶段检索 Trace 形成独立运维闭环。 |
 
-v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
-与文档知识、混合检索、转人工记录、满意度、知识审核、会话分析、双语后台、
+v0.3.2 已经形成可运行且带回答边界、结构化人工交接和检索运维的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
+与文档知识、混合检索、可选 Qdrant、可恢复索引、检索 Trace、转人工记录、满意度、知识审核、会话分析、双语后台、
 可信回答决策、来源持久化、接口幂等、防重复提交、Docker、检索评测和 Playwright 回归在同一工程内闭环。后续版本不再以增加
 “另一个聊天 Demo”为目标，而是先补齐企业知识工程与 Agentic Retrieval，再扩展业务处理和人工协作。
 
@@ -26,7 +27,6 @@ v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规�
 
 | Version | Theme | Intended outcome |
 | --- | --- | --- |
-| v0.3.2 | Qdrant & Retrieval Observability | 将 Qdrant 作为可选生产向量后端，保留本地回退，并提供迁移、混合检索、检索预算和全链路 Trace。 |
 | v0.3.3 | Bounded Agentic Retrieval | LLM 在预算内选择、组合和重试检索工具；确定性 Grounding Gate 决定引用、拒答、转人工和答案放行。 |
 | v0.3.4 | Enterprise Knowledge Operations | 增加可观测入库任务、文档版本、重建索引、失败恢复、白名单远程来源和定时刷新。 |
 | v0.3.5 | Read-Only Customer Service Tools | 以 mock 订单/物流查询验证类型化工具和外部订单系统接口，不执行业务写操作。 |
@@ -90,12 +90,16 @@ v0.2.9 已经形成可运行且带回答边界、结构化人工交接的小规�
 
 ### v0.3.2 — Qdrant & Retrieval Observability
 
-- Qdrant 作为 `VectorStore` 后的第一类生产后端；内存实现继续服务
-  fresh-clone 和无基础设施演示。
-- 保留关键词/结构化检索，明确向量、关键词、融合、重排和最终上下文预算。
-- 为已有 FAQ/文档向量提供可恢复迁移、幂等重建、健康检查和回滚。
-- 持久化来源、各阶段得分、延迟、失败原因和最终证据集，并通过 Quality Lab
-  做影子对比后再切换默认生产路径。
+- Qdrant 已作为异步 `VectorStore` 后的可选生产后端；内存实现继续服务
+  fresh-clone 和无基础设施演示，SQLite 始终是知识权威源。
+- 保留关键词/结构化检索；Qdrant 超时或不可用会记录 `degraded` Trace，
+  不静默重建内存向量。
+- 版本化 collection 通过固定批次、知识指纹和检查点支持中断恢复；就绪前
+  校验 profile、维度、点数和当前知识指纹。
+- Quality Lab 可用同一数据集和策略影子对比 memory/Qdrant；质量门禁通过后
+  原子切换 alias，并可回滚到上一已验证 collection。
+- 独立双语检索运维页展示健康、索引任务和固定八阶段 Trace；Trace 只保存
+  有界安全元数据，默认保留 30 天。
 
 ### v0.3.3 — Bounded Agentic Retrieval
 

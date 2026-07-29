@@ -17,6 +17,13 @@ services:
       DB_PATH: /app/data/customer-service.db
       ALLOWED_ORIGINS: http://localhost:5173
       EMBED_PROVIDER: other
+      VECTOR_STORE_PROVIDER: ${VECTOR_STORE_PROVIDER:-memory}
+      QDRANT_URL: ${QDRANT_URL:-}
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_COLLECTION_PREFIX: ${QDRANT_COLLECTION_PREFIX:-resolveweave_knowledge}
+      QDRANT_COLLECTION_ALIAS: ${QDRANT_COLLECTION_ALIAS:-resolveweave_knowledge_active}
+      QDRANT_TIMEOUT_MS: ${QDRANT_TIMEOUT_MS:-5000}
+      RETRIEVAL_TRACE_RETENTION_DAYS: ${RETRIEVAL_TRACE_RETENTION_DAYS:-30}
       OCR_SERVICE_URL: ${OCR_SERVICE_URL:-}
       OCR_SERVICE_TOKEN: ${OCR_SERVICE_TOKEN:-}
     volumes:
@@ -33,6 +40,17 @@ services:
     ports:
       - "127.0.0.1:8001:8001"
 
+  qdrant:
+    profiles: ["qdrant"]
+    image: qdrant/qdrant:v1.18.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - resolve-weave-qdrant:/qdrant/storage
+
 volumes:
   resolve-weave-data:
     name: ${RESOLVE_WEAVE_DATA_VOLUME:-resolve-weave-data}
+  resolve-weave-qdrant:
+    name: ${RESOLVE_WEAVE_QDRANT_VOLUME:-resolve-weave-qdrant}

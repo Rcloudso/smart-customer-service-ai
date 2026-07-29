@@ -481,6 +481,8 @@ export function RetrievalOpsPage(): React.ReactElement {
           : t('retrievalOps.confirmRollback')}
         confirmOnEnter
         confirmBtn={{
+          content: t('common.confirm'),
+          tag: 'button',
           loading: actionLoading,
           disabled: pendingAction?.kind === 'activate'
             && (
