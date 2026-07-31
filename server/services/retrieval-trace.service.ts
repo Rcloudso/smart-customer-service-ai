@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { config } from '../config';
 import { getDatabase } from '../db';
 import { RetrievalTraceRepo } from '../db/repos/retrieval-trace.repo';
+import { RetrievalTraceDetailRepo } from '../db/repos/retrieval-trace-detail.repo';
 import type { RetrievalTrace, RetrievalTraceStatus } from '../types/retrieval-ops';
 import { NotFoundError } from '../utils/errors';
 
@@ -12,15 +13,17 @@ interface RetrievalTraceServiceOptions {
 
 export class RetrievalTraceService {
   private readonly repo: RetrievalTraceRepo;
+  private readonly detailRepo: RetrievalTraceDetailRepo;
   private readonly retentionDays: number;
   private readonly now: () => Date;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
-    private readonly db: Database.Database = getDatabase(),
+    db: Database.Database = getDatabase(),
     options: RetrievalTraceServiceOptions = {},
   ) {
     this.repo = new RetrievalTraceRepo(db);
+    this.detailRepo = new RetrievalTraceDetailRepo(db);
     this.retentionDays = options.retentionDays ?? config.vectorStore.traceRetentionDays;
     this.now = options.now ?? (() => new Date());
   }
@@ -62,13 +65,10 @@ export class RetrievalTraceService {
     }>;
   } {
     const trace = this.getTrace(id);
-    const messageRows = this.db.prepare(`
-      SELECT id, content FROM messages
-      WHERE id IN (?, ?)
-    `).all(
+    const messageRows = this.detailRepo.findMessages([
       trace.userMessageId,
       trace.assistantMessageId ?? '',
-    ) as Array<{ id: string; content: string }>;
+    ]);
     const byMessageId = new Map(messageRows.map((row) => [row.id, row]));
     const candidateKeys = new Map<string, { knowledgeType: 'faq' | 'document'; id: string }>();
     for (const stage of trace.stages) {
@@ -85,9 +85,15 @@ export class RetrievalTraceService {
     const documentIds = [...candidateKeys.values()]
       .filter((item) => item.knowledgeType === 'document')
       .map((item) => item.id);
-    const knowledge = [
-      ...this.resolveFaqs(faqIds),
-      ...this.resolveDocumentChunks(documentIds),
+    const knowledge: Array<{
+      knowledgeType: 'faq' | 'document';
+      knowledgeId: string;
+      title: string;
+      content: string;
+      available: boolean;
+    }> = [
+      ...this.detailRepo.findFaqs(faqIds),
+      ...this.detailRepo.findDocumentChunks(documentIds),
     ];
     const resolved = new Set(knowledge.map((item) => (
       `${item.knowledgeType}:${item.knowledgeId}`
@@ -136,52 +142,6 @@ export class RetrievalTraceService {
       this.now().getTime() - this.retentionDays * 24 * 60 * 60 * 1000,
     ).toISOString();
     return this.repo.deleteBefore(cutoff);
-  }
-
-  private resolveFaqs(ids: string[]): Array<{
-    knowledgeType: 'faq';
-    knowledgeId: string;
-    title: string;
-    content: string;
-    available: boolean;
-  }> {
-    if (ids.length === 0) return [];
-    const unique = [...new Set(ids)].slice(0, 160);
-    const rows = this.db.prepare(`
-      SELECT id, question, answer FROM faq_entries
-      WHERE id IN (${unique.map(() => '?').join(', ')})
-    `).all(...unique) as Array<{ id: string; question: string; answer: string }>;
-    return rows.map((row) => ({
-      knowledgeType: 'faq',
-      knowledgeId: row.id,
-      title: row.question,
-      content: row.answer,
-      available: true,
-    }));
-  }
-
-  private resolveDocumentChunks(ids: string[]): Array<{
-    knowledgeType: 'document';
-    knowledgeId: string;
-    title: string;
-    content: string;
-    available: boolean;
-  }> {
-    if (ids.length === 0) return [];
-    const unique = [...new Set(ids)].slice(0, 160);
-    const rows = this.db.prepare(`
-      SELECT chunk.id, document.file_name, chunk.content
-      FROM document_chunks chunk
-      JOIN documents document ON document.id = chunk.document_id
-      WHERE chunk.id IN (${unique.map(() => '?').join(', ')})
-    `).all(...unique) as Array<{ id: string; file_name: string; content: string }>;
-    return rows.map((row) => ({
-      knowledgeType: 'document',
-      knowledgeId: row.id,
-      title: row.file_name,
-      content: row.content,
-      available: true,
-    }));
   }
 }
 

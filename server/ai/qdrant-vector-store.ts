@@ -1,5 +1,5 @@
 import { QdrantClient, withHeaders } from '@qdrant/js-client-rest';
-import { v5 as uuidv5 } from 'uuid';
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import type { KnowledgeType } from '../types/ai';
 import type {
   VectorRecord,
@@ -47,6 +47,13 @@ export interface QdrantVectorStoreOptions {
   client: QdrantClientLike;
   collectionAlias: string;
   runWithHeaders?: QdrantHeaderRunner;
+}
+
+export class QdrantRequestError extends Error {
+  constructor(readonly code: 'qdrant_timeout' | 'qdrant_request_failed') {
+    super(code === 'qdrant_timeout' ? 'Qdrant request timed out' : 'Qdrant request failed');
+    this.name = 'QdrantRequestError';
+  }
 }
 
 export class QdrantVectorStore implements VectorStore {
@@ -169,8 +176,17 @@ export class QdrantVectorStore implements VectorStore {
   }
 
   private async withTrace<T>(traceId: string | undefined, operation: () => Promise<T>): Promise<T> {
-    if (!traceId) return operation();
-    return this.runWithHeaders({ 'x-request-id': traceId }, operation);
+    try {
+      return await this.runWithHeaders(
+        { 'x-request-id': traceId ?? uuidv4() },
+        operation,
+      );
+    } catch (error) {
+      if (error instanceof QdrantRequestError) throw error;
+      throw new QdrantRequestError(isTimeoutError(error)
+        ? 'qdrant_timeout'
+        : 'qdrant_request_failed');
+    }
   }
 }
 
@@ -184,12 +200,23 @@ export function createQdrantVectorStore(params: {
     url: params.url,
     apiKey: params.apiKey || undefined,
     timeout: params.timeoutMs,
-    checkCompatibility: true,
+    checkCompatibility: false,
   });
   return new QdrantVectorStore({
     client: client as QdrantClientLike,
     collectionAlias: params.collectionAlias,
   });
+}
+
+function isTimeoutError(error: unknown): boolean {
+  const name = error instanceof Error ? error.name.toLowerCase() : '';
+  const code = typeof error === 'object' && error
+    ? String((error as { code?: unknown }).code ?? '').toLowerCase()
+    : '';
+  return name.includes('timeout')
+    || name.includes('abort')
+    || code.includes('timeout')
+    || code === 'etimedout';
 }
 
 function pointId(key: string): string {

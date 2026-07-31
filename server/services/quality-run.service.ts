@@ -35,6 +35,8 @@ import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { QualityLabService, getQualityLabService } from './quality-lab.service';
 
+const QUALITY_SEARCH_CONCURRENCY = 8;
+
 interface QualityRunServiceOptions {
   qualityLab?: QualityLabService;
   searchCurrent?: (query: string) => Promise<RetrievalResult[]>;
@@ -305,11 +307,9 @@ export class QualityRunService {
       const candidates = [];
       let progress = 0;
       for (const target of run.backendTargets) {
-        const batchStarted = performance.now();
-        const currentCandidates = currentEntries.length > 0
+        const currentResults = currentEntries.length > 0
           ? await this.searchTargetBatch(target, currentQueries, queryEmbeddings)
           : [];
-        const batchLatency = performance.now() - batchStarted;
         let currentIndex = 0;
         const retrieved: RetrievedQualityCase[] = [];
         for (const { version, testCase } of entries) {
@@ -318,15 +318,17 @@ export class QualityRunService {
             return;
           }
           const fixtureStarted = performance.now();
-          const targetCandidates = version.targetKind === 'fixture'
-            ? qualityFixtureCandidates(testCase)
-            : currentCandidates[currentIndex++] ?? [];
+          const currentResult = version.targetKind === 'current'
+            ? currentResults[currentIndex++]
+            : undefined;
+          const targetCandidates = currentResult?.candidates
+            ?? qualityFixtureCandidates(testCase);
           retrieved.push({
             testCase,
             candidates: targetCandidates,
             latencyMs: version.targetKind === 'fixture'
               ? Number((performance.now() - fixtureStarted).toFixed(3))
-              : Number((batchLatency / Math.max(currentEntries.length, 1)).toFixed(3)),
+              : currentResult?.latencyMs ?? 0,
           });
           progress += 1;
           this.repo.updateProgress(run.id, progress);
@@ -342,7 +344,7 @@ export class QualityRunService {
       this.repo.saveCompleted(run.id, candidates, this.now().toISOString());
     } catch (error) {
       logger.error({
-        err: error,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
         runId: run.id,
       }, 'Quality evaluation run failed');
       this.repo.markFailed(
@@ -358,10 +360,7 @@ export class QualityRunService {
   }
 
   private readPolicyGrid(runId: string): RetrievalPolicyConfig[] {
-    const row = this.db.prepare(
-      'SELECT policy_grid FROM quality_runs WHERE id = ?',
-    ).get(runId) as { policy_grid: string };
-    return JSON.parse(row.policy_grid) as RetrievalPolicyConfig[];
+    return this.repo.getPolicyGrid(runId);
   }
 
   private validatePolicies(policies: RetrievalPolicyConfig[]): RetrievalPolicyConfig[] {
@@ -413,26 +412,43 @@ export class QualityRunService {
     target: QualityBackendTarget,
     queries: string[],
     embeddings: number[][],
-  ): Promise<RetrievalResult[][]> {
+  ): Promise<Array<{ candidates: RetrievalResult[]; latencyMs: number }>> {
+    let searchOne: (query: string, embedding: number[]) => Promise<RetrievalResult[]>;
     if (this.searchBackendBatch) {
-      return this.searchBackendBatch(target, queries, embeddings);
+      searchOne = async (query, embedding) => (
+        (await this.searchBackendBatch!(target, [query], [embedding]))[0] ?? []
+      );
+    } else if (target.provider === 'memory' && this.usesInjectedSearch) {
+      searchOne = async (query) => (await this.searchCurrentBatch([query]))[0] ?? [];
+    } else {
+      const vectorStore = target.provider === 'memory'
+        ? new InMemoryVectorStore()
+        : this.qdrantStoreForJob(target.indexJobId);
+      const retriever = new KnowledgeRetriever(
+        vectorStore,
+        async (texts) => (await getLLMClient().embed(texts)).map((result) => result.embedding),
+        [
+          new FaqKnowledgeAdapter(new FaqRepo(this.db)),
+          new DocumentKnowledgeAdapter(new DocumentRepo(this.db)),
+        ],
+      );
+      await retriever.initialize();
+      searchOne = async (query, embedding) => (
+        await retriever.searchCandidatesBatchWithEmbeddings([query], [embedding], 100)
+      )[0] ?? [];
     }
-    if (target.provider === 'memory' && this.usesInjectedSearch) {
-      const injected = this.searchCurrentBatch;
-      if (injected) return injected(queries);
-    }
-    const vectorStore = target.provider === 'memory'
-      ? new InMemoryVectorStore()
-      : this.qdrantStoreForJob(target.indexJobId);
-    const retriever = new KnowledgeRetriever(
-      vectorStore,
-      async (texts) => (await getLLMClient().embed(texts)).map((result) => result.embedding),
-      [
-        new FaqKnowledgeAdapter(new FaqRepo(this.db)),
-        new DocumentKnowledgeAdapter(new DocumentRepo(this.db)),
-      ],
+    return mapWithConcurrency(
+      queries,
+      QUALITY_SEARCH_CONCURRENCY,
+      async (query, index) => {
+        const started = performance.now();
+        const candidates = await searchOne(query, embeddings[index]);
+        return {
+          candidates,
+          latencyMs: Number((performance.now() - started).toFixed(3)),
+        };
+      },
     );
-    return retriever.searchCandidatesBatchWithEmbeddings(queries, embeddings, 100);
   }
 
   private qdrantStoreForJob(indexJobId: string): QdrantVectorStore {
@@ -504,6 +520,27 @@ export class QualityRunService {
       this.draining = false;
     }
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  work: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await work(values[index], index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 export function qualityFixtureCandidates(testCase: QualityCase): RetrievalResult[] {

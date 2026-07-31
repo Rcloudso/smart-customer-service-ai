@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { QdrantClient } from '@qdrant/js-client-rest';
+import { QdrantClient, withHeaders } from '@qdrant/js-client-rest';
 import { createQdrantVectorStore } from '../ai/qdrant-vector-store';
 import { InMemoryVectorStore, type VectorStore } from '../ai/vector-store';
 
@@ -18,25 +18,29 @@ const client = new QdrantClient({
   url: qdrantUrl,
   apiKey: process.env.QDRANT_API_KEY || undefined,
   timeout: 10_000,
-  checkCompatibility: true,
+  checkCompatibility: false,
 });
+const traced = <T>(operation: () => Promise<T>): Promise<T> => withHeaders(
+  { 'x-request-id': `qdrant-ci-${randomUUID()}` },
+  operation,
+);
 
 async function main(): Promise<void> {
   try {
-    await client.createCollection(firstCollection, {
+    await traced(() => client.createCollection(firstCollection, {
       vectors: { size: 4, distance: 'Cosine' },
-    });
-    await client.createCollection(secondCollection, {
+    }));
+    await traced(() => client.createCollection(secondCollection, {
       vectors: { size: 4, distance: 'Cosine' },
-    });
-    await client.updateCollectionAliases({
+    }));
+    await traced(() => client.updateCollectionAliases({
       actions: [{
         create_alias: {
           alias_name: alias,
           collection_name: firstCollection,
         },
       }],
-    });
+    }));
 
     const store = createQdrantVectorStore({
       url: qdrantUrl,
@@ -103,11 +107,11 @@ async function main(): Promise<void> {
     assert.equal(stats.embeddingDimensions, 4);
     assert.equal((await store.health()).status, 'healthy');
 
-    const payload = await client.scroll(alias, {
+    const payload = await traced(() => client.scroll(alias, {
       limit: 10,
       with_payload: true,
       with_vector: false,
-    });
+    }));
     assert.equal(payload.points.length, 2);
     for (const point of payload.points) {
       assert.deepEqual(
@@ -116,7 +120,7 @@ async function main(): Promise<void> {
       );
     }
 
-    await client.updateCollectionAliases({
+    await traced(() => client.updateCollectionAliases({
       actions: [
         { delete_alias: { alias_name: alias } },
         {
@@ -126,8 +130,8 @@ async function main(): Promise<void> {
           },
         },
       ],
-    });
-    const aliases = await client.getAliases();
+    }));
+    const aliases = await traced(() => client.getAliases());
     assert.equal(
       aliases.aliases.find((entry) => entry.alias_name === alias)?.collection_name,
       secondCollection,
@@ -140,8 +144,8 @@ async function main(): Promise<void> {
       embeddingProfile: 'integration-v1',
       embedding: [0, 0, 1, 0],
     }], 'qdrant-integration-alias-switch');
-    assert.equal((await client.getCollection(secondCollection)).points_count, 1);
-    assert.equal((await client.getCollection(firstCollection)).points_count, 2);
+    assert.equal((await traced(() => client.getCollection(secondCollection))).points_count, 1);
+    assert.equal((await traced(() => client.getCollection(firstCollection))).points_count, 2);
 
     await store.delete(['faq:after-alias-switch'], 'qdrant-integration-delete');
     assert.equal((await store.stats()).indexedCount, 0);
@@ -149,8 +153,8 @@ async function main(): Promise<void> {
   } finally {
     await deleteAliasIfPresent();
     await Promise.allSettled([
-      client.deleteCollection(firstCollection),
-      client.deleteCollection(secondCollection),
+      traced(() => client.deleteCollection(firstCollection)),
+      traced(() => client.deleteCollection(secondCollection)),
     ]);
   }
 }
@@ -192,17 +196,22 @@ function percentile(values: number[], ratio: number): number {
 
 async function deleteAliasIfPresent(): Promise<void> {
   try {
-    const aliases = await client.getAliases();
+    const aliases = await traced(() => client.getAliases());
     if (!aliases.aliases.some((entry) => entry.alias_name === alias)) return;
-    await client.updateCollectionAliases({
+    await traced(() => client.updateCollectionAliases({
       actions: [{ delete_alias: { alias_name: alias } }],
-    });
+    }));
   } catch {
     // Preserve the original integration failure; unique collections are CI-only.
   }
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error({
+    errorName: error instanceof Error ? error.name : 'UnknownError',
+    errorCode: typeof error === 'object' && error
+      ? String((error as { code?: unknown }).code ?? 'qdrant_integration_failed')
+      : 'qdrant_integration_failed',
+  });
   process.exit(1);
 });

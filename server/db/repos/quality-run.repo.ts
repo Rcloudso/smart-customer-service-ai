@@ -99,26 +99,41 @@ export class QualityRunRepo {
         candidateKey: caseRow.candidate_key,
         actualAnswerMode: caseRow.actual_answer_mode,
         actualGroundingStatus: caseRow.actual_grounding_status,
-        sources: JSON.parse(caseRow.sources) as QualityCaseResult['sources'],
+        sources: parseJson(caseRow.sources, []),
         latencyMs: caseRow.latency_ms,
         passed: Boolean(caseRow.passed),
         failureReason: caseRow.failure_reason,
       });
       casesByCandidate.set(caseRow.candidate_key, cases);
     }
-    const candidates: QualityCandidateResult[] = candidateRows.map((candidate) => ({
-      key: candidate.candidate_key,
-      backendTarget: JSON.parse(candidate.backend_target) as QualityBackendTarget,
-      policy: JSON.parse(candidate.policy_config) as RetrievalPolicyConfig,
-      metrics: JSON.parse(candidate.metrics) as QualityCandidateResult['metrics'],
-      recommended: Boolean(candidate.recommended),
-      cases: casesByCandidate.get(candidate.candidate_key) ?? [],
-    }));
+    const candidates: QualityCandidateResult[] = candidateRows.flatMap((candidate) => {
+      const backendTarget = parseJson<QualityBackendTarget | null>(
+        candidate.backend_target,
+        null,
+      );
+      const policy = parseJson<RetrievalPolicyConfig | null>(candidate.policy_config, null);
+      const metrics = parseJson<QualityCandidateResult['metrics'] | null>(
+        candidate.metrics,
+        null,
+      );
+      if (!backendTarget || !policy || !metrics) return [];
+      return [{
+        key: candidate.candidate_key,
+        backendTarget,
+        policy,
+        metrics,
+        recommended: Boolean(candidate.recommended),
+        cases: casesByCandidate.get(candidate.candidate_key) ?? [],
+      }];
+    });
     return {
       id: row.id,
-      datasetVersionIds: JSON.parse(row.dataset_version_ids) as string[],
-      policies: JSON.parse(row.policy_grid) as RetrievalPolicyConfig[],
-      backendTargets: JSON.parse(row.backend_targets) as QualityBackendTarget[],
+      datasetVersionIds: parseJson<string[]>(row.dataset_version_ids, []),
+      policies: parseJson<RetrievalPolicyConfig[]>(row.policy_grid, []),
+      backendTargets: parseJson<QualityBackendTarget[]>(
+        row.backend_targets,
+        [{ provider: 'memory' }],
+      ),
       status: row.status,
       progress: row.progress,
       totalCases: row.total_cases,
@@ -132,6 +147,28 @@ export class QualityRunRepo {
       startedAt: row.started_at,
       completedAt: row.completed_at,
     };
+  }
+
+  getPolicyGrid(id: string): RetrievalPolicyConfig[] {
+    const row = this.db.prepare(
+      'SELECT policy_grid FROM quality_runs WHERE id = ?',
+    ).get(id) as { policy_grid: string } | undefined;
+    return row ? parseJson(row.policy_grid, []) : [];
+  }
+
+  findLatestCompletedCandidate(candidateKey: string): {
+    runId: string;
+    candidateKey: string;
+  } | null {
+    const row = this.db.prepare(`
+      SELECT candidate.run_id, candidate.candidate_key
+      FROM quality_run_candidates candidate
+      JOIN quality_runs run ON run.id = candidate.run_id
+      WHERE run.status = 'completed' AND candidate.candidate_key = ?
+      ORDER BY run.completed_at DESC
+      LIMIT 1
+    `).get(candidateKey) as { run_id: string; candidate_key: string } | undefined;
+    return row ? { runId: row.run_id, candidateKey: row.candidate_key } : null;
   }
 
   list(limit: number = 50, offset: number = 0): QualityRun[] {
@@ -247,5 +284,13 @@ export class QualityRunRepo {
        SET status = 'interrupted', completed_at = ?
        WHERE status IN ('queued', 'running')`,
     ).run(now).changes;
+  }
+}
+
+function parseJson<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
   }
 }

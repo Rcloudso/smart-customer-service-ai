@@ -104,6 +104,24 @@ async function testIndexJobBuildsIdempotentlyAndDetectsStaleKnowledge(): Promise
   });
   assert.equal(secondActive.previousCollection, ready.collection);
   assert.equal(aliasCollection, secondCollection);
+  db.exec(`
+    CREATE TRIGGER fail_rollback_persistence
+    BEFORE UPDATE ON retrieval_index_jobs
+    WHEN OLD.id = '${secondId}' AND NEW.status = 'rolled_back'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated rollback persistence failure');
+    END
+  `);
+  await assert.rejects(
+    () => service.rollback({
+      id: secondId,
+      expectedCurrentCollection: secondCollection,
+    }),
+    /simulated rollback persistence failure/,
+  );
+  assert.equal(aliasCollection, ready.collection);
+  assert.equal(service.getJob(secondId).status, 'active');
+  db.exec('DROP TRIGGER fail_rollback_persistence');
   const rolledBack = await service.rollback({
     id: secondId,
     expectedCurrentCollection: secondCollection,
@@ -135,17 +153,18 @@ async function testInterruptedJobResumesFromCheckpoint(): Promise<void> {
   const db = new Database(':memory:');
   initSchema(db);
   const faqRepo = new FaqRepo(db);
-  for (const suffix of ['one', 'two']) {
+  for (let index = 0; index < 205; index += 1) {
     faqRepo.create({
-      question: `policy ${suffix}`,
-      answer: `answer ${suffix}`,
+      question: `policy ${index.toString().padStart(3, '0')}`,
+      answer: `answer ${index}`,
       category: IntentCategory.GENERAL,
       keywords: [],
-      embedding: suffix === 'one' ? [1, 0] : [0, 1],
+      embedding: index % 2 === 0 ? [1, 0] : [0, 1],
       embeddingProfile: 'test-profile',
     });
   }
   const collections = new Map<string, { dimensions: number; count: number }>();
+  const resumedBatchSizes: number[] = [];
   const service = new RetrievalIndexJobService(db, {
     autoDrain: false,
     collectionPrefix: 'resume_test',
@@ -164,15 +183,16 @@ async function testInterruptedJobResumesFromCheckpoint(): Promise<void> {
     },
     writerFactory: (collection) => ({
       async upsert(records) {
+        resumedBatchSizes.push(records.length);
         collections.get(collection)!.count += records.length;
       },
     }),
   });
   const job = await service.createJob({ createdBy: 'admin' });
-  collections.set(job.collection, { dimensions: 2, count: 1 });
+  collections.set(job.collection, { dimensions: 2, count: 100 });
   db.prepare(`
     UPDATE retrieval_index_jobs
-    SET status = 'running', batch_checkpoint = 1, completed_count = 1
+    SET status = 'running', batch_checkpoint = 100, completed_count = 100
     WHERE id = ?
   `).run(job.id);
 
@@ -181,8 +201,9 @@ async function testInterruptedJobResumesFromCheckpoint(): Promise<void> {
   await service.processNext();
   const resumed = service.getJob(job.id);
   assert.equal(resumed.status, 'ready');
-  assert.equal(resumed.checkpoint, 2);
-  assert.equal(resumed.completedCount, 2);
+  assert.equal(resumed.checkpoint, 205);
+  assert.equal(resumed.completedCount, 205);
+  assert.deepEqual(resumedBatchSizes, [100, 5]);
   db.close();
 }
 
@@ -229,10 +250,170 @@ async function testReadyValidationUsesSafeFailureCodes(): Promise<void> {
   db.close();
 }
 
+async function testActivationRecoversAfterAliasSwitchPersistenceFailure(): Promise<void> {
+  const db = new Database(':memory:');
+  initSchema(db);
+  new FaqRepo(db).create({
+    question: 'recovery policy',
+    answer: 'recovery answer',
+    category: IntentCategory.GENERAL,
+    keywords: [],
+    embedding: [1, 0],
+    embeddingProfile: 'test-profile',
+  });
+  const collections = new Map<string, { dimensions: number; count: number }>();
+  let aliasCollection: string | null = null;
+  const service = new RetrievalIndexJobService(db, {
+    autoDrain: false,
+    collectionPrefix: 'recovery_test',
+    activationGate: () => ({
+      eligible: true,
+      warnings: [],
+      reasons: [],
+      qualityRunId: 'quality-run',
+      candidateKey: 'quality-candidate',
+    }),
+    control: {
+      async createCollection(name, dimensions) {
+        collections.set(name, { dimensions, count: 0 });
+        return true;
+      },
+      async collectionInfo(name) {
+        return collections.get(name) ?? null;
+      },
+      async currentAliasCollection() {
+        return aliasCollection;
+      },
+      async switchAlias(next, expected) {
+        assert.equal(aliasCollection, expected);
+        aliasCollection = next;
+      },
+    },
+    writerFactory: (collection) => ({
+      async upsert(records) {
+        collections.get(collection)!.count += records.length;
+      },
+    }),
+  });
+  const job = await service.createJob({ createdBy: 'admin' });
+  await service.processNext();
+  db.exec(`
+    CREATE TRIGGER fail_activation_persistence
+    BEFORE UPDATE ON retrieval_index_jobs
+    WHEN NEW.status = 'active'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated persistence failure');
+    END
+  `);
+  await assert.rejects(
+    () => service.activate({
+      id: job.id,
+      expectedCurrentCollection: null,
+      confirmLatencyWarning: false,
+    }),
+    /simulated persistence failure/,
+  );
+  assert.equal(aliasCollection, job.collection);
+  assert.equal(service.getJob(job.id).status, 'ready');
+  const faqRepo = new FaqRepo(db);
+  const faq = faqRepo.listAllActive()[0];
+  faqRepo.update(faq.id, { answer: 'knowledge changed after alias switch' });
+  assert.equal(
+    service.getJob(job.id).status,
+    'ready',
+    'pending activation must not be made stale before reconciliation',
+  );
+  db.exec('DROP TRIGGER fail_activation_persistence');
+
+  const recovered = await service.activate({
+    id: job.id,
+    expectedCurrentCollection: null,
+    confirmLatencyWarning: false,
+  });
+  assert.equal(recovered.status, 'active');
+  assert.equal(aliasCollection, job.collection);
+  db.close();
+}
+
+async function testActivationIntentFinishesAfterPreSwitchFailure(): Promise<void> {
+  const db = new Database(':memory:');
+  initSchema(db);
+  const faqRepo = new FaqRepo(db);
+  faqRepo.create({
+    question: 'intent policy',
+    answer: 'intent answer',
+    category: IntentCategory.GENERAL,
+    keywords: [],
+    embedding: [1, 0],
+    embeddingProfile: 'test-profile',
+  });
+  const collections = new Map<string, { dimensions: number; count: number }>();
+  let aliasCollection: string | null = null;
+  let failSwitch = true;
+  const service = new RetrievalIndexJobService(db, {
+    autoDrain: false,
+    collectionPrefix: 'intent_test',
+    activationGate: () => ({
+      eligible: true,
+      warnings: [],
+      reasons: [],
+      qualityRunId: 'quality-run',
+      candidateKey: 'quality-candidate',
+    }),
+    control: {
+      async createCollection(name, dimensions) {
+        collections.set(name, { dimensions, count: 0 });
+        return true;
+      },
+      async collectionInfo(name) {
+        return collections.get(name) ?? null;
+      },
+      async currentAliasCollection() {
+        return aliasCollection;
+      },
+      async switchAlias(next, expected) {
+        assert.equal(aliasCollection, expected);
+        if (failSwitch) throw new Error('simulated pre-switch failure');
+        aliasCollection = next;
+      },
+    },
+    writerFactory: (collection) => ({
+      async upsert(records) {
+        collections.get(collection)!.count += records.length;
+      },
+    }),
+  });
+  const job = await service.createJob({ createdBy: 'admin' });
+  await service.processNext();
+  await assert.rejects(
+    () => service.activate({
+      id: job.id,
+      expectedCurrentCollection: null,
+      confirmLatencyWarning: false,
+    }),
+    /simulated pre-switch failure/,
+  );
+  assert.equal(aliasCollection, null);
+  failSwitch = false;
+  const faq = faqRepo.listAllActive()[0];
+  faqRepo.update(faq.id, { answer: 'changed while intent was pending' });
+
+  const recovered = await service.activate({
+    id: job.id,
+    expectedCurrentCollection: null,
+    confirmLatencyWarning: false,
+  });
+  assert.equal(recovered.status, 'active');
+  assert.equal(aliasCollection, job.collection);
+  db.close();
+}
+
 Promise.all([
   testIndexJobBuildsIdempotentlyAndDetectsStaleKnowledge(),
   testInterruptedJobResumesFromCheckpoint(),
   testReadyValidationUsesSafeFailureCodes(),
+  testActivationRecoversAfterAliasSwitchPersistenceFailure(),
+  testActivationIntentFinishesAfterPreSwitchFailure(),
 ])
   .then(() => console.log('retrieval index job tests passed'))
   .catch((error) => {

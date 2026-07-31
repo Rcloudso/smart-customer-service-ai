@@ -15,6 +15,7 @@ import { MessageRepo } from '../db/repos/message.repo';
 import { MessageRole } from '../types/domain';
 import { NotFoundError } from '../utils/errors';
 import { FaqRepo } from '../db/repos/faq.repo';
+import { QualityRunRepo } from '../db/repos/quality-run.repo';
 import { IntentCategory } from '../types/domain';
 import type { RetrievalResult } from '../types/ai';
 import type { RetrievalIndexJob } from '../types/retrieval-ops';
@@ -341,6 +342,9 @@ async function testMemoryAndQdrantBackendsShareOneQualityInput(): Promise<void> 
     let fingerprint = '';
     const embeddingBatches: number[][][] = [];
     const targets: string[] = [];
+    let activeSearches = 0;
+    let maxActiveSearches = 0;
+    let searchCall = 0;
     const runs = new QualityRunService(db, {
       qualityLab,
       autoDrain: false,
@@ -365,8 +369,13 @@ async function testMemoryAndQdrantBackendsShareOneQualityInput(): Promise<void> 
         updatedAt: '2026-07-23T00:00:00.000Z',
       } satisfies RetrievalIndexJob),
       searchBackendBatch: async (target, queries, embeddings) => {
+        activeSearches += 1;
+        maxActiveSearches = Math.max(maxActiveSearches, activeSearches);
+        searchCall += 1;
+        await new Promise((resolve) => setTimeout(resolve, 2 + (searchCall % 3) * 3));
         targets.push(target.provider);
         embeddingBatches.push(embeddings);
+        activeSearches -= 1;
         return queries.map((query) => qualityFixtureCandidates(caseByQuery.get(query)!));
       },
     });
@@ -383,8 +392,14 @@ async function testMemoryAndQdrantBackendsShareOneQualityInput(): Promise<void> 
 
     await runs.processNext();
     const completed = runs.getRun(run.id);
-    assert.deepEqual(targets, ['memory', 'qdrant']);
-    assert.equal(embeddingBatches[0], embeddingBatches[1]);
+    assert.deepEqual([...new Set(targets)].sort(), ['memory', 'qdrant']);
+    assert.equal(targets.filter((target) => target === 'memory').length, 12);
+    assert.equal(targets.filter((target) => target === 'qdrant').length, 12);
+    assert.ok(maxActiveSearches <= 8);
+    assert.ok(maxActiveSearches > 1);
+    assert.ok(embeddingBatches.every(
+      (batch) => batch.length === 1 && batch[0].length === 0,
+    ));
     assert.equal(completed.candidates.length, 2);
     assert.ok(completed.candidates.some((candidate) => candidate.key.startsWith('memory:')));
     const qdrantCandidate = completed.candidates.find(
@@ -488,16 +503,42 @@ function testBuiltinRetrievalDoesNotReadExpectedSources(): void {
   assert.equal(candidates[0].knowledgeId, 'faq-refund-apply');
 }
 
+function testMalformedHistoricalQualityJsonUsesSafeFallbacks(): void {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const qualityLab = new QualityLabService(db);
+    qualityLab.bootstrap();
+    const runs = new QualityRunService(db, { qualityLab, autoDrain: false });
+    const run = runs.createRun({
+      datasetVersionIds: [QUALITY_BASELINE_VERSION_ID],
+      policies: [],
+      createdBy: 'admin',
+    });
+    db.prepare(`
+      UPDATE quality_runs
+      SET policy_grid = '{', backend_targets = '{'
+      WHERE id = ?
+    `).run(run.id);
+    const restored = new QualityRunRepo(db).get(run.id);
+    assert.deepEqual(restored?.policies, []);
+    assert.deepEqual(restored?.backendTargets, [{ provider: 'memory' }]);
+  } finally {
+    db.close();
+  }
+}
+
 async function main(): Promise<void> {
   testDefaultPolicyAndBuiltinDatasetBootstrap();
   testBuiltinDatasetCannotBeRewrittenInPlace();
   testCustomDatasetVersionLifecycle();
   testPolicyHistoryRollbackAndMessageSnapshot();
   testBuiltinRetrievalDoesNotReadExpectedSources();
+  testMalformedHistoricalQualityJsonUsesSafeFallbacks();
   await testPersistedRunLifecycle();
   await testCoverageCannotBeAggregatedAcrossSmallVersions();
-    await testSuccessfulActivationAndFingerprintStaleness();
-    await testMemoryAndQdrantBackendsShareOneQualityInput();
+  await testSuccessfulActivationAndFingerprintStaleness();
+  await testMemoryAndQdrantBackendsShareOneQualityInput();
   await testRunningCancellationIsPersisted();
   console.log('quality lab tests passed');
 }

@@ -121,16 +121,17 @@ export class FaqService {
     return updated;
   }
 
-  deleteFaq(id: string): void {
+  async deleteFaq(id: string): Promise<void> {
+    const entry = this.faqRepo.findById(id);
+    if (!entry) {
+      throw new NotFoundError('FAQ条目不存在');
+    }
     const deleted = this.faqRepo.delete(id);
     if (!deleted) {
       throw new NotFoundError('FAQ条目不存在');
     }
     // Remove from index by marking inactive
-    const entry = this.faqRepo.findById(id);
-    if (entry) {
-      semanticSearch.updateIndex({ ...entry, isActive: 0 });
-    }
+    await semanticSearch.updateIndex({ ...entry, isActive: 0 });
     logger.info({ faqId: id }, 'FAQ entry deleted');
   }
 

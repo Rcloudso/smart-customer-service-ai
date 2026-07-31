@@ -4,8 +4,13 @@ import { QdrantClient, withHeaders } from '@qdrant/js-client-rest';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { RetrievalIndexJobRepo } from '../db/repos/retrieval-index-job.repo';
+import { RetrievalIndexKnowledgeRepo } from '../db/repos/retrieval-index-knowledge.repo';
+import { QualityRunRepo } from '../db/repos/quality-run.repo';
 import type { VectorRecord } from '../ai/vector-store';
-import { QdrantVectorStore } from '../ai/qdrant-vector-store';
+import {
+  QdrantRequestError,
+  QdrantVectorStore,
+} from '../ai/qdrant-vector-store';
 import type {
   RetrievalActivationCheck,
   RetrievalIndexJob,
@@ -13,6 +18,7 @@ import type {
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { knowledgeFingerprint } from './knowledge-fingerprint';
+import { qualityCandidateKey } from '../eval/quality-evaluator';
 
 const INDEX_BATCH_SIZE = 100;
 
@@ -47,6 +53,8 @@ interface RetrievalIndexJobServiceOptions {
 
 export class RetrievalIndexJobService {
   private readonly repo: RetrievalIndexJobRepo;
+  private readonly knowledgeRepo: RetrievalIndexKnowledgeRepo;
+  private readonly qualityRunRepo: QualityRunRepo;
   private readonly control: QdrantCollectionControl;
   private readonly writerFactory: (collection: string) => RetrievalIndexVectorWriter;
   private readonly collectionPrefix: string;
@@ -63,6 +71,8 @@ export class RetrievalIndexJobService {
     options: RetrievalIndexJobServiceOptions = {},
   ) {
     this.repo = new RetrievalIndexJobRepo(db);
+    this.knowledgeRepo = new RetrievalIndexKnowledgeRepo(db);
+    this.qualityRunRepo = new QualityRunRepo(db);
     this.configured = Boolean(options.control) || config.vectorStore.provider === 'qdrant';
     this.control = options.control ?? (
       this.configured ? createQdrantCollectionControl() : unavailableQdrantControl()
@@ -82,12 +92,19 @@ export class RetrievalIndexJobService {
 
   start(): void {
     this.repo.interruptRunning(this.now().toISOString());
+    if (this.configured) {
+      queueMicrotask(() => void this.reconcilePendingIntent().catch((error) => {
+        logger.warn({
+          failureCode: safeIndexErrorCode(error),
+        }, 'Pending retrieval alias operation could not be reconciled');
+      }));
+    }
     if (this.autoDrain) queueMicrotask(() => void this.drain());
   }
 
   async createJob(params: { createdBy: string }): Promise<RetrievalIndexJob> {
     this.requireQdrantConfigured();
-    const snapshot = this.readSnapshot();
+    const snapshot = this.readSnapshotMetadata();
     const reusable = this.repo.findReusable(snapshot.fingerprint, snapshot.embeddingProfile);
     if (reusable) return reusable;
     const suffix = uuidv4().replace(/-/g, '').slice(0, 12);
@@ -97,7 +114,7 @@ export class RetrievalIndexJobService {
       embeddingProfile: snapshot.embeddingProfile,
       vectorDimension: snapshot.vectorDimension,
       knowledgeFingerprint: snapshot.fingerprint,
-      expectedCount: snapshot.records.length,
+      expectedCount: snapshot.count,
       createdBy: params.createdBy,
       now: this.now().toISOString(),
     });
@@ -110,6 +127,7 @@ export class RetrievalIndexJobService {
     if (!job) throw new NotFoundError('Retrieval index job not found');
     if (
       ['queued', 'interrupted', 'ready'].includes(job.status)
+      && !this.repo.hasPendingIntent(job.id)
       && job.knowledgeFingerprint !== knowledgeFingerprint(this.db)
     ) {
       this.repo.markStale(job.id, this.now().toISOString());
@@ -138,12 +156,12 @@ export class RetrievalIndexJobService {
     const pending = this.repo.nextPending();
     if (!pending) return;
     const traceId = uuidv4();
-    const snapshot = this.readSnapshot();
+    const snapshot = this.readSnapshotMetadata();
     if (
       snapshot.fingerprint !== pending.knowledgeFingerprint
       || snapshot.embeddingProfile !== pending.embeddingProfile
       || snapshot.vectorDimension !== pending.vectorDimension
-      || snapshot.records.length !== pending.expectedCount
+      || snapshot.count !== pending.expectedCount
     ) {
       this.repo.markStale(pending.id, this.now().toISOString());
       return;
@@ -164,14 +182,15 @@ export class RetrievalIndexJobService {
         throw new IndexJobError('qdrant_dimension_mismatch');
       }
       const writer = this.writerFactory(pending.collection);
-      for (
-        let offset = pending.checkpoint;
-        offset < snapshot.records.length;
-        offset += INDEX_BATCH_SIZE
-      ) {
-        const batch = snapshot.records.slice(offset, offset + INDEX_BATCH_SIZE);
+      let checkpoint = pending.checkpoint;
+      let cursor = this.knowledgeRepo.cursorAt(checkpoint);
+      while (checkpoint < pending.expectedCount) {
+        const page = this.knowledgeRepo.readPage(cursor, INDEX_BATCH_SIZE);
+        const batch = page.records;
+        if (batch.length === 0) throw new IndexJobError('knowledge_batch_missing');
         await writer.upsert(batch, traceId);
-        const checkpoint = offset + batch.length;
+        checkpoint += batch.length;
+        cursor = page.nextCursor;
         this.repo.saveCheckpoint(
           pending.id,
           checkpoint,
@@ -208,16 +227,16 @@ export class RetrievalIndexJobService {
     if (job.knowledgeFingerprint !== knowledgeFingerprint(this.db)) {
       reasons.push('knowledge_fingerprint_changed');
     }
-    const quality = this.db.prepare(`
-      SELECT candidate.run_id, candidate.candidate_key
-      FROM quality_run_candidates candidate
-      JOIN quality_runs run ON run.id = candidate.run_id
-      WHERE run.status = 'completed'
-        AND json_extract(candidate.backend_target, '$.provider') = 'qdrant'
-        AND json_extract(candidate.backend_target, '$.indexJobId') = ?
-      ORDER BY run.completed_at DESC
-      LIMIT 1
-    `).get(id) as { run_id: string; candidate_key: string } | undefined;
+    const { QualityLabService } = require('./quality-lab.service') as typeof import(
+      './quality-lab.service'
+    );
+    const qualityLab = new QualityLabService(this.db);
+    const currentPolicy = qualityLab.getCurrentPolicy();
+    const candidateKey = qualityCandidateKey(
+      { provider: 'qdrant', indexJobId: id },
+      currentPolicy.config,
+    );
+    const quality = this.qualityRunRepo.findLatestCompletedCandidate(candidateKey);
     if (!quality) {
       reasons.push('quality_run_required');
       return {
@@ -228,26 +247,22 @@ export class RetrievalIndexJobService {
         candidateKey: null,
       };
     }
-    const { QualityLabService } = require('./quality-lab.service') as typeof import(
-      './quality-lab.service'
-    );
     const { QualityRunService } = require('./quality-run.service') as typeof import(
       './quality-run.service'
     );
-    const qualityLab = new QualityLabService(this.db);
     const gate = new QualityRunService(this.db, {
       qualityLab,
       autoDrain: false,
       getIndexJob: (jobId) => this.getJob(jobId),
-    }).checkBackendActivation(quality.run_id, quality.candidate_key);
+    }).checkBackendActivation(quality.runId, quality.candidateKey);
     reasons.push(...gate.reasons);
     warnings.push(...gate.warnings);
     return {
       eligible: reasons.length === 0,
       warnings: [...new Set(warnings)],
       reasons: [...new Set(reasons)],
-      qualityRunId: quality.run_id,
-      candidateKey: quality.candidate_key,
+      qualityRunId: quality.runId,
+      candidateKey: quality.candidateKey,
     };
   }
 
@@ -256,6 +271,8 @@ export class RetrievalIndexJobService {
     expectedCurrentCollection: string | null;
     confirmLatencyWarning: boolean;
   }): Promise<RetrievalIndexJob> {
+    const reconciled = await this.reconcilePendingIntent();
+    if (reconciled?.id === params.id) return reconciled;
     const job = this.getJob(params.id);
     const gate = this.activationCheck(job.id);
     if (!gate.eligible) {
@@ -268,8 +285,9 @@ export class RetrievalIndexJobService {
     if (current !== params.expectedCurrentCollection) {
       throw new ConflictError('Qdrant alias changed; refresh before activating');
     }
+    this.repo.prepareActivation(job.id, current, this.now().toISOString());
     await this.control.switchAlias(job.collection, current, uuidv4());
-    this.repo.activate(job.id, current, this.now().toISOString());
+    this.repo.completeActivation(job.id, this.now().toISOString());
     return this.getJob(job.id);
   }
 
@@ -277,6 +295,17 @@ export class RetrievalIndexJobService {
     id: string;
     expectedCurrentCollection: string;
   }): Promise<RetrievalIndexJob> {
+    const pendingBeforeReconcile = this.repo.findPendingIntent();
+    const reconciled = await this.reconcilePendingIntent();
+    if (reconciled) {
+      if (
+        pendingBeforeReconcile?.intent === 'rollback'
+        && pendingBeforeReconcile.job.id === params.id
+      ) return reconciled;
+      throw new ConflictError(
+        'A pending retrieval alias operation was reconciled; refresh before rolling back',
+      );
+    }
     const job = this.getJob(params.id);
     if (job.status !== 'active' || !job.previousCollection) {
       throw new ConflictError('Active index job has no rollback target');
@@ -291,8 +320,13 @@ export class RetrievalIndexJobService {
     if (target.knowledgeFingerprint !== knowledgeFingerprint(this.db)) {
       throw new ConflictError('Previous collection knowledge fingerprint is stale');
     }
+    const current = await this.control.currentAliasCollection(uuidv4());
+    if (current !== params.expectedCurrentCollection) {
+      throw new ConflictError('Qdrant alias changed; refresh before rolling back');
+    }
+    this.repo.prepareRollback(job.id, this.now().toISOString());
     await this.control.switchAlias(target.collection, job.collection, uuidv4());
-    this.repo.activateRollbackTarget(target.id, this.now().toISOString());
+    this.repo.completeRollback(job.id, target.id, this.now().toISOString());
     return this.getJob(target.id);
   }
 
@@ -348,71 +382,74 @@ export class RetrievalIndexJobService {
     }
   }
 
-  private readSnapshot(): {
+  private readSnapshotMetadata(): {
     fingerprint: string;
     embeddingProfile: string;
     vectorDimension: number;
-    records: VectorRecord[];
+    count: number;
   } {
-    const rows = this.db.prepare(`
-      SELECT 'faq' AS knowledge_type, id, updated_at AS revision,
-             embedding_profile, embedding
-      FROM faq_entries
-      WHERE is_active = 1 AND embedding IS NOT NULL
-      UNION ALL
-      SELECT 'document' AS knowledge_type, chunk.id, chunk.created_at AS revision,
-             chunk.embedding_profile, chunk.embedding
-      FROM document_chunks chunk
-      JOIN documents document ON document.id = chunk.document_id
-      WHERE document.is_active = 1
-        AND document.status = 'ready'
-        AND document.index_status IN ('legacy', 'published')
-      ORDER BY knowledge_type, id
-    `).all() as Array<{
-      knowledge_type: 'faq' | 'document';
-      id: string;
-      revision: string;
-      embedding_profile: string | null;
-      embedding: string;
-    }>;
-    if (rows.length === 0) throw new ValidationError('No active embedded knowledge to index');
-    const records = rows.map((row): VectorRecord => {
-      let embedding: number[];
-      try {
-        embedding = JSON.parse(row.embedding) as number[];
-      } catch {
-        throw new ValidationError('Knowledge embedding is malformed');
-      }
-      if (
-        embedding.length === 0
-        || embedding.some((value) => !Number.isFinite(value))
-        || !row.embedding_profile
-      ) {
-        throw new ValidationError('All active knowledge must have a valid embedding profile');
-      }
-      return {
-        id: `${row.knowledge_type}:${row.id}`,
-        knowledgeType: row.knowledge_type,
-        revision: row.revision,
-        embeddingProfile: row.embedding_profile,
-        embedding,
-      };
-    });
-    const dimensions = new Set(records.map((record) => record.embedding.length));
-    if (dimensions.size !== 1) {
-      throw new ValidationError('Active knowledge embeddings must use one vector dimension');
-    }
-    const profiles = [...new Set(records.map((record) => record.embeddingProfile))].sort();
+    const metadata = this.knowledgeRepo.inspect(INDEX_BATCH_SIZE);
     const profileHash = createHash('sha256')
-      .update(JSON.stringify(profiles))
+      .update(JSON.stringify(metadata.embeddingProfiles))
       .digest('hex')
       .slice(0, 16);
     return {
       fingerprint: knowledgeFingerprint(this.db),
       embeddingProfile: `combined:${profileHash}`,
-      vectorDimension: records[0].embedding.length,
-      records,
+      vectorDimension: metadata.vectorDimension,
+      count: metadata.count,
     };
+  }
+
+  private async reconcilePendingIntent(): Promise<RetrievalIndexJob | null> {
+    const pending = this.repo.findPendingIntent();
+    if (!pending) return null;
+    const current = await this.control.currentAliasCollection(uuidv4());
+    if (pending.intent === 'activate') {
+      if (current === pending.job.collection) {
+        this.repo.completeActivation(pending.job.id, this.now().toISOString());
+        return this.repo.get(pending.job.id);
+      }
+      if (current === pending.expectedCollection) {
+        await this.control.switchAlias(
+          pending.job.collection,
+          pending.expectedCollection,
+          uuidv4(),
+        );
+        this.repo.completeActivation(pending.job.id, this.now().toISOString());
+        return this.repo.get(pending.job.id);
+      }
+      throw new ConflictError('Qdrant alias no longer matches the pending activation');
+    }
+
+    const target = pending.job.previousCollection
+      ? this.repo.findByCollection(pending.job.previousCollection)
+      : null;
+    if (!target) {
+      throw new ConflictError('Pending rollback target is unavailable');
+    }
+    if (current === target.collection) {
+      this.repo.completeRollback(
+        pending.job.id,
+        target.id,
+        this.now().toISOString(),
+      );
+      return this.repo.get(target.id);
+    }
+    if (current === pending.expectedCollection) {
+      await this.control.switchAlias(
+        target.collection,
+        pending.expectedCollection,
+        uuidv4(),
+      );
+      this.repo.completeRollback(
+        pending.job.id,
+        target.id,
+        this.now().toISOString(),
+      );
+      return this.repo.get(target.id);
+    }
+    throw new ConflictError('Qdrant alias no longer matches the pending rollback');
   }
 
   private requireQdrantConfigured(): void {
@@ -441,6 +478,7 @@ class IndexJobError extends Error {
 
 function safeIndexErrorCode(error: unknown): string {
   if (error instanceof IndexJobError) return error.code;
+  if (error instanceof QdrantRequestError) return error.code;
   if (error instanceof ValidationError) return 'invalid_knowledge_snapshot';
   const name = error instanceof Error ? error.name.toLowerCase() : '';
   if (name.includes('timeout') || name.includes('abort')) return 'qdrant_timeout';
@@ -454,15 +492,25 @@ function createQdrantClient(): OfficialQdrantClient {
     url: config.vectorStore.qdrantUrl,
     apiKey: config.vectorStore.qdrantApiKey || undefined,
     timeout: config.vectorStore.timeoutMs,
-    checkCompatibility: true,
+    checkCompatibility: false,
   });
 }
 
 function createQdrantCollectionControl(): QdrantCollectionControl {
   const client = createQdrantClient();
-  const withTrace = async <T>(traceId: string | undefined, work: () => Promise<T>): Promise<T> => (
-    traceId ? withHeaders({ 'x-request-id': traceId }, work) : work()
-  );
+  const withTrace = async <T>(
+    traceId: string | undefined,
+    work: () => Promise<T>,
+  ): Promise<T> => {
+    try {
+      return await withHeaders({ 'x-request-id': traceId ?? uuidv4() }, work);
+    } catch (error) {
+      if (error instanceof QdrantRequestError || error instanceof ConflictError) throw error;
+      throw new QdrantRequestError(safeIndexErrorCode(error) === 'qdrant_timeout'
+        ? 'qdrant_timeout'
+        : 'qdrant_request_failed');
+    }
+  };
   return {
     createCollection: (name, dimensions, traceId) => withTrace(
       traceId,
@@ -471,24 +519,26 @@ function createQdrantCollectionControl(): QdrantCollectionControl {
       }),
     ),
     async collectionInfo(name, traceId) {
-      try {
-        const collection = await withTrace(traceId, () => client.getCollection(name));
-        const vectors = collection.config.params.vectors;
-        const dimensions = (
-          vectors
-          && typeof vectors === 'object'
-          && 'size' in vectors
-          && typeof vectors.size === 'number'
-        ) ? vectors.size : 0;
-        return {
-          dimensions,
-          count: collection.points_count ?? collection.indexed_vectors_count ?? 0,
-        };
-      } catch (error) {
-        const status = (error as { status?: number }).status;
-        if (status === 404) return null;
-        throw error;
-      }
+      return withTrace(traceId, async () => {
+        try {
+          const collection = await client.getCollection(name);
+          const vectors = collection.config.params.vectors;
+          const dimensions = (
+            vectors
+            && typeof vectors === 'object'
+            && 'size' in vectors
+            && typeof vectors.size === 'number'
+          ) ? vectors.size : 0;
+          return {
+            dimensions,
+            count: collection.points_count ?? collection.indexed_vectors_count ?? 0,
+          };
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          if (status === 404) return null;
+          throw error;
+        }
+      });
     },
     async currentAliasCollection(traceId) {
       const response = await withTrace(traceId, () => client.getAliases());

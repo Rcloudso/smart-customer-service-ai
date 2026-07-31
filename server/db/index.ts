@@ -554,6 +554,8 @@ export function initSchema(database: Database.Database): void {
       batch_checkpoint INTEGER NOT NULL DEFAULT 0 CHECK(batch_checkpoint >= 0),
       previous_collection TEXT,
       failure_code TEXT,
+      activation_intent TEXT CHECK(activation_intent IN ('activate', 'rollback')),
+      activation_expected_collection TEXT,
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL,
       started_at TEXT,
@@ -658,6 +660,13 @@ export function initSchema(database: Database.Database): void {
     'backend_target',
     `TEXT NOT NULL DEFAULT '{"provider":"memory"}'`,
   );
+  ensureColumn(
+    database,
+    'retrieval_index_jobs',
+    'activation_intent',
+    "TEXT CHECK(activation_intent IN ('activate', 'rollback'))",
+  );
+  ensureColumn(database, 'retrieval_index_jobs', 'activation_expected_collection', 'TEXT');
   database.prepare(`
     UPDATE document_extraction_jobs
     SET result_block_count = CASE

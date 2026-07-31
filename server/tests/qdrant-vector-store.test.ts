@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
 import {
+  QdrantRequestError,
   QdrantVectorStore,
   type QdrantClientLike,
   type QdrantHeaderRunner,
 } from '../ai/qdrant-vector-store';
+import { semanticSearch } from '../ai/semantic-search';
+import { knowledgeRetriever } from '../ai/knowledge-system';
+import type { FaqEntry } from '../types/domain';
+import {
+  FAQ_EMBEDDING_INPUT_VERSION,
+  currentEmbeddingProfile,
+} from '../ai/embedding-profile';
 
 async function testQdrantVectorStoreMapsSafeRecordsAndTraceHeaders(): Promise<void> {
   const calls: Array<{ method: string; collection?: string; payload?: unknown }> = [];
@@ -99,16 +107,78 @@ async function testQdrantVectorStoreMapsSafeRecordsAndTraceHeaders(): Promise<vo
   const health = await store.health('trace-health');
   assert.equal(health.backend, 'qdrant');
   assert.equal(health.status, 'healthy');
+  await store.delete(['faq:refund']);
 
-  assert.deepEqual(tracedHeaders, [
+  assert.deepEqual(tracedHeaders.slice(0, 4), [
     { 'x-request-id': 'trace-upsert' },
     { 'x-request-id': 'trace-search' },
     { 'x-request-id': 'trace-stats' },
     { 'x-request-id': 'trace-health' },
   ]);
+  assert.match(tracedHeaders[4]['x-request-id'], /^[0-9a-f-]{36}$/);
+
+  const failingStore = new QdrantVectorStore({
+    collectionAlias: 'resolveweave_knowledge_active',
+    runWithHeaders,
+    client: {
+      ...client,
+      async query() {
+        throw new Error('provider response contains secret-api-key');
+      },
+    },
+  });
+  await assert.rejects(
+    () => failingStore.search([1, 0], { limit: 1 }),
+    (error: unknown) => (
+      error instanceof QdrantRequestError
+      && error.code === 'qdrant_request_failed'
+      && !error.message.includes('secret-api-key')
+    ),
+  );
 }
 
-testQdrantVectorStoreMapsSafeRecordsAndTraceHeaders()
+async function testCommittedFaqDeleteDegradesWhenQdrantCleanupFails(): Promise<void> {
+  const retriever = knowledgeRetriever as unknown as {
+    deleteIndexItem: typeof knowledgeRetriever.deleteIndexItem;
+    upsertIndexItem: typeof knowledgeRetriever.upsertIndexItem;
+  };
+  const originalDelete = retriever.deleteIndexItem;
+  const originalUpsert = retriever.upsertIndexItem;
+  retriever.deleteIndexItem = async () => {
+    throw new Error('raw provider cleanup response');
+  };
+  retriever.upsertIndexItem = async () => {
+    throw new Error('raw provider upsert response');
+  };
+  try {
+    await assert.doesNotReject(() => semanticSearch.updateIndex({
+      id: 'qdrant-cleanup-failure',
+      isActive: 0,
+    } as FaqEntry));
+    assert.equal(
+      Boolean((await semanticSearch.getStatus()).lastError?.includes('raw provider')),
+      false,
+    );
+    await assert.doesNotReject(() => semanticSearch.updateIndexBatch([{
+      id: 'qdrant-batch-failure',
+      isActive: 1,
+      embedding: [1, 0],
+      embeddingProfile: currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION),
+    } as FaqEntry]));
+    assert.equal(
+      Boolean((await semanticSearch.getStatus()).lastError?.includes('raw provider')),
+      false,
+    );
+  } finally {
+    retriever.deleteIndexItem = originalDelete;
+    retriever.upsertIndexItem = originalUpsert;
+  }
+}
+
+Promise.all([
+  testQdrantVectorStoreMapsSafeRecordsAndTraceHeaders(),
+  testCommittedFaqDeleteDegradesWhenQdrantCleanupFails(),
+])
   .then(() => console.log('qdrant vector store tests passed'))
   .catch((error) => {
     console.error(error);
