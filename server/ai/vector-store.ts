@@ -1,13 +1,25 @@
-import { FaqEntry } from '../types/domain';
+import type { KnowledgeType } from '../types/ai';
 
-export interface VectorStoreItem<T extends { id: string } = FaqEntry> {
+export interface VectorRecord {
   id: string;
-  entry: T;
+  knowledgeType: KnowledgeType;
+  revision: string;
+  embeddingProfile: string;
   embedding: number[];
 }
 
-export interface VectorSearchResult<T extends { id: string } = FaqEntry> extends VectorStoreItem<T> {
+export interface VectorSearchResult {
+  id: string;
+  knowledgeType: KnowledgeType;
+  revision: string;
+  embeddingProfile: string;
   score: number;
+}
+
+export interface VectorSearchOptions {
+  limit: number;
+  knowledgeTypes?: KnowledgeType[];
+  traceId?: string;
 }
 
 export interface VectorStoreStats {
@@ -16,55 +28,77 @@ export interface VectorStoreStats {
   updatedAt: string | null;
 }
 
-export interface VectorStore<T extends { id: string } = FaqEntry> {
-  upsert(entry: T, embedding: number[]): void;
-  delete(id: string): void;
-  search(
-    queryEmbedding: number[],
-    limit: number,
-    predicate?: (entry: T) => boolean,
-  ): VectorSearchResult<T>[];
-  stats(): VectorStoreStats;
-  clear(): void;
+export interface VectorStoreHealth {
+  backend: 'memory' | 'qdrant';
+  status: 'healthy' | 'degraded' | 'unavailable';
+  checkedAt: string;
+  errorCode: string | null;
 }
 
-export class InMemoryVectorStore<T extends { id: string } = FaqEntry> implements VectorStore<T> {
-  private items = new Map<string, VectorStoreItem<T>>();
+export interface VectorStore {
+  readonly backend: 'memory' | 'qdrant';
+  readonly supportsStartupSync: boolean;
+  upsertBatch(records: VectorRecord[], traceId?: string): Promise<void>;
+  delete(ids: string[], traceId?: string): Promise<void>;
+  search(queryEmbedding: number[], options: VectorSearchOptions): Promise<VectorSearchResult[]>;
+  stats(traceId?: string): Promise<VectorStoreStats>;
+  health(traceId?: string): Promise<VectorStoreHealth>;
+}
+
+export class InMemoryVectorStore implements VectorStore {
+  readonly backend = 'memory';
+  readonly supportsStartupSync = true;
+  private items = new Map<string, VectorRecord>();
   private updatedAt: string | null = null;
 
-  upsert(entry: T, embedding: number[]): void {
-    if (embedding.length === 0) {
-      this.delete(entry.id);
-      return;
+  async upsertBatch(records: VectorRecord[], _traceId?: string): Promise<void> {
+    for (const record of records) {
+      if (record.embedding.length === 0) {
+        this.items.delete(record.id);
+        continue;
+      }
+      this.items.set(record.id, {
+        ...record,
+        embedding: [...record.embedding],
+      });
     }
-    this.items.set(entry.id, { id: entry.id, entry, embedding });
-    this.updatedAt = new Date().toISOString();
+    if (records.length > 0) this.updatedAt = new Date().toISOString();
   }
 
-  delete(id: string): void {
-    if (this.items.delete(id)) this.updatedAt = new Date().toISOString();
+  async delete(ids: string[], _traceId?: string): Promise<void> {
+    let changed = false;
+    for (const id of ids) changed = this.items.delete(id) || changed;
+    if (changed) this.updatedAt = new Date().toISOString();
   }
 
-  search(
+  async search(
     queryEmbedding: number[],
-    limit: number,
-    predicate: (entry: T) => boolean = () => true,
-  ): VectorSearchResult<T>[] {
-    if (queryEmbedding.length === 0 || limit <= 0) return [];
-    const best: VectorSearchResult<T>[] = [];
+    options: VectorSearchOptions,
+  ): Promise<VectorSearchResult[]> {
+    if (queryEmbedding.length === 0 || options.limit <= 0) return [];
+    const allowed = options.knowledgeTypes
+      ? new Set<KnowledgeType>(options.knowledgeTypes)
+      : null;
+    const best: VectorSearchResult[] = [];
     for (const item of this.items.values()) {
-      if (!predicate(item.entry)) continue;
-      const result = { ...item, score: cosineSimilarity(queryEmbedding, item.embedding) };
+      if (allowed && !allowed.has(item.knowledgeType)) continue;
+      const result = {
+        id: item.id,
+        knowledgeType: item.knowledgeType,
+        revision: item.revision,
+        embeddingProfile: item.embeddingProfile,
+        score: cosineSimilarity(queryEmbedding, item.embedding),
+      };
       const insertAt = best.findIndex((candidate) => result.score > candidate.score);
       if (insertAt < 0) best.push(result);
       else best.splice(insertAt, 0, result);
-      if (best.length > limit) best.pop();
+      if (best.length > options.limit) best.pop();
     }
     return best;
   }
 
-  stats(): VectorStoreStats {
-    const firstItem = this.items.values().next().value as VectorStoreItem<T> | undefined;
+  async stats(_traceId?: string): Promise<VectorStoreStats> {
+    const firstItem = this.items.values().next().value as VectorRecord | undefined;
     return {
       indexedCount: this.items.size,
       embeddingDimensions: firstItem?.embedding.length ?? null,
@@ -72,9 +106,13 @@ export class InMemoryVectorStore<T extends { id: string } = FaqEntry> implements
     };
   }
 
-  clear(): void {
-    this.items.clear();
-    this.updatedAt = new Date().toISOString();
+  async health(_traceId?: string): Promise<VectorStoreHealth> {
+    return {
+      backend: 'memory',
+      status: 'healthy',
+      checkedAt: new Date().toISOString(),
+      errorCode: null,
+    };
   }
 }
 

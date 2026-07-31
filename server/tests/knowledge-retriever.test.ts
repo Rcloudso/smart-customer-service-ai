@@ -3,7 +3,13 @@ import Database from 'better-sqlite3';
 import { initSchema } from '../db';
 import { DocumentRepo } from '../db/repos/document.repo';
 import { FaqRepo } from '../db/repos/faq.repo';
-import { InMemoryVectorStore } from '../ai/vector-store';
+import {
+  InMemoryVectorStore,
+  VectorSearchResult,
+  VectorStore,
+  VectorStoreHealth,
+  VectorStoreStats,
+} from '../ai/vector-store';
 import {
   KnowledgeAdapter,
   KnowledgeIndexItem,
@@ -85,15 +91,61 @@ class ProfiledAdapter extends MutableAdapter {
   }
 }
 
-class FailOnceVectorStore extends InMemoryVectorStore<KnowledgeIndexItem> {
+class FailOnceVectorStore extends InMemoryVectorStore {
   failOnId: string | null = null;
 
-  upsert(entry: KnowledgeIndexItem, embedding: number[]): void {
-    if (entry.id === this.failOnId) {
+  async upsertBatch(records: Array<{
+    id: string;
+    knowledgeType: KnowledgeType;
+    revision: string;
+    embeddingProfile: string;
+    embedding: number[];
+  }>): Promise<void> {
+    if (records.some((record) => record.id === this.failOnId)) {
       this.failOnId = null;
       throw new Error('simulated vector upsert failure');
     }
-    super.upsert(entry, embedding);
+    await super.upsertBatch(records);
+  }
+}
+
+class ExternalReadOnlyVectorStore implements VectorStore {
+  readonly backend = 'qdrant';
+  readonly supportsStartupSync = false;
+
+  constructor(
+    private readonly matches: VectorSearchResult[],
+    private readonly failSearch = false,
+  ) {}
+
+  async upsertBatch(): Promise<void> {
+    throw new Error('startup must not rebuild Qdrant');
+  }
+
+  async delete(): Promise<void> {
+    throw new Error('startup must not clear Qdrant');
+  }
+
+  async search(): Promise<VectorSearchResult[]> {
+    if (this.failSearch) throw new Error('qdrant timeout with private response');
+    return this.matches;
+  }
+
+  async stats(): Promise<VectorStoreStats> {
+    return {
+      indexedCount: this.matches.length,
+      embeddingDimensions: 2,
+      updatedAt: null,
+    };
+  }
+
+  async health(): Promise<VectorStoreHealth> {
+    return {
+      backend: 'qdrant',
+      status: 'healthy',
+      checkedAt: new Date().toISOString(),
+      errorCode: null,
+    };
   }
 }
 
@@ -133,7 +185,7 @@ async function testHybridKnowledgeSearchUsesOneQueryEmbedding(): Promise<void> {
     [{ ...documentResult, similarity: 0.95, source: 'keyword', keywordScore: 0.95 }],
   );
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => {
       embedCalls += 1;
       return [[1, 0]];
@@ -156,6 +208,108 @@ async function testHybridKnowledgeSearchUsesOneQueryEmbedding(): Promise<void> {
   assert.ok(afterFaqRefresh.some((result) => result.knowledgeType === 'document'));
 }
 
+async function testExternalVectorHitsAreHydratedFromSqlite(): Promise<void> {
+  const db = new Database(':memory:');
+  initSchema(db);
+  const repo = new FaqRepo(db);
+  const profile = currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION);
+  const active = repo.create({
+    question: 'active source',
+    answer: 'active answer',
+    category: IntentCategory.GENERAL,
+    keywords: [],
+    embedding: [1, 0],
+    embeddingProfile: profile,
+  });
+  const inactive = repo.create({
+    question: 'inactive source',
+    answer: 'inactive answer',
+    category: IntentCategory.GENERAL,
+    keywords: [],
+    embedding: [1, 0],
+    embeddingProfile: profile,
+    isActive: 0,
+  });
+  const stale = repo.create({
+    question: 'stale source',
+    answer: 'stale answer',
+    category: IntentCategory.GENERAL,
+    keywords: [],
+    embedding: [1, 0],
+    embeddingProfile: profile,
+  });
+  const matches: VectorSearchResult[] = [
+    {
+      id: `faq:${active.id}`,
+      knowledgeType: 'faq',
+      revision: active.updatedAt,
+      embeddingProfile: profile,
+      score: 0.99,
+    },
+    {
+      id: `faq:${inactive.id}`,
+      knowledgeType: 'faq',
+      revision: inactive.updatedAt,
+      embeddingProfile: profile,
+      score: 0.98,
+    },
+    {
+      id: `faq:${stale.id}`,
+      knowledgeType: 'faq',
+      revision: 'outdated-revision',
+      embeddingProfile: profile,
+      score: 0.97,
+    },
+    {
+      id: 'faq:orphan',
+      knowledgeType: 'faq',
+      revision: 'missing',
+      embeddingProfile: profile,
+      score: 0.96,
+    },
+  ];
+  const retriever = new KnowledgeRetriever(
+    new ExternalReadOnlyVectorStore(matches),
+    async () => [[1, 0]],
+    [new FaqKnowledgeAdapter(repo, async () => {
+      throw new Error('existing embeddings should be reused');
+    })],
+  );
+
+  const results = await retriever.search('no-keyword-match', 10, ['faq']);
+
+  assert.deepEqual(results.map((result) => result.knowledgeId), [active.id]);
+  db.close();
+}
+
+async function testExternalVectorFailureFallsBackToKeywords(): Promise<void> {
+  const keyword: RetrievalResult = {
+    knowledgeType: 'faq',
+    knowledgeId: 'keyword-fallback',
+    title: 'fallback',
+    content: 'safe keyword answer',
+    similarity: 0.95,
+    source: 'keyword',
+    keywordScore: 0.95,
+  };
+  const retriever = new KnowledgeRetriever(
+    new ExternalReadOnlyVectorStore([{
+      id: 'faq:unavailable',
+      knowledgeType: 'faq',
+      revision: 'v1',
+      embeddingProfile: 'legacy',
+      score: 1,
+    }], true),
+    async () => [[1, 0]],
+    [new FakeAdapter('faq', [], [keyword])],
+  );
+
+  const results = await retriever.search('fallback', 3, ['faq']);
+
+  assert.equal(results[0].knowledgeId, 'keyword-fallback');
+  assert.equal(results[0].source, 'keyword');
+}
+
 async function testQualityBatchUsesOneEmbeddingCall(): Promise<void> {
   let embedCalls = 0;
   let embeddedTexts = 0;
@@ -167,7 +321,7 @@ async function testQualityBatchUsesOneEmbeddingCall(): Promise<void> {
     similarity: 0,
   };
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async (texts) => {
       embedCalls += 1;
       embeddedTexts += texts.length;
@@ -193,7 +347,7 @@ async function testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(): Promise
   };
   const failing = new FailingLoadAdapter('document', [], [keywordDocument]);
   const fallbackRetriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [failing],
   );
@@ -216,7 +370,7 @@ async function testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(): Promise
   const faqAdapter = new FakeAdapter('faq', [{ id: 'faq:faq-low', result: faqResult, embedding: [0, 1] }], []);
   const documentAdapter = new FakeAdapter('document', documentItems, []);
   const isolatedRetriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [faqAdapter, documentAdapter],
   );
@@ -238,7 +392,7 @@ async function testExactFaqCannotBeDisplacedByDocumentCandidates(): Promise<void
     embedding: [1, 0],
   }));
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [
       new FakeAdapter('faq', [], [exactFaq]),
@@ -274,7 +428,7 @@ async function testMixedSearchKeepsRelevantDocumentCandidate(): Promise<void> {
     chunkIndex: 1,
   };
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [
       new FakeAdapter('faq', faqItems, []),
@@ -374,7 +528,7 @@ async function testGpuCatalogueWinsRealMixedRetrieval(): Promise<void> {
   );
 
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     embedTexts,
     [
       new FaqKnowledgeAdapter(faqRepo, embedTexts),
@@ -536,7 +690,7 @@ async function testRuntimeProfileChangeRefreshesSourceBeforeSearch(): Promise<vo
     embedding: [1, 0],
   }]);
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [adapter],
   );
@@ -561,7 +715,7 @@ async function testConcurrentInitializationIsSingleFlight(): Promise<void> {
     embedding: [1, 0],
   }]);
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [adapter],
   );
@@ -638,7 +792,7 @@ async function testSuccessfulManualRefreshClearsDegradedSource(): Promise<void> 
     [],
   );
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     async () => [[1, 0]],
     [adapter],
   );
@@ -720,9 +874,9 @@ async function testDirectDocumentReplacementRollsBackAsOneIndexSet(): Promise<vo
     },
     embedding: [1, 0],
   };
-  retriever.replaceDocumentIndexItems('document-1', [replacement]);
+  await retriever.replaceDocumentIndexItems('document-1', [replacement]);
   assert.deepEqual(
-    store.search([1, 0], 10).map((result) => result.id).sort(),
+    (await store.search([1, 0], { limit: 10 })).map((result) => result.id).sort(),
     ['document:new-chunk', 'document:other-chunk'],
   );
 
@@ -732,12 +886,12 @@ async function testDirectDocumentReplacementRollsBackAsOneIndexSet(): Promise<vo
     result: { ...replacement.result, knowledgeId: 'failed-chunk' },
   };
   store.failOnId = failedReplacement.id;
-  assert.throws(
-    () => retriever.replaceDocumentIndexItems('document-1', [failedReplacement]),
+  await assert.rejects(
+    retriever.replaceDocumentIndexItems('document-1', [failedReplacement]),
     /vector upsert failure/,
   );
   assert.deepEqual(
-    store.search([1, 0], 10).map((result) => result.id).sort(),
+    (await store.search([1, 0], { limit: 10 })).map((result) => result.id).sort(),
     ['document:new-chunk', 'document:other-chunk'],
     'a failed direct replacement must restore the previous document set',
   );
@@ -746,6 +900,8 @@ async function testDirectDocumentReplacementRollsBackAsOneIndexSet(): Promise<vo
 
 Promise.all([
   testHybridKnowledgeSearchUsesOneQueryEmbedding(),
+  testExternalVectorHitsAreHydratedFromSqlite(),
+  testExternalVectorFailureFallsBackToKeywords(),
   testQualityBatchUsesOneEmbeddingCall(),
   testAdapterFailureKeepsKeywordFallbackAndTypeIsolation(),
   testExactFaqCannotBeDisplacedByDocumentCandidates(),

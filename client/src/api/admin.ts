@@ -38,6 +38,13 @@ import type {
   QualityCase,
   QualityDatasetVersion,
   QualityRun,
+  QualityBackendTarget,
+  RetrievalActivationCheck,
+  RetrievalIndexJob,
+  RetrievalStatus,
+  RetrievalTrace,
+  RetrievalTraceDetail,
+  RetrievalTraceStatus,
   RetrievalPolicy,
   RetrievalPolicyEvent,
   RetrievalPolicyConfig,
@@ -77,6 +84,12 @@ export type {
   QualityCase,
   QualityDatasetVersion,
   QualityRun,
+  RetrievalActivationCheck,
+  RetrievalIndexJob,
+  RetrievalStatus,
+  RetrievalTrace,
+  RetrievalTraceDetail,
+  RetrievalTraceStatus,
   RetrievalPolicy,
   RetrievalPolicyEvent,
   RetrievalPolicyConfig,
@@ -448,6 +461,7 @@ export async function getQualityRun(runId: string): Promise<QualityRun> {
 export async function createQualityRun(data: {
   datasetVersionIds: string[];
   policies: RetrievalPolicyConfig[];
+  backendTargets?: QualityBackendTarget[];
 }): Promise<QualityRun> {
   return post('/admin/quality/runs', data, idempotentRequest());
 }
@@ -486,4 +500,75 @@ export async function rollbackQualityPolicy(data: {
   confirmed: true;
 }): Promise<RetrievalPolicy> {
   return post('/admin/quality/policies/rollback', data, idempotentRequest());
+}
+
+// ── Retrieval Operations ──────────────────────────
+
+export async function getRetrievalStatus(): Promise<RetrievalStatus> {
+  return get('/admin/retrieval/status');
+}
+
+export async function listRetrievalIndexJobs(
+  page: number = 1,
+  pageSize: number = 50,
+): Promise<PaginationResponse<RetrievalIndexJob>> {
+  return get('/admin/retrieval/index-jobs', { page, pageSize });
+}
+
+export async function createRetrievalIndexJob(): Promise<RetrievalIndexJob> {
+  return post('/admin/retrieval/index-jobs', {}, idempotentRequest());
+}
+
+export async function getRetrievalActivationCheck(
+  id: string,
+): Promise<RetrievalActivationCheck> {
+  return get(`/admin/retrieval/index-jobs/${id}/activation-check`);
+}
+
+export async function activateRetrievalIndexJob(data: {
+  id: string;
+  expectedCurrentCollection: string | null;
+  confirmLatencyWarning: boolean;
+}): Promise<RetrievalIndexJob> {
+  return post(
+    `/admin/retrieval/index-jobs/${data.id}/activate`,
+    {
+      expectedCurrentCollection: data.expectedCurrentCollection,
+      confirmed: true,
+      confirmLatencyWarning: data.confirmLatencyWarning,
+    },
+    idempotentRequest(),
+  );
+}
+
+export async function rollbackRetrievalIndexJob(data: {
+  id: string;
+  expectedCurrentCollection: string;
+}): Promise<RetrievalIndexJob> {
+  return post(
+    `/admin/retrieval/index-jobs/${data.id}/rollback`,
+    {
+      expectedCurrentCollection: data.expectedCurrentCollection,
+      confirmed: true,
+    },
+    idempotentRequest(),
+  );
+}
+
+export async function listRetrievalTraces(params?: {
+  page?: number;
+  pageSize?: number;
+  status?: RetrievalTraceStatus;
+  backend?: 'memory' | 'qdrant';
+  sessionId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+}): Promise<PaginationResponse<RetrievalTrace>> {
+  return get('/admin/retrieval/traces', params);
+}
+
+export async function getRetrievalTrace(
+  traceId: string,
+): Promise<RetrievalTraceDetail> {
+  return get(`/admin/retrieval/traces/${traceId}`);
 }

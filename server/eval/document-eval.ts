@@ -146,7 +146,7 @@ async function evaluate(cases: EvalCase[], index: IndexedChunk[]): Promise<Metri
     import('../ai/vector-store'),
   ]);
   const retriever = new KnowledgeRetriever(
-    new InMemoryVectorStore<KnowledgeIndexItem>(),
+    new InMemoryVectorStore(),
     embedTexts,
     [new EvalDocumentAdapter(index)],
   );

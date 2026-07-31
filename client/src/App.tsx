@@ -15,6 +15,7 @@ const ModelConfigPage = lazy(() => import('./pages/admin/ModelConfigPage'));
 const KnowledgeReviewPage = lazy(() => import('./pages/admin/KnowledgeReviewPage'));
 const DocumentManagementPage = lazy(() => import('./pages/admin/DocumentManagementPage'));
 const QualityLabPage = lazy(() => import('./pages/admin/QualityLabPage'));
+const RetrievalOpsPage = lazy(() => import('./pages/admin/RetrievalOpsPage'));
 const EscalationTriagePage = lazy(() => import('./pages/admin/EscalationTriagePage'));
 const AuthGuard = lazy(() => import('./components/common/AuthGuard'));
 
@@ -53,6 +54,7 @@ export function App(): React.ReactElement {
               <Route path="knowledge-review" element={<KnowledgeReviewPage />} />
               <Route path="documents" element={<DocumentManagementPage />} />
               <Route path="quality-lab" element={<QualityLabPage />} />
+              <Route path="retrieval-ops" element={<RetrievalOpsPage />} />
               <Route path="config" element={<ModelConfigPage />} />
             </Route>
           </Routes>

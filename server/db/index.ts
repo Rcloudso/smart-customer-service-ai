@@ -493,6 +493,7 @@ export function initSchema(database: Database.Database): void {
       id TEXT PRIMARY KEY,
       dataset_version_ids TEXT NOT NULL,
       policy_grid TEXT NOT NULL,
+      backend_targets TEXT NOT NULL DEFAULT '[{"provider":"memory"}]',
       status TEXT NOT NULL
         CHECK(status IN ('queued', 'running', 'completed', 'failed', 'interrupted', 'cancelled', 'stale')),
       progress INTEGER NOT NULL DEFAULT 0,
@@ -513,6 +514,7 @@ export function initSchema(database: Database.Database): void {
     CREATE TABLE IF NOT EXISTS quality_run_candidates (
       run_id TEXT NOT NULL REFERENCES quality_runs(id) ON DELETE CASCADE,
       candidate_key TEXT NOT NULL,
+      backend_target TEXT NOT NULL DEFAULT '{"provider":"memory"}',
       policy_config TEXT NOT NULL,
       metrics TEXT NOT NULL,
       recommended INTEGER NOT NULL DEFAULT 0 CHECK(recommended IN (0, 1)),
@@ -536,6 +538,80 @@ export function initSchema(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_quality_case_results_run_failure
       ON quality_case_results(run_id, passed, case_id);
+
+    CREATE TABLE IF NOT EXISTS retrieval_index_jobs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL CHECK(status IN (
+        'queued', 'running', 'interrupted', 'ready', 'active',
+        'rolled_back', 'failed', 'stale'
+      )),
+      collection_name TEXT NOT NULL UNIQUE,
+      embedding_profile TEXT NOT NULL,
+      vector_dimension INTEGER NOT NULL CHECK(vector_dimension > 0),
+      knowledge_fingerprint TEXT NOT NULL,
+      expected_count INTEGER NOT NULL CHECK(expected_count >= 0),
+      completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
+      batch_checkpoint INTEGER NOT NULL DEFAULT 0 CHECK(batch_checkpoint >= 0),
+      previous_collection TEXT,
+      failure_code TEXT,
+      activation_intent TEXT CHECK(activation_intent IN ('activate', 'rollback')),
+      activation_expected_collection TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      ready_at TEXT,
+      activated_at TEXT,
+      rolled_back_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_index_jobs_status_created
+      ON retrieval_index_jobs(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_index_jobs_fingerprint
+      ON retrieval_index_jobs(knowledge_fingerprint, embedding_profile, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS retrieval_traces (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      user_message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      assistant_message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+      policy_id TEXT NOT NULL,
+      backend TEXT NOT NULL CHECK(backend IN ('memory', 'qdrant')),
+      status TEXT NOT NULL CHECK(status IN ('completed', 'degraded', 'failed')),
+      error_code TEXT,
+      total_latency_ms REAL NOT NULL CHECK(total_latency_ms >= 0),
+      created_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_created
+      ON retrieval_traces(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_status_created
+      ON retrieval_traces(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_backend_created
+      ON retrieval_traces(backend, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_retrieval_traces_session_created
+      ON retrieval_traces(session_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS retrieval_trace_stages (
+      trace_id TEXT NOT NULL REFERENCES retrieval_traces(id) ON DELETE CASCADE,
+      stage_name TEXT NOT NULL CHECK(stage_name IN (
+        'query_expand', 'embedding', 'vector_recall', 'keyword_recall',
+        'fusion', 'rerank', 'context_budget', 'grounding'
+      )),
+      stage_order INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('completed', 'degraded', 'failed', 'skipped')),
+      latency_ms REAL NOT NULL CHECK(latency_ms >= 0),
+      input_count INTEGER NOT NULL CHECK(input_count >= 0),
+      output_count INTEGER NOT NULL CHECK(output_count >= 0),
+      candidates TEXT NOT NULL DEFAULT '[]',
+      budget TEXT NOT NULL DEFAULT '{}',
+      error_code TEXT,
+      PRIMARY KEY(trace_id, stage_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_retrieval_trace_stages_trace
+      ON retrieval_trace_stages(trace_id, stage_order);
   `);
 
   // v0.2.6 security migration: model credentials are environment-injected only.
@@ -572,6 +648,25 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'document_processing_tasks', 'quality_reasons', "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(database, 'document_extraction_jobs', 'result_block_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(database, 'document_extraction_jobs', 'result_warning_codes', "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(
+    database,
+    'quality_runs',
+    'backend_targets',
+    `TEXT NOT NULL DEFAULT '[{"provider":"memory"}]'`,
+  );
+  ensureColumn(
+    database,
+    'quality_run_candidates',
+    'backend_target',
+    `TEXT NOT NULL DEFAULT '{"provider":"memory"}'`,
+  );
+  ensureColumn(
+    database,
+    'retrieval_index_jobs',
+    'activation_intent',
+    "TEXT CHECK(activation_intent IN ('activate', 'rollback'))",
+  );
+  ensureColumn(database, 'retrieval_index_jobs', 'activation_expected_collection', 'TEXT');
   database.prepare(`
     UPDATE document_extraction_jobs
     SET result_block_count = CASE

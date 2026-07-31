@@ -5,6 +5,7 @@ import type {
   QualityCaseResult,
   QualityRun,
   QualityRunStatus,
+  QualityBackendTarget,
   RetrievalPolicyConfig,
 } from '../../types/quality';
 
@@ -12,6 +13,7 @@ interface RunRow {
   id: string;
   dataset_version_ids: string;
   policy_grid: string;
+  backend_targets: string;
   status: QualityRunStatus;
   progress: number;
   total_cases: number;
@@ -27,6 +29,7 @@ interface RunRow {
 
 interface CandidateRow {
   candidate_key: string;
+  backend_target: string;
   policy_config: string;
   metrics: string;
   recommended: number;
@@ -49,6 +52,7 @@ export class QualityRunRepo {
   create(params: {
     datasetVersionIds: string[];
     policies: RetrievalPolicyConfig[];
+    backendTargets: QualityBackendTarget[];
     totalCases: number;
     knowledgeFingerprint: string | null;
     activePolicyId: string;
@@ -58,14 +62,15 @@ export class QualityRunRepo {
     const id = uuidv4();
     this.db.prepare(
       `INSERT INTO quality_runs (
-         id, dataset_version_ids, policy_grid, status, progress, total_cases,
+         id, dataset_version_ids, policy_grid, backend_targets, status, progress, total_cases,
          knowledge_fingerprint, active_policy_id, failure_code, cancel_requested,
          created_by, created_at, started_at, completed_at
-       ) VALUES (?, ?, ?, 'queued', 0, ?, ?, ?, NULL, 0, ?, ?, NULL, NULL)`,
+       ) VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?, NULL, 0, ?, ?, NULL, NULL)`,
     ).run(
       id,
       JSON.stringify(params.datasetVersionIds),
       JSON.stringify(params.policies),
+      JSON.stringify(params.backendTargets),
       params.totalCases,
       params.knowledgeFingerprint,
       params.activePolicyId,
@@ -94,24 +99,41 @@ export class QualityRunRepo {
         candidateKey: caseRow.candidate_key,
         actualAnswerMode: caseRow.actual_answer_mode,
         actualGroundingStatus: caseRow.actual_grounding_status,
-        sources: JSON.parse(caseRow.sources) as QualityCaseResult['sources'],
+        sources: parseJson(caseRow.sources, []),
         latencyMs: caseRow.latency_ms,
         passed: Boolean(caseRow.passed),
         failureReason: caseRow.failure_reason,
       });
       casesByCandidate.set(caseRow.candidate_key, cases);
     }
-    const candidates: QualityCandidateResult[] = candidateRows.map((candidate) => ({
-      key: candidate.candidate_key,
-      policy: JSON.parse(candidate.policy_config) as RetrievalPolicyConfig,
-      metrics: JSON.parse(candidate.metrics) as QualityCandidateResult['metrics'],
-      recommended: Boolean(candidate.recommended),
-      cases: casesByCandidate.get(candidate.candidate_key) ?? [],
-    }));
+    const candidates: QualityCandidateResult[] = candidateRows.flatMap((candidate) => {
+      const backendTarget = parseJson<QualityBackendTarget | null>(
+        candidate.backend_target,
+        null,
+      );
+      const policy = parseJson<RetrievalPolicyConfig | null>(candidate.policy_config, null);
+      const metrics = parseJson<QualityCandidateResult['metrics'] | null>(
+        candidate.metrics,
+        null,
+      );
+      if (!backendTarget || !policy || !metrics) return [];
+      return [{
+        key: candidate.candidate_key,
+        backendTarget,
+        policy,
+        metrics,
+        recommended: Boolean(candidate.recommended),
+        cases: casesByCandidate.get(candidate.candidate_key) ?? [],
+      }];
+    });
     return {
       id: row.id,
-      datasetVersionIds: JSON.parse(row.dataset_version_ids) as string[],
-      policies: JSON.parse(row.policy_grid) as RetrievalPolicyConfig[],
+      datasetVersionIds: parseJson<string[]>(row.dataset_version_ids, []),
+      policies: parseJson<RetrievalPolicyConfig[]>(row.policy_grid, []),
+      backendTargets: parseJson<QualityBackendTarget[]>(
+        row.backend_targets,
+        [{ provider: 'memory' }],
+      ),
       status: row.status,
       progress: row.progress,
       totalCases: row.total_cases,
@@ -125,6 +147,28 @@ export class QualityRunRepo {
       startedAt: row.started_at,
       completedAt: row.completed_at,
     };
+  }
+
+  getPolicyGrid(id: string): RetrievalPolicyConfig[] {
+    const row = this.db.prepare(
+      'SELECT policy_grid FROM quality_runs WHERE id = ?',
+    ).get(id) as { policy_grid: string } | undefined;
+    return row ? parseJson(row.policy_grid, []) : [];
+  }
+
+  findLatestCompletedCandidate(candidateKey: string): {
+    runId: string;
+    candidateKey: string;
+  } | null {
+    const row = this.db.prepare(`
+      SELECT candidate.run_id, candidate.candidate_key
+      FROM quality_run_candidates candidate
+      JOIN quality_runs run ON run.id = candidate.run_id
+      WHERE run.status = 'completed' AND candidate.candidate_key = ?
+      ORDER BY run.completed_at DESC
+      LIMIT 1
+    `).get(candidateKey) as { run_id: string; candidate_key: string } | undefined;
+    return row ? { runId: row.run_id, candidateKey: row.candidate_key } : null;
   }
 
   list(limit: number = 50, offset: number = 0): QualityRun[] {
@@ -165,8 +209,8 @@ export class QualityRunRepo {
     this.db.transaction(() => {
       const insertCandidate = this.db.prepare(
         `INSERT INTO quality_run_candidates (
-           run_id, candidate_key, policy_config, metrics, recommended
-         ) VALUES (?, ?, ?, ?, ?)`,
+           run_id, candidate_key, backend_target, policy_config, metrics, recommended
+         ) VALUES (?, ?, ?, ?, ?, ?)`,
       );
       const insertCase = this.db.prepare(
         `INSERT INTO quality_case_results (
@@ -178,6 +222,7 @@ export class QualityRunRepo {
         insertCandidate.run(
           id,
           candidate.key,
+          JSON.stringify(candidate.backendTarget),
           JSON.stringify(candidate.policy),
           JSON.stringify(candidate.metrics),
           candidate.recommended ? 1 : 0,
@@ -239,5 +284,13 @@ export class QualityRunRepo {
        SET status = 'interrupted', completed_at = ?
        WHERE status IN ('queued', 'running')`,
     ).run(now).changes;
+  }
+}
+
+function parseJson<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
   }
 }

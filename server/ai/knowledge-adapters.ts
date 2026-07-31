@@ -8,6 +8,7 @@ import {
   KnowledgeIndexItem,
   KnowledgeIndexLoad,
 } from './knowledge-retriever';
+import type { VectorSearchResult } from './vector-store';
 import {
   DOCUMENT_EMBEDDING_INPUT_VERSION,
   FAQ_EMBEDDING_INPUT_VERSION,
@@ -147,6 +148,17 @@ export class FaqKnowledgeAdapter implements KnowledgeAdapter {
       .sort((left, right) => right.similarity - left.similarity);
   }
 
+  async hydrateVectorMatches(
+    matches: VectorSearchResult[],
+  ): Promise<Map<string, KnowledgeIndexItem>> {
+    return new Map(this.repo.findActiveByIds(
+      matches.map((match) => match.id.replace(/^faq:/, '')),
+    ).map((entry) => {
+      const item = this.toIndexItem(entry);
+      return [item.id, item];
+    }));
+  }
+
   toIndexItem(entry: FaqEntry): KnowledgeIndexItem {
     return {
       id: `faq:${entry.id}`,
@@ -158,6 +170,7 @@ export class FaqKnowledgeAdapter implements KnowledgeAdapter {
         similarity: 0,
       },
       embedding: entry.embedding ?? [],
+      revision: entry.updatedAt,
     };
   }
 }
@@ -234,6 +247,7 @@ export class DocumentKnowledgeAdapter implements KnowledgeAdapter {
         extractionEngineVersion: chunk.extractionEngineVersion ?? undefined,
       },
       embedding: chunk.embedding,
+      revision: chunk.createdAt,
     };
   }
 
@@ -266,6 +280,17 @@ export class DocumentKnowledgeAdapter implements KnowledgeAdapter {
       })
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, limit);
+  }
+
+  async hydrateVectorMatches(
+    matches: VectorSearchResult[],
+  ): Promise<Map<string, KnowledgeIndexItem>> {
+    return new Map(this.repo.findActiveKnowledgeChunksByIds(
+      matches.map((match) => match.id.replace(/^document:/, '')),
+    ).map((chunk) => {
+      const item = this.toIndexItem(chunk, chunk.documentTitle);
+      return [item.id, item];
+    }));
   }
 }
 

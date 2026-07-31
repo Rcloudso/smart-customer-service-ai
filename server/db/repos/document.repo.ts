@@ -276,6 +276,23 @@ export class DocumentRepo {
     }));
   }
 
+  findActiveKnowledgeChunksByIds(ids: string[]): DocumentKnowledgeChunk[] {
+    const uniqueIds = [...new Set(ids)].slice(0, 100);
+    if (uniqueIds.length === 0) return [];
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const rows = this.db.prepare(`
+      SELECT c.*, d.file_name AS document_title FROM document_chunks c
+      JOIN documents d ON d.id = c.document_id
+      WHERE c.id IN (${placeholders})
+        AND d.status = 'ready' AND d.is_active = 1
+        AND d.index_status IN ('legacy', 'published')
+    `).all(...uniqueIds) as Record<string, unknown>[];
+    return rows.map((row) => ({
+      ...this.mapChunk(row),
+      documentTitle: row.document_title as string,
+    }));
+  }
+
   searchActiveChunksLikeTerms(terms: string[], limit: number): DocumentKnowledgeChunk[] {
     const uniqueTerms = [...new Set(terms.map((term) => term.trim()).filter(Boolean))].slice(0, 24);
     if (uniqueTerms.length === 0) return [];

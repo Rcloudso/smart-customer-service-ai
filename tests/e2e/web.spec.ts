@@ -2099,4 +2099,290 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
       });
     }
   });
+
+  test('retrieval operations shows trace timeline across language, theme, mobile and keyboard states', async ({ page }) => {
+    const question = `retrieval-trace-web-${Date.now()}`;
+    const chatResponse = await page.request.post('/api/chat', {
+      headers: { Accept: 'text/event-stream' },
+      data: { message: question, userIdent: `trace-web-${Date.now()}` },
+    });
+    expect(chatResponse.status()).toBe(200);
+    const stream = await chatResponse.text();
+    const sessionId = stream.match(/"sessionId":"([^"]+)"/)?.[1];
+    expect(sessionId).toBeTruthy();
+
+    await loginAsAdmin(page);
+    await page.getByText('检索运维').click();
+    await expect(page).toHaveURL(/\/admin\/retrieval-ops$/);
+    await expect(page.getByTestId('retrieval-ops-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '检索运维' })).toBeVisible();
+    await expect(page.getByText('内存', { exact: true })).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.getByText('登录成功').waitFor({ state: 'hidden' });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-retrieval-ops-desktop.png',
+        fullPage: true,
+      });
+    }
+
+    await page.getByText('检索 Trace').click();
+    await page.getByTestId('retrieval-trace-session-filter').locator('input').fill(sessionId!);
+    await page.getByRole('button', { name: '查询', exact: true }).click();
+    const traceRow = page.getByTestId('retrieval-trace-table').locator('tr').filter({
+      hasText: sessionId!,
+    });
+    await expect(traceRow).toBeVisible();
+    await traceRow.getByRole('button', { name: '查看' }).click();
+    await expect(page.getByText(question, { exact: true })).toBeVisible();
+    await expect(page.getByText('查询扩展', { exact: true })).toBeVisible();
+    await expect(page.getByText('Grounding 决策', { exact: true })).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.waitForTimeout(350);
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-retrieval-trace-desktop.png',
+        fullPage: true,
+      });
+    }
+    await page.locator('.t-dialog:visible .t-dialog__close').click();
+
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: 'Retrieval operations' })).toBeVisible();
+    await expect(page.getByText('Runtime overview')).toBeVisible();
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY');
+    await expect.poll(
+      () => page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+      { message: 'retrieval operations should not create page-level mobile overflow' },
+    ).toBe(true);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-retrieval-ops-mobile-dark.png',
+        fullPage: true,
+      });
+    }
+  });
+
+  test('retrieval operations gates activation, rollback and error states with optimistic alias values', async ({ page }) => {
+    await loginAsAdmin(page);
+    const oldCollection = 'resolveweave_knowledge_20260729_old';
+    const nextCollection = 'resolveweave_knowledge_20260729_next';
+    const oldJobId = '11111111-1111-4111-8111-111111111111';
+    const nextJobId = '22222222-2222-4222-8222-222222222222';
+    let currentCollection = oldCollection;
+    let failRequests = false;
+    let jobs = [
+      {
+        id: nextJobId,
+        status: 'ready',
+        collection: nextCollection,
+        embeddingProfile: 'combined:quality-v1',
+        vectorDimension: 64,
+        knowledgeFingerprint: 'fingerprint-v1',
+        expectedCount: 128,
+        completedCount: 128,
+        checkpoint: 128,
+        previousCollection: null,
+        failureCode: null,
+        createdBy: 'admin',
+        createdAt: '2026-07-29T08:00:00.000Z',
+        startedAt: '2026-07-29T08:00:01.000Z',
+        readyAt: '2026-07-29T08:00:03.000Z',
+        activatedAt: null,
+        rolledBackAt: null,
+        updatedAt: '2026-07-29T08:00:03.000Z',
+      },
+      {
+        id: oldJobId,
+        status: 'active',
+        collection: oldCollection,
+        embeddingProfile: 'combined:quality-v1',
+        vectorDimension: 64,
+        knowledgeFingerprint: 'fingerprint-v1',
+        expectedCount: 128,
+        completedCount: 128,
+        checkpoint: 128,
+        previousCollection: null,
+        failureCode: null,
+        createdBy: 'admin',
+        createdAt: '2026-07-28T08:00:00.000Z',
+        startedAt: '2026-07-28T08:00:01.000Z',
+        readyAt: '2026-07-28T08:00:03.000Z',
+        activatedAt: '2026-07-28T08:05:00.000Z',
+        rolledBackAt: null,
+        updatedAt: '2026-07-28T08:05:00.000Z',
+      },
+    ];
+
+    await page.route('**/api/admin/retrieval/**', async (route) => {
+      if (failRequests) {
+        await route.fulfill({ status: 503, json: { code: 503, data: null, message: 'unavailable' } });
+        return;
+      }
+      const request = route.request();
+      const url = new URL(request.url());
+      const path = url.pathname;
+      if (path.endsWith('/status')) {
+        await route.fulfill({ json: { code: 0, data: {
+          provider: 'qdrant',
+          qdrantConfigured: true,
+          qdrantHealth: 'healthy',
+          alias: 'resolveweave_knowledge_active',
+          collection: currentCollection,
+          points: 128,
+          dimensions: 64,
+          syncStatus: 'synced',
+        }, message: 'ok' } });
+        return;
+      }
+      if (path.endsWith(`/index-jobs/${nextJobId}/activation-check`)) {
+        await route.fulfill({ json: { code: 0, data: {
+          eligible: true,
+          reasons: [],
+          warnings: ['p95_latency_regression_gt_25_percent'],
+          qualityRunId: '33333333-3333-4333-8333-333333333333',
+          candidateKey: `qdrant:${nextJobId}:policy`,
+        }, message: 'ok' } });
+        return;
+      }
+      if (path.endsWith(`/index-jobs/${nextJobId}/activate`)) {
+        expect(request.postDataJSON()).toMatchObject({
+          expectedCurrentCollection: oldCollection,
+          confirmed: true,
+          confirmLatencyWarning: true,
+        });
+        currentCollection = nextCollection;
+        jobs = jobs.map((job) => (
+          job.id === nextJobId
+            ? {
+                ...job,
+                status: 'active',
+                previousCollection: oldCollection,
+                activatedAt: '2026-07-29T08:10:00.000Z',
+              }
+            : {
+                ...job,
+                status: 'rolled_back',
+                rolledBackAt: '2026-07-29T08:10:00.000Z',
+              }
+        ));
+        await route.fulfill({ json: { code: 0, data: jobs[0], message: 'ok' } });
+        return;
+      }
+      if (path.endsWith(`/index-jobs/${nextJobId}/rollback`)) {
+        expect(request.postDataJSON()).toMatchObject({
+          expectedCurrentCollection: nextCollection,
+          confirmed: true,
+        });
+        currentCollection = oldCollection;
+        jobs = jobs.map((job) => (
+          job.id === nextJobId
+            ? {
+                ...job,
+                status: 'rolled_back',
+                rolledBackAt: '2026-07-29T08:12:00.000Z',
+              }
+            : {
+                ...job,
+                status: 'active',
+                rolledBackAt: null,
+                activatedAt: '2026-07-29T08:12:00.000Z',
+              }
+        ));
+        await route.fulfill({ json: { code: 0, data: jobs[1], message: 'ok' } });
+        return;
+      }
+      if (path.endsWith('/index-jobs')) {
+        await route.fulfill({ json: { code: 0, data: {
+          items: jobs,
+          total: jobs.length,
+          page: 1,
+          pageSize: 50,
+        }, message: 'ok' } });
+        return;
+      }
+      if (path.endsWith('/traces')) {
+        await route.fulfill({ json: { code: 0, data: {
+          items: [],
+          total: 0,
+          page: 1,
+          pageSize: 20,
+        }, message: 'ok' } });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.getByText('质量实验室').click();
+    await page.getByText('实验运行').click();
+    await page.getByTitle('内存基线').click();
+    await expect(page.getByText(`Qdrant 索引 · ${nextCollection}`)).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.getByText('登录成功').waitFor({ state: 'hidden' });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-quality-backends.png',
+        fullPage: true,
+      });
+    }
+    await page.keyboard.press('Escape');
+
+    await page.getByText('检索运维').click();
+    await expect(page.getByText(nextCollection)).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.getByText('登录成功').waitFor({ state: 'hidden' });
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-index-ready.png',
+        fullPage: true,
+      });
+    }
+
+    const nextRow = page.locator('tr').filter({ hasText: nextCollection });
+    await nextRow.getByRole('button', { name: '激活' }).click();
+    await expect(page.getByText('Quality Lab 门禁已通过，可以原子切换 alias。')).toBeVisible();
+    await expect(page.getByRole('button', { name: '确认' })).toBeDisabled();
+    await page.getByText('我已确认 P95 延迟警告并继续激活').click();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.waitForTimeout(350);
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-activation-gate.png',
+        fullPage: true,
+      });
+    }
+    await page.getByRole('button', { name: '确认' }).click();
+    await expect(nextRow).toContainText('已激活');
+    await expect(page.getByText(nextCollection).first()).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-index-active.png',
+        fullPage: true,
+      });
+    }
+
+    await nextRow.getByRole('button', { name: '回滚' }).click();
+    await expect(page.getByText(`Alias 将切回已验证 collection：${oldCollection}`)).toBeVisible();
+    await page.getByRole('button', { name: '确认' }).click();
+    await expect(page.getByText(oldCollection).first()).toBeVisible();
+    await expect(nextRow).toContainText('已回滚');
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-index-rolled-back.png',
+        fullPage: true,
+      });
+    }
+
+    failRequests = true;
+    await page.getByRole('button', { name: '刷新' }).click();
+    await expect(page.getByText('检索运维数据加载失败，请重试。')).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.2-ops-error.png',
+        fullPage: true,
+      });
+    }
+  });
 });

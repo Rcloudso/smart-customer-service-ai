@@ -19,6 +19,8 @@ import type {
   QualityCase,
   QualityDatasetVersion,
   QualityRun,
+  QualityBackendTarget,
+  RetrievalIndexJob,
   RetrievalPolicy,
   RetrievalPolicyEvent,
   RetrievalPolicyConfig,
@@ -43,6 +45,7 @@ export function QualityLabPage(): React.ReactElement {
   const [cases, setCases] = useState<QualityCase[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [runs, setRuns] = useState<QualityRun[]>([]);
+  const [indexJobs, setIndexJobs] = useState<RetrievalIndexJob[]>([]);
   const [currentPolicy, setCurrentPolicy] = useState<RetrievalPolicy | null>(null);
   const [policyHistory, setPolicyHistory] = useState<RetrievalPolicy[]>([]);
   const [policyEvents, setPolicyEvents] = useState<RetrievalPolicyEvent[]>([]);
@@ -54,6 +57,7 @@ export function QualityLabPage(): React.ReactElement {
     'none',
     'local_overlap_v1',
   ]);
+  const [selectedBackends, setSelectedBackends] = useState<Array<string | number>>(['memory']);
   const [loading, setLoading] = useState(false);
   const [datasetDialog, setDatasetDialog] = useState(false);
   const [caseDialog, setCaseDialog] = useState(false);
@@ -102,16 +106,18 @@ export function QualityLabPage(): React.ReactElement {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [datasetItems, runPage, policyData] = await Promise.all([
+      const [datasetItems, runPage, policyData, indexJobPage] = await Promise.all([
         adminApi.listQualityDatasets(),
         adminApi.listQualityRuns(),
         adminApi.getQualityPolicies(),
+        adminApi.listRetrievalIndexJobs(1, 100),
       ]);
       setDatasets(datasetItems);
       setRuns(runPage.items);
       setCurrentPolicy(policyData.current);
       setPolicyHistory(policyData.history);
       setPolicyEvents(policyData.events);
+      setIndexJobs(indexJobPage.items);
       const latestCompleted = runPage.items.find((run) => run.status === 'completed');
       if (latestCompleted) {
         const checks = await Promise.all(latestCompleted.candidates.map(async (candidate) => [
@@ -218,6 +224,7 @@ export function QualityLabPage(): React.ReactElement {
       await adminApi.createQualityRun({
         datasetVersionIds: selectedDatasets.map(String),
         policies: matrixPolicies,
+        backendTargets: selectedBackends.map(toBackendTarget),
       });
       MessagePlugin.success(t('quality.runQueued'));
       await refresh();
@@ -239,6 +246,7 @@ export function QualityLabPage(): React.ReactElement {
       await adminApi.createQualityRun({
         datasetVersionIds: run.datasetVersionIds,
         policies: run.policies,
+        backendTargets: run.backendTargets,
       });
       MessagePlugin.success(t('quality.runQueued'));
       await refresh();
@@ -404,6 +412,22 @@ export function QualityLabPage(): React.ReactElement {
                 placeholder={t('quality.selectDatasets')}
                 onChange={(value) => setSelectedDatasets(value as Array<string | number>)}
               />
+              <Select
+                value={selectedBackends}
+                multiple
+                clearable
+                options={[
+                  { label: t('quality.backend.memory'), value: 'memory' },
+                  ...indexJobs
+                    .filter((job) => job.status === 'ready')
+                    .map((job) => ({
+                      label: `${t('quality.backend.qdrant')} · ${job.collection}`,
+                      value: `qdrant:${job.id}`,
+                    })),
+                ]}
+                placeholder={t('quality.selectBackends')}
+                onChange={(value) => setSelectedBackends(value as Array<string | number>)}
+              />
               <div className="app-quality-matrix">
                 <Select
                   value={directThresholds}
@@ -434,7 +458,11 @@ export function QualityLabPage(): React.ReactElement {
                 <span>{t('quality.matrixCount', { count: matrixPolicies.length })}</span>
                 <Button
                   theme="primary"
-                  disabled={selectedDatasets.length === 0 || matrixPolicies.length === 0}
+                  disabled={
+                    selectedDatasets.length === 0
+                    || selectedBackends.length === 0
+                    || matrixPolicies.length === 0
+                  }
                   onClick={startRun}
                 >
                   {t('quality.startRun')}
@@ -458,6 +486,10 @@ export function QualityLabPage(): React.ReactElement {
                     columns={[
                       { colKey: 'recommended', title: t('quality.recommended'), width: 110,
                         cell: ({ row }) => row.recommended ? <Tag theme="success">✓</Tag> : '—' },
+                      { colKey: 'backend', title: t('quality.backend'),
+                        cell: ({ row }) => row.backendTarget.provider === 'memory'
+                          ? t('quality.backend.memory')
+                          : t('quality.backend.qdrant') },
                       { colKey: 'policy', title: t('quality.strategy'),
                         cell: ({ row }) => formatPolicy(row.policy) },
                       { colKey: 'metrics', title: t('quality.metricsSummary'),
@@ -696,6 +728,15 @@ export function QualityLabPage(): React.ReactElement {
 
 function percent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function toBackendTarget(value: string | number): QualityBackendTarget {
+  const normalized = String(value);
+  if (normalized === 'memory') return { provider: 'memory' };
+  return {
+    provider: 'qdrant',
+    indexJobId: normalized.replace(/^qdrant:/, ''),
+  };
 }
 
 export default QualityLabPage;

@@ -35,8 +35,10 @@ class SemanticSearch {
       this.lastError = this.initialized ? null : 'FAQ vector index is degraded; keyword fallback remains available';
     } catch (error) {
       this.initialized = true;
-      this.lastError = error instanceof Error ? error.message : String(error);
-      logger.error({ err: error }, 'Failed to initialize semantic search index');
+      this.lastError = 'FAQ vector index initialization failed; keyword fallback remains available';
+      logger.error({
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Failed to initialize semantic search index');
     }
   }
 
@@ -45,9 +47,9 @@ class SemanticSearch {
     return this.getStatus();
   }
 
-  getStatus(): FaqIndexStatus {
+  async getStatus(): Promise<FaqIndexStatus> {
     const activeEntries = this.faqRepo.listAllActive();
-    const stats = knowledgeRetriever.stats();
+    const stats = await knowledgeRetriever.stats();
     const isDegraded = knowledgeRetriever.getFailedSources().includes('faq');
     return {
       initialized: knowledgeRetriever.hasInitialized() && !isDegraded,
@@ -87,7 +89,7 @@ class SemanticSearch {
       query,
       topK,
       generatedAt: new Date().toISOString(),
-      indexStatus: this.getStatus(),
+      indexStatus: await this.getStatus(),
       matches: matches.map((match, index) => this.toDebugMatch(match, index)),
     };
   }
@@ -102,16 +104,16 @@ class SemanticSearch {
     };
   }
 
-  commitPreparedIndex(entry: FaqEntry): void {
-    knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+  async commitPreparedIndex(entry: FaqEntry): Promise<void> {
+    await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
     if (entry.isActive && entry.embedding) {
-      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(entry));
+      await knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(entry));
     }
   }
 
   async updateIndex(entry: FaqEntry): Promise<void> {
     if (!entry.isActive) {
-      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+      await this.deleteIndexItemSafely(entry.id);
       return;
     }
     try {
@@ -121,21 +123,26 @@ class SemanticSearch {
         (current) => this.prepareIndex(current),
       );
       if (!updated || !updated.isActive) {
-        knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+        await knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
         return;
       }
-      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(updated));
+      await knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(updated));
     } catch (error) {
-      knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
-      this.lastError = error instanceof Error ? error.message : String(error);
-      logger.warn({ err: error, entryId: entry.id }, 'Failed to update FAQ index entry');
+      await this.deleteIndexItemSafely(entry.id);
+      this.lastError = 'FAQ vector index update failed; keyword fallback remains available';
+      logger.warn({
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        entryId: entry.id,
+      }, 'Failed to update FAQ index entry');
     }
   }
 
   async updateIndexBatch(entries: FaqEntry[]): Promise<void> {
     const active = entries.filter((entry) => entry.isActive);
     const currentProfile = currentEmbeddingProfile(FAQ_EMBEDDING_INPUT_VERSION);
-    for (const entry of entries) knowledgeRetriever.deleteIndexItem('faq', `faq:${entry.id}`);
+    for (const entry of entries) {
+      await this.deleteIndexItemSafely(entry.id);
+    }
     const updates: Array<{
       id: string;
       embedding: number[];
@@ -149,12 +156,25 @@ class SemanticSearch {
       ));
       let generated: number[][] = [];
       if (missing.length > 0) {
-        const results = await getLLMClient().embed(missing.map(buildFaqEmbeddingText));
-        generated = results.map((result) => result.embedding);
+        try {
+          const results = await getLLMClient().embed(missing.map(buildFaqEmbeddingText));
+          generated = results.map((result) => result.embedding);
+        } catch (error) {
+          this.lastError = 'FAQ batch embedding failed; SQLite remains authoritative';
+          logger.warn({
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            batchSize: missing.length,
+          }, 'Failed to embed FAQ import batch');
+          continue;
+        }
       }
       for (const [index, entry] of missing.entries()) {
         const embedding = generated[index];
-        if (!embedding?.length) throw new Error('Embedding result was empty');
+        if (!embedding?.length) {
+          this.lastError = 'FAQ batch embedding returned an empty item; SQLite remains authoritative';
+          logger.warn({ entryId: entry.id }, 'FAQ import embedding result was empty');
+          continue;
+        }
         updates.push({
           id: entry.id,
           embedding,
@@ -163,11 +183,47 @@ class SemanticSearch {
         });
       }
     }
-    if (updates.length > 0) this.faqRepo.updateEmbeddings(updates);
+    if (updates.length > 0) {
+      try {
+        this.faqRepo.updateEmbeddings(updates);
+      } catch (error) {
+        this.lastError = 'FAQ batch embedding persistence failed; SQLite remains authoritative';
+        logger.warn({
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          updateCount: updates.length,
+        }, 'Failed to persist FAQ import embeddings');
+        return;
+      }
+    }
     const refreshed = new Map(this.faqRepo.listAllActive().map((entry) => [entry.id, entry]));
     for (const entry of active) {
       const indexedEntry = refreshed.get(entry.id) ?? entry;
-      knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(indexedEntry));
+      if (!indexedEntry.embedding?.length) continue;
+      await this.upsertIndexItemSafely(indexedEntry);
+    }
+  }
+
+  private async deleteIndexItemSafely(entryId: string): Promise<void> {
+    try {
+      await knowledgeRetriever.deleteIndexItem('faq', `faq:${entryId}`);
+    } catch (error) {
+      this.lastError = 'FAQ vector cleanup failed; SQLite remains authoritative';
+      logger.warn({
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        entryId,
+      }, 'Failed to clean up FAQ vector entry');
+    }
+  }
+
+  private async upsertIndexItemSafely(entry: FaqEntry): Promise<void> {
+    try {
+      await knowledgeRetriever.upsertIndexItem(faqKnowledgeAdapter.toIndexItem(entry));
+    } catch (error) {
+      this.lastError = 'FAQ vector synchronization failed; SQLite remains authoritative';
+      logger.warn({
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        entryId: entry.id,
+      }, 'Failed to synchronize FAQ vector entry');
     }
   }
 

@@ -1,10 +1,11 @@
-import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
+import { config } from '../config';
 import { getDatabase } from '../db';
 import { QualityRunRepo } from '../db/repos/quality-run.repo';
 import {
   evaluateQualityCandidates,
   policyKey,
+  qualityCandidateKey,
   type RetrievedQualityCase,
 } from '../eval/quality-evaluator';
 import {
@@ -15,28 +16,50 @@ import type { RetrievalResult } from '../types/ai';
 import type {
   PolicyGateResult,
   QualityCase,
+  QualityBackendTarget,
   QualityRun,
   RetrievalPolicy,
   RetrievalPolicyConfig,
 } from '../types/quality';
+import { InMemoryVectorStore } from '../ai/vector-store';
+import { QdrantVectorStore, createQdrantVectorStore } from '../ai/qdrant-vector-store';
+import { KnowledgeRetriever } from '../ai/knowledge-retriever';
+import { DocumentKnowledgeAdapter, FaqKnowledgeAdapter } from '../ai/knowledge-adapters';
+import { getLLMClient } from '../ai/llm-client';
+import { expandRetrievalQuery } from '../ai/query-expansion';
+import { knowledgeFingerprint } from './knowledge-fingerprint';
+import { getRetrievalIndexJobService } from './retrieval-index-job.service';
+import { FaqRepo } from '../db/repos/faq.repo';
+import { DocumentRepo } from '../db/repos/document.repo';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { QualityLabService, getQualityLabService } from './quality-lab.service';
+
+const QUALITY_SEARCH_CONCURRENCY = 8;
 
 interface QualityRunServiceOptions {
   qualityLab?: QualityLabService;
   searchCurrent?: (query: string) => Promise<RetrievalResult[]>;
   searchCurrentBatch?: (queries: string[]) => Promise<RetrievalResult[][]>;
+  searchBackendBatch?: (
+    target: QualityBackendTarget,
+    queries: string[],
+    embeddings: number[][],
+  ) => Promise<RetrievalResult[][]>;
   now?: () => Date;
   autoDrain?: boolean;
+  getIndexJob?: ReturnType<typeof getRetrievalIndexJobService>['getJob'];
 }
 
 export class QualityRunService {
   private readonly repo: QualityRunRepo;
   private readonly qualityLab: QualityLabService;
   private readonly searchCurrentBatch: (queries: string[]) => Promise<RetrievalResult[][]>;
+  private readonly searchBackendBatch: QualityRunServiceOptions['searchBackendBatch'];
   private readonly now: () => Date;
   private readonly autoDrain: boolean;
+  private readonly usesInjectedSearch: boolean;
+  private readonly getIndexJob: ReturnType<typeof getRetrievalIndexJobService>['getJob'];
   private draining = false;
 
   constructor(
@@ -54,8 +77,14 @@ export class QualityRunService {
           const { knowledgeRetriever } = await import('../ai/knowledge-system');
           return knowledgeRetriever.searchCandidatesBatch(queries, 100);
         });
+    this.searchBackendBatch = options.searchBackendBatch;
+    this.usesInjectedSearch = Boolean(
+      options.searchBackendBatch || options.searchCurrentBatch || options.searchCurrent,
+    );
     this.now = options.now ?? (() => new Date());
     this.autoDrain = options.autoDrain ?? true;
+    this.getIndexJob = options.getIndexJob
+      ?? ((id) => getRetrievalIndexJobService().getJob(id));
   }
 
   start(): void {
@@ -65,6 +94,7 @@ export class QualityRunService {
   createRun(params: {
     datasetVersionIds: string[];
     policies: RetrievalPolicyConfig[];
+    backendTargets?: QualityBackendTarget[];
     createdBy: string;
   }): QualityRun {
     const versionIds = [...new Set(params.datasetVersionIds)];
@@ -77,16 +107,19 @@ export class QualityRunService {
       }
       return version;
     });
-    const totalCases = versions.reduce((sum, version) => sum + version.caseCount, 0);
-    if (totalCases === 0 || totalCases > 500) {
+    const caseCount = versions.reduce((sum, version) => sum + version.caseCount, 0);
+    if (caseCount === 0 || caseCount > 500) {
       throw new ValidationError('A run must contain between 1 and 500 cases');
     }
+    const backendTargets = this.validateBackendTargets(params.backendTargets ?? [{ provider: 'memory' }]);
+    const totalCases = caseCount * backendTargets.length;
     const currentPolicy = this.qualityLab.getCurrentPolicy();
     const policies = this.validatePolicies([currentPolicy.config, ...params.policies]);
     const includesCurrentKnowledge = versions.some((version) => version.targetKind === 'current');
     const run = this.repo.create({
       datasetVersionIds: versionIds,
       policies,
+      backendTargets,
       totalCases,
       knowledgeFingerprint: includesCurrentKnowledge ? this.knowledgeFingerprint() : null,
       activePolicyId: currentPolicy.id,
@@ -157,29 +190,7 @@ export class QualityRunService {
     const reasons: string[] = [];
     const warnings: string[] = [];
     if (run.status !== 'completed') reasons.push('run_not_completed');
-    if (!run.datasetVersionIds.includes(QUALITY_BASELINE_VERSION_ID)) {
-      reasons.push('builtin_baseline_required');
-    }
-    const currentVersions = run.datasetVersionIds
-      .map((id) => this.qualityLab.getVersion(id))
-      .filter((version) => version?.targetKind === 'current');
-    if (currentVersions.length === 0) reasons.push('current_knowledge_dataset_required');
-    const hasCompleteCurrentVersion = currentVersions.some((version) => {
-      const cases = this.qualityLab.listCases(version!.id);
-      const answerable = cases.filter(
-        (testCase) => testCase.expectedGroundingStatus === 'sufficient',
-      ).length;
-      const insufficient = cases.filter(
-        (testCase) => testCase.expectedGroundingStatus === 'insufficient',
-      ).length;
-      const highRisk = cases.filter(
-        (testCase) => ['high_risk', 'escalated'].includes(testCase.expectedGroundingStatus),
-      ).length;
-      return cases.length >= 12 && answerable >= 6 && insufficient >= 4 && highRisk >= 2;
-    });
-    if (currentVersions.length > 0 && !hasCompleteCurrentVersion) {
-      reasons.push('current_knowledge_coverage_insufficient');
-    }
+    this.appendDatasetGateReasons(run, reasons);
     if (!run.knowledgeFingerprint || run.knowledgeFingerprint !== this.knowledgeFingerprint()) {
       reasons.push('knowledge_fingerprint_changed');
     }
@@ -187,9 +198,12 @@ export class QualityRunService {
     if (run.activePolicyId !== currentPolicy.id) reasons.push('current_policy_changed');
     const candidate = run.candidates.find((item) => item.key === candidateKey);
     if (!candidate) reasons.push('candidate_not_found');
-    const baseline = run.candidates.find(
-      (item) => item.key === policyKey(currentPolicy.config),
-    );
+    if (candidate?.backendTarget.provider !== 'memory') {
+      reasons.push('policy_candidate_must_use_memory_backend');
+    }
+    const baseline = run.candidates.find((item) => (
+      item.key === qualityCandidateKey({ provider: 'memory' }, currentPolicy.config)
+    ));
     if (!baseline) reasons.push('current_policy_result_missing');
     if (candidate && baseline) {
       if (candidate.metrics.unsafeAnswerCount !== 0) reasons.push('unsafe_answers_present');
@@ -210,6 +224,34 @@ export class QualityRunService {
         warnings.push('p95_latency_increase_over_25_percent');
       }
     }
+    return { eligible: reasons.length === 0, warnings, reasons };
+  }
+
+  checkBackendActivation(runId: string, candidateKey: string): PolicyGateResult {
+    const run = this.getRun(runId);
+    const reasons: string[] = [];
+    const warnings: string[] = [];
+    if (run.status !== 'completed') reasons.push('run_not_completed');
+    this.appendDatasetGateReasons(run, reasons);
+    const candidate = run.candidates.find((item) => item.key === candidateKey);
+    if (!candidate || candidate.backendTarget.provider !== 'qdrant') {
+      reasons.push('qdrant_candidate_not_found');
+    }
+    const currentPolicy = this.qualityLab.getCurrentPolicy();
+    const baseline = run.candidates.find((item) => (
+      item.key === qualityCandidateKey({ provider: 'memory' }, currentPolicy.config)
+    ));
+    if (!baseline) reasons.push('memory_baseline_missing');
+    if (candidate && baseline) {
+      if (policyKey(candidate.policy) !== policyKey(currentPolicy.config)) {
+        reasons.push('current_policy_result_missing');
+      }
+      this.compareGateMetrics(candidate, baseline, reasons, warnings);
+    }
+    if (!run.knowledgeFingerprint || run.knowledgeFingerprint !== this.knowledgeFingerprint()) {
+      reasons.push('knowledge_fingerprint_changed');
+    }
+    if (run.activePolicyId !== currentPolicy.id) reasons.push('current_policy_changed');
     return { eligible: reasons.length === 0, warnings, reasons };
   }
 
@@ -241,7 +283,6 @@ export class QualityRunService {
     this.repo.markRunning(run.id, this.now().toISOString());
     try {
       const policies = this.readPolicyGrid(run.id);
-      const retrieved: RetrievedQualityCase[] = [];
       let embeddingCalls = 0;
       let estimatedTokens = 0;
       const entries = run.datasetVersionIds.flatMap((versionId) => {
@@ -251,11 +292,11 @@ export class QualityRunService {
         return this.qualityLab.listCases(versionId).map((testCase) => ({ version, testCase }));
       });
       const currentEntries = entries.filter(({ version }) => version.targetKind === 'current');
-      const batchStarted = performance.now();
-      const currentCandidates = currentEntries.length > 0
-        ? await this.searchCurrentBatch(currentEntries.map(({ testCase }) => testCase.query))
-        : [];
-      const batchLatency = performance.now() - batchStarted;
+      const currentQueries = currentEntries.map(({ testCase }) => testCase.query);
+      const queryEmbeddings = currentEntries.length > 0 && !this.usesInjectedSearch
+        ? (await getLLMClient().embed(currentQueries.map(expandRetrievalQuery)))
+          .map((result) => result.embedding)
+        : currentQueries.map(() => []);
       if (currentEntries.length > 0) {
         embeddingCalls = 1;
         estimatedTokens = currentEntries.reduce(
@@ -263,35 +304,47 @@ export class QualityRunService {
           0,
         );
       }
-      let currentIndex = 0;
-      for (const { version, testCase } of entries) {
-        if (this.getRun(run.id).cancelRequested) {
-          this.repo.markCancelled(run.id, this.now().toISOString());
-          return;
+      const candidates = [];
+      let progress = 0;
+      for (const target of run.backendTargets) {
+        const currentResults = currentEntries.length > 0
+          ? await this.searchTargetBatch(target, currentQueries, queryEmbeddings)
+          : [];
+        let currentIndex = 0;
+        const retrieved: RetrievedQualityCase[] = [];
+        for (const { version, testCase } of entries) {
+          if (this.getRun(run.id).cancelRequested) {
+            this.repo.markCancelled(run.id, this.now().toISOString());
+            return;
+          }
+          const fixtureStarted = performance.now();
+          const currentResult = version.targetKind === 'current'
+            ? currentResults[currentIndex++]
+            : undefined;
+          const targetCandidates = currentResult?.candidates
+            ?? qualityFixtureCandidates(testCase);
+          retrieved.push({
+            testCase,
+            candidates: targetCandidates,
+            latencyMs: version.targetKind === 'fixture'
+              ? Number((performance.now() - fixtureStarted).toFixed(3))
+              : currentResult?.latencyMs ?? 0,
+          });
+          progress += 1;
+          this.repo.updateProgress(run.id, progress);
         }
-        const fixtureStarted = performance.now();
-        const candidates = version.targetKind === 'fixture'
-          ? qualityFixtureCandidates(testCase)
-          : currentCandidates[currentIndex++] ?? [];
-        retrieved.push({
-          testCase,
-          candidates,
-          latencyMs: version.targetKind === 'fixture'
-            ? Number((performance.now() - fixtureStarted).toFixed(3))
-            : Number((batchLatency / currentEntries.length).toFixed(3)),
-        });
-        this.repo.updateProgress(run.id, retrieved.length);
+        candidates.push(...evaluateQualityCandidates({
+          cases: retrieved,
+          policies,
+          backendTarget: target,
+          embeddingCallCount: embeddingCalls,
+          estimatedTokenCount: estimatedTokens,
+        }));
       }
-      const candidates = evaluateQualityCandidates({
-        cases: retrieved,
-        policies,
-        embeddingCallCount: embeddingCalls,
-        estimatedTokenCount: estimatedTokens,
-      });
       this.repo.saveCompleted(run.id, candidates, this.now().toISOString());
     } catch (error) {
       logger.error({
-        err: error,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
         runId: run.id,
       }, 'Quality evaluation run failed');
       this.repo.markFailed(
@@ -303,25 +356,11 @@ export class QualityRunService {
   }
 
   knowledgeFingerprint(): string {
-    const rows = this.db.prepare(
-      `SELECT 'faq' AS type, id, updated_at AS revision, COALESCE(embedding_profile, '') AS profile
-       FROM faq_entries WHERE is_active = 1
-       UNION ALL
-       SELECT 'document' AS type, chunk.id, document.updated_at AS revision,
-              COALESCE(chunk.embedding_profile, '') AS profile
-       FROM document_chunks chunk
-       JOIN documents document ON document.id = chunk.document_id
-       WHERE document.is_active = 1 AND document.status = 'ready'
-       ORDER BY type, id`,
-    ).all();
-    return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+    return knowledgeFingerprint(this.db);
   }
 
   private readPolicyGrid(runId: string): RetrievalPolicyConfig[] {
-    const row = this.db.prepare(
-      'SELECT policy_grid FROM quality_runs WHERE id = ?',
-    ).get(runId) as { policy_grid: string };
-    return JSON.parse(row.policy_grid) as RetrievalPolicyConfig[];
+    return this.repo.getPolicyGrid(runId);
   }
 
   private validatePolicies(policies: RetrievalPolicyConfig[]): RetrievalPolicyConfig[] {
@@ -347,6 +386,131 @@ export class QualityRunService {
     return [...unique.values()];
   }
 
+  private validateBackendTargets(targets: QualityBackendTarget[]): QualityBackendTarget[] {
+    const unique = new Map<string, QualityBackendTarget>();
+    for (const target of targets) {
+      if (target.provider === 'memory') {
+        unique.set('memory', target);
+        continue;
+      }
+      const job = this.getIndexJob(target.indexJobId);
+      if (job.status !== 'ready') {
+        throw new ConflictError('Only ready Qdrant index jobs can be evaluated');
+      }
+      if (job.knowledgeFingerprint !== this.knowledgeFingerprint()) {
+        throw new ConflictError('Qdrant index job knowledge fingerprint is stale');
+      }
+      unique.set(`qdrant:${job.id}`, target);
+    }
+    if (unique.size === 0 || unique.size > 10) {
+      throw new ValidationError('A run must target between 1 and 10 backends');
+    }
+    return [...unique.values()];
+  }
+
+  private async searchTargetBatch(
+    target: QualityBackendTarget,
+    queries: string[],
+    embeddings: number[][],
+  ): Promise<Array<{ candidates: RetrievalResult[]; latencyMs: number }>> {
+    let searchOne: (query: string, embedding: number[]) => Promise<RetrievalResult[]>;
+    if (this.searchBackendBatch) {
+      searchOne = async (query, embedding) => (
+        (await this.searchBackendBatch!(target, [query], [embedding]))[0] ?? []
+      );
+    } else if (target.provider === 'memory' && this.usesInjectedSearch) {
+      searchOne = async (query) => (await this.searchCurrentBatch([query]))[0] ?? [];
+    } else {
+      const vectorStore = target.provider === 'memory'
+        ? new InMemoryVectorStore()
+        : this.qdrantStoreForJob(target.indexJobId);
+      const retriever = new KnowledgeRetriever(
+        vectorStore,
+        async (texts) => (await getLLMClient().embed(texts)).map((result) => result.embedding),
+        [
+          new FaqKnowledgeAdapter(new FaqRepo(this.db)),
+          new DocumentKnowledgeAdapter(new DocumentRepo(this.db)),
+        ],
+      );
+      await retriever.initialize();
+      searchOne = async (query, embedding) => (
+        await retriever.searchCandidatesBatchWithEmbeddings([query], [embedding], 100)
+      )[0] ?? [];
+    }
+    return mapWithConcurrency(
+      queries,
+      QUALITY_SEARCH_CONCURRENCY,
+      async (query, index) => {
+        const started = performance.now();
+        const candidates = await searchOne(query, embeddings[index]);
+        return {
+          candidates,
+          latencyMs: Number((performance.now() - started).toFixed(3)),
+        };
+      },
+    );
+  }
+
+  private qdrantStoreForJob(indexJobId: string): QdrantVectorStore {
+    const job = this.getIndexJob(indexJobId);
+    if (job.status !== 'ready') throw new ConflictError('Qdrant index job is not ready');
+    return createQdrantVectorStore({
+      url: config.vectorStore.qdrantUrl,
+      apiKey: config.vectorStore.qdrantApiKey,
+      timeoutMs: config.vectorStore.timeoutMs,
+      collectionAlias: job.collection,
+    });
+  }
+
+  private compareGateMetrics(
+    candidate: QualityRun['candidates'][number],
+    baseline: QualityRun['candidates'][number],
+    reasons: string[],
+    warnings: string[],
+  ): void {
+    if (candidate.metrics.unsafeAnswerCount !== 0) reasons.push('unsafe_answers_present');
+    if (candidate.metrics.overRefusalCount > baseline.metrics.overRefusalCount) {
+      reasons.push('over_refusal_regressed');
+    }
+    if (candidate.metrics.decisionAccuracy < baseline.metrics.decisionAccuracy) {
+      reasons.push('decision_accuracy_regressed');
+    }
+    if (candidate.metrics.recallAt3 < baseline.metrics.recallAt3) {
+      reasons.push('recall_at_3_regressed');
+    }
+    if (candidate.metrics.mrr < baseline.metrics.mrr) reasons.push('mrr_regressed');
+    if (
+      baseline.metrics.p95LatencyMs > 0
+      && candidate.metrics.p95LatencyMs > baseline.metrics.p95LatencyMs * 1.25
+    ) warnings.push('p95_latency_increase_over_25_percent');
+  }
+
+  private appendDatasetGateReasons(run: QualityRun, reasons: string[]): void {
+    if (!run.datasetVersionIds.includes(QUALITY_BASELINE_VERSION_ID)) {
+      reasons.push('builtin_baseline_required');
+    }
+    const currentVersions = run.datasetVersionIds
+      .map((id) => this.qualityLab.getVersion(id))
+      .filter((version) => version?.targetKind === 'current');
+    if (currentVersions.length === 0) reasons.push('current_knowledge_dataset_required');
+    const hasCompleteCurrentVersion = currentVersions.some((version) => {
+      const cases = this.qualityLab.listCases(version!.id);
+      const answerable = cases.filter(
+        (testCase) => testCase.expectedGroundingStatus === 'sufficient',
+      ).length;
+      const insufficient = cases.filter(
+        (testCase) => testCase.expectedGroundingStatus === 'insufficient',
+      ).length;
+      const highRisk = cases.filter(
+        (testCase) => ['high_risk', 'escalated'].includes(testCase.expectedGroundingStatus),
+      ).length;
+      return cases.length >= 12 && answerable >= 6 && insufficient >= 4 && highRisk >= 2;
+    });
+    if (currentVersions.length > 0 && !hasCompleteCurrentVersion) {
+      reasons.push('current_knowledge_coverage_insufficient');
+    }
+  }
+
   private async drain(): Promise<void> {
     if (this.draining) return;
     this.draining = true;
@@ -356,6 +520,27 @@ export class QualityRunService {
       this.draining = false;
     }
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  work: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await work(values[index], index);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 export function qualityFixtureCandidates(testCase: QualityCase): RetrievalResult[] {

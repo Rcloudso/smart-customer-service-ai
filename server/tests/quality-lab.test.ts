@@ -15,8 +15,10 @@ import { MessageRepo } from '../db/repos/message.repo';
 import { MessageRole } from '../types/domain';
 import { NotFoundError } from '../utils/errors';
 import { FaqRepo } from '../db/repos/faq.repo';
+import { QualityRunRepo } from '../db/repos/quality-run.repo';
 import { IntentCategory } from '../types/domain';
 import type { RetrievalResult } from '../types/ai';
+import type { RetrievalIndexJob } from '../types/retrieval-ops';
 
 function testDefaultPolicyAndBuiltinDatasetBootstrap(): void {
   const db = new Database(':memory:');
@@ -322,6 +324,97 @@ async function testSuccessfulActivationAndFingerprintStaleness(): Promise<void> 
   }
 }
 
+async function testMemoryAndQdrantBackendsShareOneQualityInput(): Promise<void> {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const qualityLab = new QualityLabService(db);
+    qualityLab.bootstrap();
+    const currentVersionId = publishCompleteCurrentVersion(qualityLab);
+    const caseByQuery = new Map(QUALITY_BASELINE_CASES.map((testCase) => [
+      testCase.query,
+      {
+        ...testCase,
+        versionId: currentVersionId,
+        createdAt: '2026-07-23T00:00:00.000Z',
+      },
+    ]));
+    let fingerprint = '';
+    const embeddingBatches: number[][][] = [];
+    const targets: string[] = [];
+    let activeSearches = 0;
+    let maxActiveSearches = 0;
+    let searchCall = 0;
+    const runs = new QualityRunService(db, {
+      qualityLab,
+      autoDrain: false,
+      getIndexJob: () => ({
+        id: '11111111-1111-4111-8111-111111111111',
+        status: 'ready',
+        collection: 'quality_collection',
+        embeddingProfile: 'combined:test',
+        vectorDimension: 2,
+        knowledgeFingerprint: fingerprint,
+        expectedCount: 1,
+        completedCount: 1,
+        checkpoint: 1,
+        previousCollection: null,
+        failureCode: null,
+        createdBy: 'admin',
+        createdAt: '2026-07-23T00:00:00.000Z',
+        startedAt: '2026-07-23T00:00:00.000Z',
+        readyAt: '2026-07-23T00:00:00.000Z',
+        activatedAt: null,
+        rolledBackAt: null,
+        updatedAt: '2026-07-23T00:00:00.000Z',
+      } satisfies RetrievalIndexJob),
+      searchBackendBatch: async (target, queries, embeddings) => {
+        activeSearches += 1;
+        maxActiveSearches = Math.max(maxActiveSearches, activeSearches);
+        searchCall += 1;
+        await new Promise((resolve) => setTimeout(resolve, 2 + (searchCall % 3) * 3));
+        targets.push(target.provider);
+        embeddingBatches.push(embeddings);
+        activeSearches -= 1;
+        return queries.map((query) => qualityFixtureCandidates(caseByQuery.get(query)!));
+      },
+    });
+    fingerprint = runs.knowledgeFingerprint();
+    const run = runs.createRun({
+      datasetVersionIds: [QUALITY_BASELINE_VERSION_ID, currentVersionId],
+      policies: [],
+      backendTargets: [
+        { provider: 'memory' },
+        { provider: 'qdrant', indexJobId: '11111111-1111-4111-8111-111111111111' },
+      ],
+      createdBy: 'admin',
+    });
+
+    await runs.processNext();
+    const completed = runs.getRun(run.id);
+    assert.deepEqual([...new Set(targets)].sort(), ['memory', 'qdrant']);
+    assert.equal(targets.filter((target) => target === 'memory').length, 12);
+    assert.equal(targets.filter((target) => target === 'qdrant').length, 12);
+    assert.ok(maxActiveSearches <= 8);
+    assert.ok(maxActiveSearches > 1);
+    assert.ok(embeddingBatches.every(
+      (batch) => batch.length === 1 && batch[0].length === 0,
+    ));
+    assert.equal(completed.candidates.length, 2);
+    assert.ok(completed.candidates.some((candidate) => candidate.key.startsWith('memory:')));
+    const qdrantCandidate = completed.candidates.find(
+      (candidate) => candidate.backendTarget.provider === 'qdrant',
+    );
+    assert.ok(qdrantCandidate?.key.includes('qdrant:11111111-1111-4111-8111-111111111111:'));
+    assert.equal(
+      runs.checkBackendActivation(run.id, qdrantCandidate!.key).eligible,
+      true,
+    );
+  } finally {
+    db.close();
+  }
+}
+
 async function testRunningCancellationIsPersisted(): Promise<void> {
   const db = new Database(':memory:');
   try {
@@ -410,15 +503,42 @@ function testBuiltinRetrievalDoesNotReadExpectedSources(): void {
   assert.equal(candidates[0].knowledgeId, 'faq-refund-apply');
 }
 
+function testMalformedHistoricalQualityJsonUsesSafeFallbacks(): void {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const qualityLab = new QualityLabService(db);
+    qualityLab.bootstrap();
+    const runs = new QualityRunService(db, { qualityLab, autoDrain: false });
+    const run = runs.createRun({
+      datasetVersionIds: [QUALITY_BASELINE_VERSION_ID],
+      policies: [],
+      createdBy: 'admin',
+    });
+    db.prepare(`
+      UPDATE quality_runs
+      SET policy_grid = '{', backend_targets = '{'
+      WHERE id = ?
+    `).run(run.id);
+    const restored = new QualityRunRepo(db).get(run.id);
+    assert.deepEqual(restored?.policies, []);
+    assert.deepEqual(restored?.backendTargets, [{ provider: 'memory' }]);
+  } finally {
+    db.close();
+  }
+}
+
 async function main(): Promise<void> {
   testDefaultPolicyAndBuiltinDatasetBootstrap();
   testBuiltinDatasetCannotBeRewrittenInPlace();
   testCustomDatasetVersionLifecycle();
   testPolicyHistoryRollbackAndMessageSnapshot();
   testBuiltinRetrievalDoesNotReadExpectedSources();
+  testMalformedHistoricalQualityJsonUsesSafeFallbacks();
   await testPersistedRunLifecycle();
   await testCoverageCannotBeAggregatedAcrossSmallVersions();
   await testSuccessfulActivationAndFingerprintStaleness();
+  await testMemoryAndQdrantBackendsShareOneQualityInput();
   await testRunningCancellationIsPersisted();
   console.log('quality lab tests passed');
 }

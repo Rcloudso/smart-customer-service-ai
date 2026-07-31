@@ -19,6 +19,9 @@ import {
 } from '../services/grounding-policy';
 import { idempotencyMiddleware } from '../middleware/idempotency';
 import { getQualityLabService } from '../services/quality-lab.service';
+import { RetrievalTraceCollector } from '../services/retrieval-trace-collector';
+import { getRetrievalTraceService } from '../services/retrieval-trace.service';
+import { config } from '../config';
 
 const router = Router();
 router.use(idempotencyMiddleware);
@@ -110,6 +113,30 @@ function captureKnowledgeGapSafely(
  * Core SSE streaming endpoint for chat messages.
  */
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+  let trace: RetrievalTraceCollector | null = null;
+  let traceLink: {
+    sessionId: string;
+    userMessageId: string;
+    policyId: string;
+  } | null = null;
+  let tracePersisted = false;
+  const finalizeTrace = (assistantMessageId: string | null, errorCode?: string): void => {
+    if (!trace || !traceLink || tracePersisted) return;
+    if (errorCode) trace.fail(errorCode);
+    try {
+      getRetrievalTraceService().persist(trace.complete({
+        ...traceLink,
+        assistantMessageId,
+      }));
+      tracePersisted = true;
+    } catch (error) {
+      logger.error({
+        traceId: trace.id,
+        sessionId: traceLink.sessionId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }, 'Retrieval trace persistence failed');
+    }
+  };
   try {
     const parsed = chatSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -119,6 +146,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const { message, sessionId: inputSessionId, userIdent: inputUserIdent } = parsed.data;
     const userIdent = inputUserIdent || req.ip || 'anonymous';
     const retrievalPolicy = getQualityLabService().getCurrentPolicy();
+    trace = new RetrievalTraceCollector({ backend: config.vectorStore.provider });
 
     // Step 1: Get or create session
     const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent);
@@ -130,6 +158,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       role: MessageRole.USER,
       content: message,
     });
+    traceLink = {
+      sessionId,
+      userMessageId: userMessage.id,
+      policyId: retrievalPolicy.id,
+    };
 
     // Step 3: Build LLM message history from DB messages
     const previousMessages = conversationService.getMessages(sessionId);
@@ -145,7 +178,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       message,
       llmHistory,
       retrievalPolicy.config,
+      trace,
     );
+    const groundingStarted = performance.now();
     const grounding = evaluateGrounding({
       message,
       intent: intentResult.intent.intent,
@@ -153,6 +188,37 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       retrievalResults: intentResult.retrievalResults,
       explicitEscalation: intentResult.escalationType === 'explicit',
       policy: retrievalPolicy.config,
+    });
+    trace.record('context_budget', {
+      status: 'completed',
+      latencyMs: 0,
+      inputCount: intentResult.retrievalResults.length,
+      outputCount: grounding.citations.length,
+      candidates: grounding.citations.map((result, index) => ({
+        knowledgeType: result.knowledgeType,
+        knowledgeId: result.knowledgeId,
+        score: result.similarity,
+        rank: index + 1,
+        source: result.source,
+      })),
+      budget: { maxEvidence: 3, selectedEvidence: grounding.citations.length },
+    });
+    trace.record('grounding', {
+      status: 'completed',
+      latencyMs: performance.now() - groundingStarted,
+      inputCount: intentResult.retrievalResults.length,
+      outputCount: grounding.citations.length,
+      candidates: grounding.citations.map((result, index) => ({
+        knowledgeType: result.knowledgeType,
+        knowledgeId: result.knowledgeId,
+        score: result.similarity,
+        rank: index + 1,
+        source: result.source,
+      })),
+      budget: {
+        directFaqThreshold: retrievalPolicy.config.directFaqThreshold,
+        generationEvidenceThreshold: retrievalPolicy.config.generationEvidenceThreshold,
+      },
     });
 
     // Set up SSE headers
@@ -234,6 +300,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       const assistantMessage = escalationReason
         ? await conversationService.saveMessageAndEscalate(messageParams, escalationReason)
         : conversationService.saveMessage(messageParams);
+      finalizeTrace(assistantMessage.id);
 
       if (grounding.groundingStatus !== 'high_risk') {
         captureKnowledgeGapSafely({
@@ -310,6 +377,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     } catch (streamErr) {
       logger.error({ err: streamErr, sessionId }, 'LLM stream failed');
       sseSend({ type: 'error', content: 'AI响应生成失败，请稍后重试' });
+      finalizeTrace(null, 'generation_failed');
       res.end();
       return;
     }
@@ -344,6 +412,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       }
       logger.error({ sessionId }, 'LLM stream completed without answer content');
       sseSend({ type: 'error', content: 'AI响应生成失败，请稍后重试' });
+      finalizeTrace(null, 'empty_generation');
       res.end();
       return;
     }
@@ -366,6 +435,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       ? await conversationService.saveMessageAndEscalate(messageParams, escalationReason)
       : conversationService.saveMessage(messageParams);
     assistantMessageId = assistantMessage.id;
+    finalizeTrace(assistantMessage.id);
 
     captureKnowledgeGapSafely({
       userMessage,
@@ -397,6 +467,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     logger.info({ sessionId, messageId: assistantMessageId, intent: intentResult.intent.intent }, 'Chat interaction completed');
     res.end();
   } catch (err) {
+    finalizeTrace(null, 'chat_request_failed');
     next(err);
   }
 });

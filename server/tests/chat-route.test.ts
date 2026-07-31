@@ -275,6 +275,26 @@ async function main(): Promise<void> {
       assistantCountBeforeEmptyStream.total,
       'empty generated answers must not be persisted as successful assistant messages',
     );
+    const latestTrace = db.prepare(`
+      SELECT id, status, assistant_message_id AS assistantMessageId
+      FROM retrieval_traces
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get() as {
+      id: string;
+      status: string;
+      assistantMessageId: string | null;
+    };
+    assert.equal(latestTrace.status, 'failed');
+    assert.equal(latestTrace.assistantMessageId, null);
+    const traceStages = db.prepare(
+      'SELECT candidates AS candidateJson FROM retrieval_trace_stages WHERE trace_id = ?',
+    ).all(latestTrace.id) as Array<{ candidateJson: string }>;
+    assert.equal(traceStages.length, 8);
+    assert.ok(
+      traceStages.every((stage) => !stage.candidateJson.includes('测试空生成流')),
+      'trace stage payloads must not copy the customer question',
+    );
 
     console.log('Chat route failure checks passed');
   } finally {
