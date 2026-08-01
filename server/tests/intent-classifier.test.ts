@@ -127,7 +127,9 @@ async function testNoKeySkipsFormatNegotiation(): Promise<void> {
 
 async function main(): Promise<void> {
   const originalApiKey = config.llm.apiKey;
+  const originalEmbedApiKey = config.embed.apiKey;
   config.llm.apiKey = 'intent-classifier-test-key';
+  config.embed.apiKey = '';
   try {
     await testJsonSchemaIsPreferred();
     await testJsonObjectIsSecondChoice();
@@ -135,6 +137,7 @@ async function main(): Promise<void> {
     await testKeywordsRemainLastResort();
   } finally {
     config.llm.apiKey = originalApiKey;
+    config.embed.apiKey = originalEmbedApiKey;
   }
   await testNoKeySkipsFormatNegotiation();
   console.log('Intent classifier compatibility checks passed');

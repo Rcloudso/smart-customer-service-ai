@@ -87,12 +87,11 @@ export async function runWithRetry<T>(
 
 class OpenAIClientImpl implements LLMClient {
   private chatClient: OpenAI;
-  private embedClient: OpenAI;
+  private embedClient: OpenAI | null = null;
   private configHash: string = '';
 
   constructor() {
     this.chatClient = this.buildChatClient();
-    this.embedClient = this.buildEmbedClient();
     this.configHash = this.computeHash();
   }
 
@@ -143,7 +142,7 @@ class OpenAIClientImpl implements LLMClient {
     if (newHash !== this.configHash) {
       logger.info('LLM config changed, rebuilding clients');
       this.chatClient = this.buildChatClient();
-      this.embedClient = this.buildEmbedClient();
+      this.embedClient = null;
       this.configHash = newHash;
     }
   }
@@ -210,8 +209,9 @@ class OpenAIClientImpl implements LLMClient {
 
   async embed(texts: string[]): Promise<EmbeddingResult[]> {
     this.ensureFresh();
+    const embedClient = this.embedClient ??= this.buildEmbedClient();
     return this.withRetry(async (signal) => {
-      const response = await this.embedClient.embeddings.create(
+      const response = await embedClient.embeddings.create(
         {
           model: config.embed.model,
           input: texts,
