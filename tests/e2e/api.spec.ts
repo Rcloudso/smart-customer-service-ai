@@ -153,7 +153,7 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(invalidPageSize.status()).toBe(400);
   });
 
-  test('model configuration never accepts or returns API keys', async ({ request }) => {
+  test('model configuration keeps credentials and endpoints deployment-owned', async ({ request }) => {
     const token = await login(request);
     const headers = authHeaders(token);
 
@@ -181,14 +181,18 @@ test.describe('API automation: boundaries and exception flows', () => {
     });
     expect(invalidProvider.status()).toBe(400);
 
+    const rejectedEndpoint = await request.put('/api/admin/config/model', {
+      headers,
+      data: { llmApiBase: 'https://attacker.example/v1' },
+    });
+    expect(rejectedEndpoint.status()).toBe(400);
+
     const update = await request.put('/api/admin/config/model', {
       headers,
       data: {
         llmProvider: 'openai-compatible',
-        llmApiBase: 'https://compatible.example/v1',
         llmModel: 'safe-model-name',
         embedProvider: 'other',
-        embedApiBase: 'http://localhost:11434/v1',
       },
     });
     expect(update.status()).toBe(200);
@@ -196,10 +200,10 @@ test.describe('API automation: boundaries and exception flows', () => {
     const refreshed = await request.get('/api/admin/config/model', { headers });
     expect((await readJson(refreshed)).data).toMatchObject({
       llmProvider: 'openai-compatible',
-      llmApiBase: 'https://compatible.example/v1',
+      llmApiBase: initialData.llmApiBase,
       llmModel: 'safe-model-name',
       embedProvider: 'other',
-      embedApiBase: 'http://localhost:11434/v1',
+      embedApiBase: initialData.embedApiBase,
       llmApiKeyConfigured: false,
       embedApiKeyConfigured: false,
     });
@@ -254,6 +258,31 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(createResponse.status()).toBe(201);
     const created = (await readJson(createResponse)).data;
     expect(created.question).toBe(unique);
+
+    const oversizedPublicList = await request.get('/api/faq', {
+      params: { pageSize: 101 },
+    });
+    expect(oversizedPublicList.status()).toBe(400);
+
+    const publicList = await request.get('/api/faq', {
+      params: { pageSize: 100 },
+    });
+    expect(publicList.status()).toBe(200);
+    const publicEntry = (await readJson(publicList)).data.items.find(
+      (item: { id: string }) => item.id === created.id,
+    );
+    expect(publicEntry).toMatchObject({
+      id: created.id,
+      question: unique,
+      answer,
+      category: 'general',
+      keywords: ['E2E', '边界', '%_wildcard'],
+    });
+    expect(publicEntry).not.toHaveProperty('embedding');
+    expect(publicEntry).not.toHaveProperty('embeddingProfile');
+    expect(publicEntry).not.toHaveProperty('updatedBy');
+    expect(publicEntry).not.toHaveProperty('createdAt');
+    expect(publicEntry).not.toHaveProperty('updatedAt');
 
     const rebuildResponse = await request.post('/api/admin/faq/index/rebuild', {
       headers: authHeaders(token),

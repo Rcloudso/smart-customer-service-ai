@@ -15,6 +15,11 @@ export interface ModelConfigDTO {
   embedModel: string;
 }
 
+export type EditableModelConfigDTO = Pick<
+  ModelConfigDTO,
+  'llmProvider' | 'llmModel' | 'embedProvider' | 'embedModel'
+>;
+
 export interface ModelConfigResponseDTO extends ModelConfigDTO {
   llmApiKeyConfigured: boolean;
   embedApiKeyConfigured: boolean;
@@ -22,10 +27,8 @@ export interface ModelConfigResponseDTO extends ModelConfigDTO {
 
 const CONFIG_KEYS = [
   'llmProvider',
-  'llmApiBase',
   'llmModel',
   'embedProvider',
-  'embedApiBase',
   'embedModel',
 ] as const;
 
@@ -33,10 +36,8 @@ export type ModelConfigKey = (typeof CONFIG_KEYS)[number];
 
 const ENV_KEY_BY_CONFIG_KEY: Record<ModelConfigKey, string> = {
   llmProvider: 'LLM_PROVIDER',
-  llmApiBase: 'LLM_API_BASE',
   llmModel: 'LLM_MODEL',
   embedProvider: 'EMBED_PROVIDER',
-  embedApiBase: 'EMBED_API_BASE',
   embedModel: 'EMBED_MODEL',
 };
 
@@ -96,7 +97,7 @@ export class ConfigService {
    * this process. The runtime is mutated only after the atomic rename succeeds.
    */
   save(
-    updates: Partial<ModelConfigDTO>,
+    updates: Partial<EditableModelConfigDTO>,
     resetKeys: ModelConfigKey[] = [],
   ): void {
     const resetSet = new Set<ModelConfigKey>(resetKeys);

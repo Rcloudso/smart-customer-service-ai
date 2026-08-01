@@ -664,6 +664,22 @@ function testKnowledgeReviewApiAndChatCompatibility(): void {
   assert.match(indexSource, /\/api\/admin\/knowledge-reviews/, 'server should mount knowledge review admin routes');
 }
 
+function testMarkdownBlocksRemoteImages(): void {
+  const safeMarkdownSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'client/src/components/common/SafeMarkdown.tsx'),
+    'utf8',
+  );
+  const chatBubbleSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'client/src/components/chat/ChatBubble.tsx'),
+    'utf8',
+  );
+
+  assert.match(safeMarkdownSource, /img:\s*\(\)\s*=>\s*null/);
+  assert.match(safeMarkdownSource, /components=\{SAFE_MARKDOWN_COMPONENTS\}/);
+  assert.match(chatBubbleSource, /<SafeMarkdown/);
+  assert.doesNotMatch(chatBubbleSource, /<ReactMarkdown/);
+}
+
 async function main(): Promise<void> {
   await testStartupHydratesBeforeSemanticSearch();
   await testExplicitEmbedApiKeySurvivesHydrate();
@@ -699,6 +715,7 @@ async function main(): Promise<void> {
   testEndToEndAutomationArtifactsExist();
   testRetrievalEvaluationAndDebuggingArtifactsExist();
   testKnowledgeReviewApiAndChatCompatibility();
+  testMarkdownBlocksRemoteImages();
   console.log('Regression checks passed');
 }
 

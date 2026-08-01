@@ -14,7 +14,7 @@
 
 **English version**: [README.md](README.md)
 
-开发版本：**v0.3.2（pre-1.0）**。最新公开发布版为 v0.3.2；在 1.0
+开发版本：**v0.3.3（pre-1.0）**。最新公开发布版为 v0.3.2；在 1.0
 之前，API 和持久化数据结构仍可能调整。
 
 <p align="center">
@@ -201,6 +201,7 @@ JSON 与 SSE 写接口还支持可选的 `Idempotency-Key` 请求头：同一键
 ```bash
 npm install
 cp .env.example .env
+# 继续前先在 .env 中设置唯一的 JWT_SECRET 和 ADMIN_PASSWORD。
 npm run db:init
 npm run db:seed
 EMBED_PROVIDER=other npm run dev
@@ -211,14 +212,9 @@ EMBED_PROVIDER=other npm run dev
 - 用户聊天页：http://localhost:5173/
 - 管理后台：http://localhost:5173/admin
 
-默认本地管理员账号：
-
-```text
-用户名：admin
-密码：admin123
-```
-
-任何接近生产的部署前，都必须修改 `ADMIN_PASSWORD`。当 `NODE_ENV=production` 时，服务端会拦截默认管理员密码。
+本地管理员用户名默认为 `admin`，密码来自 `ADMIN_PASSWORD`。当部署值发生
+变化时，seed 会同步唯一的环境管理员账号，并清理旧启动遗留的可登录管理员行。
+不要复用示例值或其他部署的凭据。
 
 ---
 
@@ -227,6 +223,9 @@ EMBED_PROVIDER=other npm run dev
 ```bash
 docker compose up --build
 ```
+
+Compose 启动前要求 `.env` 中存在非空 `JWT_SECRET` 和 `ADMIN_PASSWORD`，
+前后端端口默认只绑定到 `127.0.0.1`。
 
 Docker 默认暴露：
 
@@ -249,10 +248,13 @@ alias，但不能修改 provider、URL 或 API Key。
 通过 Compose profile 启动可选 CPU OCR Worker：
 
 ```bash
-OCR_SERVICE_URL=http://ocr-worker:8001 docker compose --profile ocr up --build
+OCR_SERVICE_URL=http://ocr-worker:8001 \
+OCR_SERVICE_TOKEN='<生成一个随机密钥>' \
+docker compose --profile ocr up --build
 ```
 
-Worker 首次启动会下载 Paddle 模型。本地 Python 启动方式、Worker 契约和
+Worker 首次启动会下载 Paddle 模型。原生推理超过截止时间时，Worker 返回
+`504` 后退出，Compose 会用干净进程重启。本地 Python 启动方式、Worker 契约和
 Paddle 安装资料见 [ocr-worker/README.md](ocr-worker/README.md)。
 
 Compose 使用 `resolve-weave` 项目名，并将本地镜像构建为
@@ -276,6 +278,7 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 本地管理员账号 |
 | `LLM_PROVIDER` / `EMBED_PROVIDER` | `openai`、`openai-compatible` 或 `other` |
 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | 对话模型地址、仅环境注入的凭据和模型名 |
+| `LLM_STREAM_MAX_BYTES` | 单次流式模型回答可缓冲的 UTF-8 字节上限，默认 `262144` |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI 兼容 embedding 模型 |
 | `VECTOR_STORE_PROVIDER` | `memory`（默认）或显式配置的 `qdrant`；变更后需重启 |
 | `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant REST 地址和可选、仅环境注入的凭据 |
@@ -284,15 +287,21 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `RETRIEVAL_TRACE_RETENTION_DAYS` | Trace 保留天数，默认 `30`，范围 `1`–`90` |
 | `DOCUMENT_UPLOAD_DIR` | 私有文档文件目录，默认 `./data/uploads` |
 | `OCR_SERVICE_URL` | 可选 PaddleOCR/PP-StructureV3 Worker 根地址；留空时原有 FAQ 和文本文档能力仍可运行 |
-| `OCR_SERVICE_TOKEN` | 可选 Bearer Token，只发送给已配置的 OCR Worker |
+| `OCR_SERVICE_TOKEN` | 配置 `OCR_SERVICE_URL` 时必需的 Bearer Token |
 | `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Worker 版本匹配和请求超时，默认 `3.0.3` / `120000` 毫秒 |
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | SQLite 持久化队列轮询，默认 `true` / `1000` 毫秒 |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | 可选、仅用于对照的 DeepSeek-OCR-2 兼容 Worker；不会替换 Paddle 复核内容 |
-| `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API 限流配置 |
+| `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` / `RATE_LIMIT_FAQ_SEARCH` | 支持 IPv6 子网归一的 API 限流配置 |
+| `FAQ_SEARCH_MAX_CONCURRENCY` | 公共语义 FAQ 检索的最大并发数，默认 `4` |
 | `SESSION_INACTIVITY_MINUTES` | 活跃会话无消息后自动关闭的分钟数，默认 `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | 一次同步筛选 CSV 可导出的完整消息行上限，默认 `5000` |
 
-环境变量是模型配置的唯一生效来源。管理后台模型配置页从环境读取服务商、地址和模型名，并把非敏感修改原子回写到本地 `.env`，当前进程会立即生效；SQLite 中历史 `model_configs` 数据不再覆盖环境配置。`openai` 服务商始终使用 `https://api.openai.com/v1`；只有 `openai-compatible` 和 `other` 使用自定义 API Base URL。管理接口只返回密钥是否已配置，不接收、不返回、不回写 API Key 内容；密钥必须通过环境变量或部署 Secret 注入。容器或托管环境若使用外部注入变量或只读文件系统，应修改部署配置并重新部署，而不是依赖后台写文件。
+环境变量是模型配置的唯一生效来源。管理后台只可修改服务商和模型名；API
+Base URL 与凭据属于部署配置，在 UI/API 中只读。SQLite 中历史
+`model_configs` 数据不再覆盖环境配置。`openai` 始终使用官方地址，只有
+`openai-compatible` 和 `other` 使用自定义地址；仅当对话与 embedding 解析为
+同一规范化端点时才允许复用对话密钥。密钥必须通过环境变量或部署 Secret
+注入；托管或只读环境修改后应重新部署。
 
 ---
 

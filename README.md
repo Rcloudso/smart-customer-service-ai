@@ -15,7 +15,7 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Development version: **v0.3.2 (pre-1.0)**. The latest published release is
+Development version: **v0.3.3 (pre-1.0)**. The latest published release is
 v0.3.2; APIs and persisted data remain subject to change before 1.0.
 
 <p align="center">
@@ -219,6 +219,7 @@ Use Node.js 20.16+ or 22.3+.
 ```bash
 npm install
 cp .env.example .env
+# Set unique JWT_SECRET and ADMIN_PASSWORD values in .env before continuing.
 npm run db:init
 npm run db:seed
 EMBED_PROVIDER=other npm run dev
@@ -229,14 +230,10 @@ Open:
 - Customer chat: http://localhost:5173/
 - Admin console: http://localhost:5173/admin
 
-Default local admin account:
-
-```text
-Username: admin
-Password: admin123
-```
-
-Change `ADMIN_PASSWORD` before any production-like deployment. The server blocks the default password when `NODE_ENV=production`.
+The local admin username defaults to `admin`; its password comes from
+`ADMIN_PASSWORD`. Seeding synchronizes the single environment-managed account
+when either value changes and removes stale privileged rows left by earlier
+starts. Never reuse the example or another deployment's credentials.
 
 ---
 
@@ -245,6 +242,9 @@ Change `ADMIN_PASSWORD` before any production-like deployment. The server blocks
 ```bash
 docker compose up --build
 ```
+
+Compose requires non-empty `JWT_SECRET` and `ADMIN_PASSWORD` values in `.env`
+before startup and binds the frontend/backend ports to `127.0.0.1` by default.
 
 Docker exposes:
 
@@ -268,10 +268,14 @@ it cannot edit the provider, URL, or API key.
 Start the optional CPU OCR worker with the Compose profile:
 
 ```bash
-OCR_SERVICE_URL=http://ocr-worker:8001 docker compose --profile ocr up --build
+OCR_SERVICE_URL=http://ocr-worker:8001 \
+OCR_SERVICE_TOKEN='<generate-a-random-secret>' \
+docker compose --profile ocr up --build
 ```
 
-The first worker start downloads Paddle models. See
+The first worker start downloads Paddle models. If native inference exceeds
+its deadline, the worker exits after returning `504` and Compose restarts it
+with clean process state. See
 [ocr-worker/README.md](ocr-worker/README.md) for the local Python path, worker
 contract, and Paddle installation references.
 
@@ -297,6 +301,7 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Local admin account |
 | `LLM_PROVIDER` / `EMBED_PROVIDER` | `openai`, `openai-compatible`, or `other` |
 | `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | Chat model endpoint, environment-only credential, and model |
+| `LLM_STREAM_MAX_BYTES` | Maximum buffered UTF-8 bytes for one streamed model answer; defaults to `262144` |
 | `EMBED_API_BASE` / `EMBED_API_KEY` / `EMBED_MODEL` | OpenAI-compatible embedding model |
 | `VECTOR_STORE_PROVIDER` | `memory` (default) or explicitly configured `qdrant`; changing it requires restart |
 | `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant REST endpoint and optional environment-only credential |
@@ -305,15 +310,24 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `RETRIEVAL_TRACE_RETENTION_DAYS` | Trace retention in days; defaults to `30`, accepted range `1`–`90` |
 | `DOCUMENT_UPLOAD_DIR` | Private document file directory; defaults to `./data/uploads` |
 | `OCR_SERVICE_URL` | Optional PaddleOCR/PP-StructureV3 worker base URL; when empty, existing FAQ and text-document features still work |
-| `OCR_SERVICE_TOKEN` | Optional bearer token sent only to the configured OCR worker |
+| `OCR_SERVICE_TOKEN` | Required bearer token whenever `OCR_SERVICE_URL` is configured |
 | `OCR_ENGINE_VERSION` / `OCR_TIMEOUT_MS` | Required worker version match and request timeout; defaults to `3.0.3` / `120000` ms |
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | Durable SQLite queue polling; defaults to `true` / `1000` ms |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | Optional comparison-only DeepSeek-OCR-2-compatible worker; never replaces Paddle review content |
-| `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` | API rate limits |
+| `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` / `RATE_LIMIT_FAQ_SEARCH` | IPv6-aware API rate limits |
+| `FAQ_SEARCH_MAX_CONCURRENCY` | Maximum in-flight public semantic FAQ searches; defaults to `4` |
 | `SESSION_INACTIVITY_MINUTES` | Minutes without activity before an active conversation is closed; defaults to `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | Maximum complete message rows in one synchronous filtered CSV export; defaults to `5000` |
 
-The environment is the source of truth for model configuration. The admin model page reads provider, endpoint, and model name from the environment and atomically writes non-secret edits back to the local `.env` file so they take effect immediately. Legacy `model_configs` rows in SQLite no longer override these values. The `openai` provider always uses `https://api.openai.com/v1`; custom API Base URLs are used only by `openai-compatible` and `other`. The admin API exposes only whether a key is configured and never accepts, returns, or rewrites key material; inject keys through environment variables or deployment secrets. In container or managed deployments where environment variables are externally injected or the filesystem is read-only, update the deployment secret/configuration and redeploy instead.
+The environment is the source of truth for model configuration. The admin
+model page may update provider and model name, but API Base URLs and credentials
+are deployment-owned and read-only in the UI/API. Legacy `model_configs` rows
+in SQLite no longer override these values. The `openai` provider always uses
+`https://api.openai.com/v1`; custom API Base URLs are used only by
+`openai-compatible` and `other`. A chat credential is reused for embeddings
+only when both resolve to the same normalized endpoint. Inject keys through
+environment variables or deployment secrets and redeploy managed/read-only
+environments after changing them.
 
 ---
 

@@ -10,7 +10,23 @@ export const VECTOR_STORE_PROVIDERS = ['memory', 'qdrant'] as const;
 export type VectorStoreProvider = (typeof VECTOR_STORE_PROVIDERS)[number];
 
 export function resolveModelApiBase(provider: ModelProvider, customApiBase: string): string {
-  return provider === 'openai' ? OPENAI_API_BASE : customApiBase.trim();
+  const apiBase = provider === 'openai' ? OPENAI_API_BASE : customApiBase.trim();
+  if (!apiBase) return apiBase;
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(apiBase);
+  } catch {
+    throw new Error('Model API base must be a valid http or https URL');
+  }
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    throw new Error('Model API base must use http or https');
+  }
+  return apiBase;
+}
+
+function normalizeModelApiBase(provider: ModelProvider, customApiBase: string): string {
+  return resolveModelApiBase(provider, customApiBase).replace(/\/+$/, '');
 }
 
 export interface ResolvedModelEnvironment {
@@ -107,17 +123,22 @@ export function resolveModelEnvironment(
 ): ResolvedModelEnvironment {
   const llmApiBase = (source.LLM_API_BASE ?? '').trim();
   const embedApiBase = (source.EMBED_API_BASE ?? '').trim();
+  const llmProvider = resolveModelProvider(source.LLM_PROVIDER, llmApiBase);
+  const embedProvider = resolveModelProvider(source.EMBED_PROVIDER, embedApiBase);
+  const effectiveLlmApiBase = normalizeModelApiBase(llmProvider, llmApiBase);
+  const effectiveEmbedApiBase = normalizeModelApiBase(embedProvider, embedApiBase);
   const llmApiKey = source.LLM_API_KEY || source.OPENAI_API_KEY || '';
+  const mayShareLlmCredential = effectiveLlmApiBase === effectiveEmbedApiBase;
 
   return {
-    llmProvider: resolveModelProvider(source.LLM_PROVIDER, llmApiBase),
+    llmProvider,
     llmApiBase,
     llmModel: source.LLM_MODEL || source.OPENAI_MODEL || 'gpt-4o-mini',
     llmApiKey,
-    embedProvider: resolveModelProvider(source.EMBED_PROVIDER, embedApiBase),
+    embedProvider,
     embedApiBase,
     embedModel: source.EMBED_MODEL || source.OPENAI_EMBED_MODEL || 'text-embedding-3-small',
-    embedApiKey: source.EMBED_API_KEY || llmApiKey,
+    embedApiKey: source.EMBED_API_KEY || (mayShareLlmCredential ? llmApiKey : ''),
   };
 }
 
@@ -139,6 +160,7 @@ const envSchema = z.object({
   LLM_API_BASE: z.string().default(''),
   LLM_MODEL: z.string().default(''),
   LLM_API_KEY: z.string().default(''),
+  LLM_STREAM_MAX_BYTES: z.coerce.number().int().min(4096).max(4 * 1024 * 1024).default(256 * 1024),
   // New Embedding env vars
   EMBED_PROVIDER: z.enum(MODEL_PROVIDERS).optional(),
   EMBED_API_BASE: z.string().default(''),
@@ -151,7 +173,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(8, 'JWT_SECRET must be at least 8 characters'),
   ADMIN_USERNAME: z.string().default('admin'),
   /** @dev-only: change in production — default password is weak and publicly known */
-  ADMIN_PASSWORD: z.string().default('admin123'),
+  ADMIN_PASSWORD: z.string().min(8, 'ADMIN_PASSWORD must be at least 8 characters').default('admin123'),
   DB_PATH: z.string().default('./data/customer-service.db'),
   DOCUMENT_UPLOAD_DIR: z.string().default('./data/uploads'),
   OCR_SERVICE_URL: z.string().default(''),
@@ -174,6 +196,8 @@ const envSchema = z.object({
   RATE_LIMIT_CHAT: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_ADMIN: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
+  RATE_LIMIT_FAQ_SEARCH: z.coerce.number().int().positive().default(60),
+  FAQ_SEARCH_MAX_CONCURRENCY: z.coerce.number().int().positive().max(100).default(4),
   SESSION_INACTIVITY_MINUTES: z.coerce.number().int().positive().max(1440).default(30),
   CONVERSATION_EXPORT_MAX_MESSAGES: z.coerce.number().int().positive().max(5000).default(5000),
 });
@@ -194,6 +218,11 @@ if (env.NODE_ENV === 'production' && env.ADMIN_PASSWORD === 'admin123') {
   process.exit(1);
 }
 
+if (env.OCR_SERVICE_URL.trim() && !env.OCR_SERVICE_TOKEN.trim()) {
+  console.error('❌ OCR_SERVICE_TOKEN is required when OCR_SERVICE_URL is configured.');
+  process.exit(1);
+}
+
 export const config = {
   port: env.PORT,
   nodeEnv: env.NODE_ENV,
@@ -203,6 +232,7 @@ export const config = {
     apiKey: modelEnvironment.llmApiKey,
     apiBase: resolveModelApiBase(modelEnvironment.llmProvider, modelEnvironment.llmApiBase),
     model: modelEnvironment.llmModel,
+    streamMaxBytes: env.LLM_STREAM_MAX_BYTES,
   },
   embed: {
     provider: modelEnvironment.embedProvider,
@@ -248,6 +278,10 @@ export const config = {
     chat: env.RATE_LIMIT_CHAT,
     admin: env.RATE_LIMIT_ADMIN,
     login: env.RATE_LIMIT_LOGIN,
+    faqSearch: env.RATE_LIMIT_FAQ_SEARCH,
+  },
+  faqSearch: {
+    maxConcurrency: env.FAQ_SEARCH_MAX_CONCURRENCY,
   },
   conversations: {
     inactivityMinutes: env.SESSION_INACTIVITY_MINUTES,

@@ -87,6 +87,14 @@ class ContractMapperTest(unittest.TestCase):
                 }],
             }], "3.0.3", 1)
 
+    def test_rejects_excessive_page_results(self) -> None:
+        with self.assertRaisesRegex(ValueError, "page limit"):
+            map_ppstructure_results(
+                [{"page_index": index} for index in range(101)],
+                "3.0.3",
+                1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

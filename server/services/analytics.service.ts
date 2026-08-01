@@ -17,34 +17,12 @@ export class AnalyticsService {
   }
 
   getOverview(dateFrom?: string, dateTo?: string): AdminOverview {
-    // For date-filtered queries, use session IDs within the date range
     const db = getDatabase();
-    let filteredSessionIds: string[] | null = null;
-
-    if (dateFrom || dateTo) {
-      const stmt = db.prepare(
-        `SELECT id FROM sessions
-         WHERE (? IS NULL OR created_at >= ?)
-         AND (? IS NULL OR created_at <= ?)`,
-      );
-      const rows = stmt.all(
-        dateFrom ?? null, dateFrom ?? null,
-        dateTo ?? null, dateTo != null ? dateTo + 'T23:59:59.999Z' : null,
-      ) as Array<{ id: string }>;
-      filteredSessionIds = rows.map((r) => r.id);
-    }
-
-    const totalSessions = filteredSessionIds !== null
-      ? filteredSessionIds.length
-      : this.sessionRepo.count(null);
-
-    const totalMessages = filteredSessionIds !== null
-      ? this.messageRepo.totalMessagesForSessions(filteredSessionIds)
-      : this.messageRepo.totalMessages();
-
-    const avgSatisfaction = filteredSessionIds !== null
-      ? this.messageRepo.avgSatisfactionForSessions(filteredSessionIds)
-      : this.messageRepo.avgSatisfaction();
+    const normalizedDateTo = dateTo && dateTo.length === 10
+      ? `${dateTo}T23:59:59.999Z`
+      : dateTo;
+    const { totalSessions, totalMessages, avgSatisfaction } =
+      this.sessionRepo.overviewMetrics(dateFrom, normalizedDateTo);
 
     const activeSessions = conversationService.getActiveSessionCount();
 

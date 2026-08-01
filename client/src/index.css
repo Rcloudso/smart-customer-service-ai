@@ -340,6 +340,12 @@ select {
   color: var(--app-text-secondary);
 }
 
+.app-config-environment-field {
+  display: grid;
+  gap: 8px;
+  color: var(--app-text-secondary);
+}
+
 .app-toolbar-row {
   width: 100%;
   display: flex;

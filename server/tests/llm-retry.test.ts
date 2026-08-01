@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { runWithRetry } from '../ai/llm-client';
+import { BoundedStreamBuffer, runWithRetry } from '../ai/llm-client';
 
 async function testTimeoutAbortsProviderRequest(): Promise<void> {
   let aborted = false;
@@ -39,11 +39,25 @@ async function testRetryPredicateStopsPartialStreamReplay(): Promise<void> {
   assert.equal(attempts, 1);
 }
 
+function testStreamBufferUsesUtf8ByteLimit(): void {
+  const buffer = new BoundedStreamBuffer(10);
+  buffer.append('你好');
+  buffer.append('a');
+  assert.equal(buffer.value, '你好a');
+  assert.throws(
+    () => buffer.append('世界'),
+    /stream exceeded 10 bytes/,
+  );
+}
+
 Promise.all([
   testTimeoutAbortsProviderRequest(),
   testRetryPredicateStopsPartialStreamReplay(),
 ]).then(
-  () => console.log('LLM retry tests passed'),
+  () => {
+    testStreamBufferUsesUtf8ByteLimit();
+    console.log('LLM retry tests passed');
+  },
   (error) => {
     console.error(error);
     process.exit(1);

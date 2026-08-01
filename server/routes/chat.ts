@@ -366,10 +366,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     try {
       const llmClient = getLLMClient();
-      await llmClient.chatStream(
+      fullContent = await llmClient.chatStream(
         fullMessages,
         (token: string) => {
-          fullContent += token;
           sseSend({ type: 'token', content: token });
         },
         { temperature: 0.7, maxTokens: 2000 },

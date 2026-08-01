@@ -816,8 +816,8 @@
     "en": "Embedding Model"
   },
   "config.providerHelp": {
-    "zh": "OpenAI 使用官方 API 地址；OpenAI Compatible 和其他服务商使用下方自定义地址。",
-    "en": "OpenAI uses the official API endpoint. OpenAI Compatible and Other providers use the custom endpoint below."
+    "zh": "OpenAI 使用官方 API 地址；其他服务商的端点由部署环境控制。",
+    "en": "OpenAI uses the official API endpoint. Other provider endpoints are controlled by the deployment environment."
   },
   "config.provider": {
     "zh": "服务商",
@@ -826,6 +826,10 @@
   "config.apiBaseUrl": {
     "zh": "API Base URL",
     "en": "API Base URL"
+  },
+  "config.apiBaseEnvironmentHelp": {
+    "zh": "由部署环境变量 {variable} 管理，管理员无法在此修改。",
+    "en": "Managed by the {variable} deployment environment variable and cannot be changed here."
   },
   "config.model": {
     "zh": "模型",

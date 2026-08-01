@@ -171,7 +171,7 @@ async function testEnvironmentOverridesLegacyDatabaseConfig(): Promise<void> {
   tempEnv.cleanup();
 }
 
-async function testAdminSaveAtomicallyUpdatesEnvAndRuntime(): Promise<void> {
+async function testAdminSaveCannotChangeDeploymentOwnedApiBases(): Promise<void> {
   const [{ initSchema }, { ConfigService }] = await Promise.all([
     import('../db'),
     import('../services/config.service'),
@@ -182,15 +182,19 @@ async function testAdminSaveAtomicallyUpdatesEnvAndRuntime(): Promise<void> {
     '# preserve this comment',
     'LLM_API_KEY=secret-that-must-not-change',
     'UNRELATED_SETTING=keep-me',
+    'LLM_API_BASE=https://operator-llm.example/v1',
+    'EMBED_API_BASE=https://operator-embed.example/v1',
     'LLM_MODEL=old-model',
     'LLM_MODEL=duplicate-model',
     '',
   ].join('\n'));
   const environment = {
     LLM_PROVIDER: 'openai',
+    LLM_API_BASE: 'https://operator-llm.example/v1',
     LLM_MODEL: 'old-model',
     LLM_API_KEY: 'secret-that-must-not-change',
     EMBED_PROVIDER: 'openai',
+    EMBED_API_BASE: 'https://operator-embed.example/v1',
   };
   const runtimeConfig = createRuntimeConfig();
   const service = new ConfigService({
@@ -202,32 +206,73 @@ async function testAdminSaveAtomicallyUpdatesEnvAndRuntime(): Promise<void> {
 
   service.save({
     llmProvider: 'openai-compatible',
-    llmApiBase: 'https://compatible.example/v1',
     llmModel: 'new # model',
     embedProvider: 'openai-compatible',
-    embedApiBase: 'https://embeddings.example/v1',
     embedModel: 'embedding-model',
-  });
+    llmApiBase: 'https://attacker.example/v1',
+    embedApiBase: 'https://attacker.example/v1',
+  } as unknown as Parameters<typeof service.save>[0]);
 
   const saved = fs.readFileSync(tempEnv.filePath, 'utf8');
   assert.match(saved, /^# preserve this comment$/m);
   assert.match(saved, /^LLM_API_KEY=secret-that-must-not-change$/m);
   assert.match(saved, /^UNRELATED_SETTING=keep-me$/m);
   assert.equal((saved.match(/^LLM_MODEL=/gm) ?? []).length, 1, 'duplicate managed keys must collapse');
+  assert.match(saved, /^LLM_API_BASE=https:\/\/operator-llm\.example\/v1$/m);
+  assert.match(saved, /^EMBED_API_BASE=https:\/\/operator-embed\.example\/v1$/m);
+  assert.doesNotMatch(saved, /attacker\.example/);
   assert.equal(environment.LLM_MODEL, 'new # model');
   assert.equal(runtimeConfig.llm.provider, 'openai-compatible');
-  assert.equal(runtimeConfig.llm.apiBase, 'https://compatible.example/v1');
+  assert.equal(runtimeConfig.llm.apiBase, 'https://operator-llm.example/v1');
   assert.equal(runtimeConfig.llm.model, 'new # model');
-  assert.equal(runtimeConfig.embed.apiBase, 'https://embeddings.example/v1');
+  assert.equal(runtimeConfig.embed.apiBase, 'https://operator-embed.example/v1');
 
-  service.save({ llmProvider: 'openai' }, ['llmApiBase']);
+  service.save(
+    { llmProvider: 'openai' },
+    ['llmApiBase', 'embedApiBase'] as unknown as Parameters<typeof service.save>[1],
+  );
   const resetSaved = fs.readFileSync(tempEnv.filePath, 'utf8');
-  assert.doesNotMatch(resetSaved, /^LLM_API_BASE=/m);
-  assert.equal('LLM_API_BASE' in environment, false);
+  assert.match(resetSaved, /^LLM_API_BASE=https:\/\/operator-llm\.example\/v1$/m);
+  assert.match(resetSaved, /^EMBED_API_BASE=https:\/\/operator-embed\.example\/v1$/m);
+  assert.equal(environment.LLM_API_BASE, 'https://operator-llm.example/v1');
   assert.equal(runtimeConfig.llm.apiBase, 'https://api.openai.com/v1');
 
   db.close();
   tempEnv.cleanup();
+}
+
+async function testCredentialsStayBoundToTheirConfiguredApiBase(): Promise<void> {
+  const { resolveModelEnvironment } = await import('../config');
+
+  const differentBases = resolveModelEnvironment({
+    LLM_PROVIDER: 'openai-compatible',
+    LLM_API_BASE: 'https://llm.example/v1',
+    LLM_API_KEY: 'llm-secret',
+    EMBED_PROVIDER: 'openai-compatible',
+    EMBED_API_BASE: 'https://embed.example/v1',
+  });
+  assert.equal(
+    differentBases.embedApiKey,
+    '',
+    'the LLM credential must not be reused for a different embedding endpoint',
+  );
+
+  const sameBase = resolveModelEnvironment({
+    LLM_PROVIDER: 'openai-compatible',
+    LLM_API_BASE: 'https://shared.example/v1/',
+    LLM_API_KEY: 'shared-secret',
+    EMBED_PROVIDER: 'openai-compatible',
+    EMBED_API_BASE: 'https://shared.example/v1',
+  });
+  assert.equal(sameBase.embedApiKey, 'shared-secret');
+
+  assert.throws(
+    () => resolveModelEnvironment({
+      LLM_PROVIDER: 'openai-compatible',
+      LLM_API_BASE: 'ftp://models.example/v1',
+    }),
+    /http or https/,
+  );
 }
 
 async function testFailedEnvWriteDoesNotMutateRuntime(): Promise<void> {
@@ -265,7 +310,8 @@ async function main(): Promise<void> {
   await testStartupPurgesPersistedApiKeys();
   await testConfigContractExposesOnlyCredentialStatus();
   await testEnvironmentOverridesLegacyDatabaseConfig();
-  await testAdminSaveAtomicallyUpdatesEnvAndRuntime();
+  await testAdminSaveCannotChangeDeploymentOwnedApiBases();
+  await testCredentialsStayBoundToTheirConfiguredApiBase();
   await testFailedEnvWriteDoesNotMutateRuntime();
   console.log('Model config security checks passed');
 }

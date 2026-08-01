@@ -5,6 +5,8 @@ from html.parser import HTMLParser
 from typing import Any
 
 MAX_TABLE_CELLS = 20_000
+MAX_PAGES = 100
+MAX_BLOCKS = 10_000
 
 
 def has_expected_signature(mime_type: str, content: bytes) -> bool:
@@ -28,6 +30,8 @@ def map_ppstructure_results(
     engine_version: str,
     elapsed_ms: float,
 ) -> dict[str, Any]:
+    if len(page_results) > MAX_PAGES:
+        raise ValueError("OCR result exceeds page limit")
     blocks: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     page_numbers: set[int] = set()
@@ -55,6 +59,8 @@ def map_ppstructure_results(
                 "blockIds": [],
             })
         blocks.extend(page_blocks)
+        if len(blocks) > MAX_BLOCKS:
+            raise ValueError("OCR result exceeds block limit")
 
     for index, block in enumerate(blocks):
         block["id"] = f"block-{index + 1:06d}"
