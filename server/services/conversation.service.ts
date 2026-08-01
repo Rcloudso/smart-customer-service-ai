@@ -17,6 +17,7 @@ import {
 } from '../types/domain';
 import { ChatHistorySession, ConversationDetail, PaginationResponse } from '../types/api';
 import { ConflictError, NotFoundError } from '../utils/errors';
+import { escapeCsvCell } from '../utils/csv';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import { EscalationService } from './escalation.service';
@@ -338,7 +339,7 @@ export class ConversationService {
         row.satisfaction,
         row.messageCreatedAt,
         row.content,
-      ].map((value) => this.escapeCsv(value)).join(','));
+      ].map(escapeCsvCell).join(','));
     }
 
     return {
@@ -398,14 +399,6 @@ export class ConversationService {
     return boundary.toISOString();
   }
 
-  private escapeCsv(value: unknown): string {
-    let text = String(value ?? '');
-    if (/^\s*[=+\-@]/.test(text)) text = `'${text}`;
-    if (/[\r\n,"]/.test(text)) {
-      text = `"${text.replace(/"/g, '""')}"`;
-    }
-    return text;
-  }
 }
 
 export const conversationService = new ConversationService();

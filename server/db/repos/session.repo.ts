@@ -154,6 +154,37 @@ export class SessionRepo {
     return row.total;
   }
 
+  overviewMetrics(dateFrom?: string, dateTo?: string): {
+    totalSessions: number;
+    totalMessages: number;
+    avgSatisfaction: number;
+  } {
+    const row = this.db.prepare(
+      `SELECT
+         COUNT(DISTINCT s.id) AS total_sessions,
+         COUNT(m.id) AS total_messages,
+         AVG(m.satisfaction) AS avg_satisfaction
+       FROM sessions s
+       LEFT JOIN messages m ON m.session_id = s.id
+       WHERE (? IS NULL OR s.created_at >= ?)
+         AND (? IS NULL OR s.created_at <= ?)`,
+    ).get(
+      dateFrom ?? null,
+      dateFrom ?? null,
+      dateTo ?? null,
+      dateTo ?? null,
+    ) as {
+      total_sessions: number;
+      total_messages: number;
+      avg_satisfaction: number | null;
+    };
+    return {
+      totalSessions: row.total_sessions,
+      totalMessages: row.total_messages,
+      avgSatisfaction: row.avg_satisfaction ?? 0,
+    };
+  }
+
   activeCount(cutoff: string): number {
     const row = this.db.prepare(
       "SELECT COUNT(*) as total FROM sessions WHERE status = 'active' AND updated_at >= ?",

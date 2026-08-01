@@ -24,6 +24,7 @@ import type {
   FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
+  EditableModelConfigDTO,
   KnowledgeReviewItem,
   KnowledgeReviewStats,
   KnowledgeReviewStatus,
@@ -70,6 +71,7 @@ export type {
   FaqIndexStatus,
   ModelConfigResponseDTO,
   ModelConfigDTO,
+  EditableModelConfigDTO,
   KnowledgeReviewItem,
   KnowledgeReviewStats,
   KnowledgeReviewStatus,
@@ -403,7 +405,10 @@ export async function getModelConfig(): Promise<ModelConfigResponseDTO> {
  * Update non-secret model configuration. Only non-empty fields are persisted.
  * Empty/omitted fields keep their current value.
  */
-export async function updateModelConfig(updates: Partial<ModelConfigDTO>, resetKeys: string[] = []): Promise<void> {
+export async function updateModelConfig(
+  updates: Partial<EditableModelConfigDTO>,
+  resetKeys: Array<keyof EditableModelConfigDTO> = [],
+): Promise<void> {
   return put<void>(
     '/admin/config/model',
     { ...updates, resetKeys },

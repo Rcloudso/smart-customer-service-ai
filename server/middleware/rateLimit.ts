@@ -11,9 +11,6 @@ export const chatRateLimiter = rateLimit({
     data: null,
     message: 'Too many chat requests. Please try again later.',
   },
-  keyGenerator: (req) => {
-    return req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
-  },
 });
 
 export const adminRateLimiter = rateLimit({
@@ -25,9 +22,6 @@ export const adminRateLimiter = rateLimit({
     code: 429,
     data: null,
     message: 'Too many admin requests. Please try again later.',
-  },
-  keyGenerator: (req) => {
-    return req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
   },
 });
 
@@ -42,7 +36,16 @@ export const loginRateLimiter = rateLimit({
     data: null,
     message: 'Too many login attempts. Please try again later.',
   },
-  keyGenerator: (req) => {
-    return req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
+});
+
+export const faqSearchRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: config.rateLimit.faqSearch,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: 429,
+    data: null,
+    message: 'Too many FAQ search requests. Please try again later.',
   },
 });

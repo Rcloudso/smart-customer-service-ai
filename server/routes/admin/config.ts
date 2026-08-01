@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { adminOnlyMiddleware } from '../../middleware/adminOnly';
-import { configService, ModelConfigDTO } from '../../services/config.service';
+import { configService, EditableModelConfigDTO } from '../../services/config.service';
 import { MODEL_PROVIDERS } from '../../config';
 import { logger } from '../../utils/logger';
 import { idempotencyMiddleware } from '../../middleware/idempotency';
@@ -16,10 +16,8 @@ router.use(idempotencyMiddleware);
 
 const modelConfigKeySchema = z.enum([
   'llmProvider',
-  'llmApiBase',
   'llmModel',
   'embedProvider',
-  'embedApiBase',
   'embedModel',
 ]);
 const modelProviderSchema = z.enum(MODEL_PROVIDERS);
@@ -27,10 +25,8 @@ const modelProviderSchema = z.enum(MODEL_PROVIDERS);
 /** Zod schema for PUT /model body — credentials are environment-injected only. */
 const updateModelConfigSchema = z.object({
   llmProvider: modelProviderSchema.optional(),
-  llmApiBase: z.string().optional(),
   llmModel: z.string().optional(),
   embedProvider: modelProviderSchema.optional(),
-  embedApiBase: z.string().optional(),
   embedModel: z.string().optional(),
   resetKeys: z.array(modelConfigKeySchema).optional(),
 }).strict();
@@ -66,7 +62,7 @@ router.put('/model', (req: Request, res: Response, next: NextFunction) => {
     }
 
     const { resetKeys = [], ...raw } = parsed.data;
-    const validUpdates: Partial<ModelConfigDTO> = {};
+    const validUpdates: Partial<EditableModelConfigDTO> = {};
     for (const [key, value] of Object.entries(raw)) {
       if (value !== undefined && value !== '') {
         (validUpdates as Record<string, string>)[key] = value as string;

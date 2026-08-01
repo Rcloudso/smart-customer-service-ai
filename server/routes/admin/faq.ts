@@ -9,6 +9,7 @@ import { IntentCategory } from '../../types/domain';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { idempotencyMiddleware } from '../../middleware/idempotency';
+import { escapeCsvCell } from '../../utils/csv';
 
 const router = Router();
 
@@ -261,25 +262,17 @@ router.get('/export', async (req: Request, res: Response, next: NextFunction) =>
   try {
     const entries = faqService.exportFaq();
 
-    const escapeCsv = (val: unknown): string => {
-      const str = String(val ?? '');
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
     const headers = ['question', 'answer', 'category', 'keywords', 'created_at', 'updated_at'];
     const csvRows = [headers.join(',')];
 
     for (const entry of entries) {
       csvRows.push([
-        escapeCsv(entry.question),
-        escapeCsv(entry.answer),
-        escapeCsv(entry.category),
-        escapeCsv(entry.keywords.join(',')),
-        escapeCsv(entry.createdAt),
-        escapeCsv(entry.updatedAt),
+        escapeCsvCell(entry.question),
+        escapeCsvCell(entry.answer),
+        escapeCsvCell(entry.category),
+        escapeCsvCell(entry.keywords.join(',')),
+        escapeCsvCell(entry.createdAt),
+        escapeCsvCell(entry.updatedAt),
       ].join(','));
     }
 

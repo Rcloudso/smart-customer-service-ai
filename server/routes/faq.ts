@@ -4,12 +4,19 @@ import { faqService } from '../services/faq.service';
 import { IntentCategory } from '../types/domain';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { toPublicFaqEntry } from './public-faq.dto';
 
 const router = Router();
 
 const searchSchema = z.object({
-  q: z.string().min(1, '搜索关键词不能为空'),
+  q: z.string().min(1, '搜索关键词不能为空').max(500, '搜索关键词过长'),
   limit: z.coerce.number().int().positive().max(20).default(5),
+});
+
+const listSchema = z.object({
+  category: z.nativeEnum(IntentCategory).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
 
 /**
@@ -18,14 +25,11 @@ const searchSchema = z.object({
  */
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const category = req.query.category as IntentCategory | undefined;
-
-    if (category && !Object.values(IntentCategory).includes(category)) {
-      throw new ValidationError(`无效的分类: ${category}`);
+    const parsed = listSchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
     }
-
-    const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
-    const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : 20;
+    const { category, page, pageSize } = parsed.data;
 
     const result = faqService.listFaq({
       category: category ?? undefined,
@@ -33,7 +37,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       pageSize,
     });
 
-    res.json({ code: 0, data: result, message: 'ok' });
+    res.json({
+      code: 0,
+      data: { ...result, items: result.items.map(toPublicFaqEntry) },
+      message: 'ok',
+    });
   } catch (err) {
     next(err);
   }

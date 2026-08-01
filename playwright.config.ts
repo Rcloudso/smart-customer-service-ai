@@ -33,6 +33,7 @@ const webServerEnv = {
   RATE_LIMIT_CHAT: '200',
   RATE_LIMIT_ADMIN: '500',
   RATE_LIMIT_LOGIN: '500',
+  RATE_LIMIT_FAQ_SEARCH: '500',
 };
 
 export default defineConfig({

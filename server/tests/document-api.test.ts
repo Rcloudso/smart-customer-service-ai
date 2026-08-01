@@ -30,6 +30,7 @@ async function main(): Promise<void> {
   process.env.EMBED_PROVIDER = 'other';
   process.env.EMBED_API_KEY = '';
   process.env.OCR_BACKGROUND_ENABLED = 'false';
+  process.env.OCR_SERVICE_TOKEN = 'document-api-ocr-secret';
   let ocrRequestCount = 0;
   let ocrServer: Server | null = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
     req.on('end', () => {
       assert.equal(req.method, 'POST');
       assert.equal(req.url, '/v1/extractions');
+      assert.equal(req.headers.authorization, 'Bearer document-api-ocr-secret');
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
         source: { contentBase64: string };
       };

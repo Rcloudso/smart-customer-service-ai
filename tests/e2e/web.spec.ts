@@ -615,6 +615,9 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(page.getByTestId('embed-provider-select').locator('input')).toHaveValue('其他');
     await expect(page.getByTestId('llm-api-base-field')).toBeVisible();
     await expect(page.getByTestId('embed-api-base-field')).toBeVisible();
+    await expect(page.getByTestId('llm-api-base-field').locator('input')).toBeDisabled();
+    await expect(page.getByTestId('embed-api-base-field').locator('input')).toBeDisabled();
+    await expect(page.getByTestId('llm-api-base-field')).toContainText('LLM_API_BASE');
 
     useOfficialProviders = true;
     await page.getByTestId('language-toggle').click();
@@ -852,8 +855,9 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     const submittedUrl = new URL(listRequests.at(-1)!);
     expect(submittedUrl.searchParams.get('keyword')).toBe('refund-user');
     expect(submittedUrl.searchParams.get('status')).toBe('closed');
-    expect(submittedUrl.searchParams.get('from')).toBe('2026-07-17');
-    expect(submittedUrl.searchParams.get('to')).toBe('2026-07-17');
+    const selectedDate = submittedUrl.searchParams.get('from');
+    expect(selectedDate).toMatch(/^\d{4}-\d{2}-17$/);
+    expect(submittedUrl.searchParams.get('to')).toBe(selectedDate);
     expect(submittedUrl.searchParams.get('timezoneOffset')).not.toBeNull();
     expect(submittedUrl.searchParams.get('timezoneOffsetTo')).not.toBeNull();
 
@@ -871,8 +875,8 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     const exported = new URL(exportUrl);
     expect(exported.searchParams.get('keyword')).toBe('refund-user');
     expect(exported.searchParams.get('status')).toBe('closed');
-    expect(exported.searchParams.get('from')).toBe('2026-07-17');
-    expect(exported.searchParams.get('to')).toBe('2026-07-17');
+    expect(exported.searchParams.get('from')).toBe(selectedDate);
+    expect(exported.searchParams.get('to')).toBe(selectedDate);
     expect(exported.searchParams.get('timezoneOffset')).toBe(
       submittedUrl.searchParams.get('timezoneOffset'),
     );
@@ -1935,6 +1939,11 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     ]);
     await chatResponse.finished();
     await expect(page.getByTestId('chat-messages')).toContainText(question);
+    const [ratingResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes('/api/chat/satisfaction')),
+      page.getByTitle('非常不满意').last().click(),
+    ]);
+    expect(ratingResponse.status()).toBe(200);
 
     await loginAsAdmin(page);
     await page.getByText('知识审核').click();

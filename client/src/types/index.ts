@@ -610,6 +610,11 @@ export interface ModelConfigDTO {
   embedModel: string;
 }
 
+export type EditableModelConfigDTO = Pick<
+  ModelConfigDTO,
+  'llmProvider' | 'llmModel' | 'embedProvider' | 'embedModel'
+>;
+
 export interface ModelConfigResponseDTO extends ModelConfigDTO {
   llmApiKeyConfigured: boolean;
   embedApiKeyConfigured: boolean;

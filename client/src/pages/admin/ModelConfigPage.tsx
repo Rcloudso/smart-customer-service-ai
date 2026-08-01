@@ -9,7 +9,7 @@ import {
   Tag,
 } from 'tdesign-react';
 import * as adminApi from '../../api/admin';
-import type { ModelConfigResponseDTO, ModelConfigDTO } from '../../api/admin';
+import type { ModelConfigResponseDTO, EditableModelConfigDTO } from '../../api/admin';
 import type { ModelProvider } from '../../types';
 import { useTranslation } from '../../hooks/usePreferences';
 
@@ -29,12 +29,10 @@ export function ModelConfigPage(): React.ReactElement {
   const [modifiedFields, setModifiedFields] = useState<Set<string>>(new Set());
 
   // Form state — mirrors the editable fields
-  const [form, setForm] = useState<ModelConfigDTO>({
+  const [form, setForm] = useState<EditableModelConfigDTO>({
     llmProvider: 'openai',
-    llmApiBase: '',
     llmModel: '',
     embedProvider: 'openai',
-    embedApiBase: '',
     embedModel: '',
   });
 
@@ -46,10 +44,8 @@ export function ModelConfigPage(): React.ReactElement {
       setModifiedFields(new Set()); // reset dirty tracking on fresh load
       setForm({
         llmProvider: data.llmProvider,
-        llmApiBase: data.llmApiBase,
         llmModel: data.llmModel,
         embedProvider: data.embedProvider,
-        embedApiBase: data.embedApiBase,
         embedModel: data.embedModel,
       });
     } catch (err) {
@@ -64,7 +60,7 @@ export function ModelConfigPage(): React.ReactElement {
     fetchConfig();
   }, [fetchConfig]);
 
-  const handleFieldChange = (field: keyof ModelConfigDTO, value: string): void => {
+  const handleFieldChange = (field: keyof EditableModelConfigDTO, value: string): void => {
     setModifiedFields((prev) => new Set(prev).add(field));
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -80,15 +76,15 @@ export function ModelConfigPage(): React.ReactElement {
     savingRef.current = true;
     setSaving(true);
     try {
-      const updates: Partial<ModelConfigDTO> = {};
+      const updates: Partial<EditableModelConfigDTO> = {};
       for (const [key, value] of Object.entries(form)) {
         if (value === '') continue;
         if (!modifiedFields.has(key)) continue;
         (updates as Record<string, string>)[key] = value;
       }
 
-      const resetKeys: string[] = [];
-      for (const key of Object.keys(form) as Array<keyof ModelConfigDTO>) {
+      const resetKeys: Array<keyof EditableModelConfigDTO> = [];
+      for (const key of Object.keys(form) as Array<keyof EditableModelConfigDTO>) {
         if (form[key] === '' && modifiedFields.has(key) && config?.[key] !== '') {
           resetKeys.push(key);
         }
@@ -143,13 +139,14 @@ export function ModelConfigPage(): React.ReactElement {
 
           {form.llmProvider !== 'openai' && (
             <FormItem label={t('config.apiBaseUrl')}>
-              <div data-testid="llm-api-base-field">
+              <div className="app-config-environment-field" data-testid="llm-api-base-field">
                 <Input
-                  value={form.llmApiBase}
-                  placeholder={config?.llmApiBase || ''}
-                  onChange={(val) => handleFieldChange('llmApiBase', val as string)}
-                  disabled={loading}
+                  value={config?.llmApiBase || ''}
+                  disabled
                 />
+                <div className="app-form-help">
+                  {t('config.apiBaseEnvironmentHelp', { variable: 'LLM_API_BASE' })}
+                </div>
               </div>
             </FormItem>
           )}
@@ -199,13 +196,14 @@ export function ModelConfigPage(): React.ReactElement {
 
           {form.embedProvider !== 'openai' && (
             <FormItem label={t('config.apiBaseUrl')}>
-              <div data-testid="embed-api-base-field">
+              <div className="app-config-environment-field" data-testid="embed-api-base-field">
                 <Input
-                  value={form.embedApiBase}
-                  placeholder={config?.embedApiBase || ''}
-                  onChange={(val) => handleFieldChange('embedApiBase', val as string)}
-                  disabled={loading}
+                  value={config?.embedApiBase || ''}
+                  disabled
                 />
+                <div className="app-form-help">
+                  {t('config.apiBaseEnvironmentHelp', { variable: 'EMBED_API_BASE' })}
+                </div>
               </div>
             </FormItem>
           )}

@@ -157,31 +157,8 @@ export class MessageRepo {
     return row.total;
   }
 
-  /** Count messages across a specific set of session IDs. */
-  totalMessagesForSessions(sessionIds: string[]): number {
-    if (sessionIds.length === 0) return 0;
-    const placeholders = sessionIds.map(() => '?').join(',');
-    const stmt = this.db.prepare(
-      `SELECT COUNT(*) as total FROM messages WHERE session_id IN (${placeholders})`,
-    );
-    const row = stmt.get(...sessionIds) as { total: number };
-    return row.total;
-  }
-
   avgSatisfaction(): number {
     const row = this.avgSatisfactionStmt.get() as { avg_rating: number | null };
-    return row.avg_rating ?? 0;
-  }
-
-  /** Average satisfaction across a specific set of session IDs. */
-  avgSatisfactionForSessions(sessionIds: string[]): number {
-    if (sessionIds.length === 0) return 0;
-    const placeholders = sessionIds.map(() => '?').join(',');
-    const stmt = this.db.prepare(
-      `SELECT AVG(satisfaction) as avg_rating FROM messages
-       WHERE satisfaction IS NOT NULL AND session_id IN (${placeholders})`,
-    );
-    const row = stmt.get(...sessionIds) as { avg_rating: number | null };
     return row.avg_rating ?? 0;
   }
 

@@ -104,20 +104,38 @@ export async function seed(): Promise<void> {
   const adminRepo = new AdminRepo(db);
   const faqRepo = new FaqRepo(db);
 
-  // Seed admin user
-  const existingAdmin = adminRepo.findByUsername(config.admin.username);
-  if (!existingAdmin) {
-    const passwordHash = await bcrypt.hash(config.admin.password, 10);
-    adminRepo.create(config.admin.username, passwordHash);
-    logger.info({ username: config.admin.username }, 'Admin user created');
+  // The MVP has one environment-managed administrator. Synchronize the
+  // existing row instead of creating a second, still-valid account when the
+  // configured username changes, and remove stale rows from earlier starts.
+  const admins = adminRepo.listAll();
+  const configuredAdmin = admins.find((admin) => admin.username === config.admin.username);
+  const targetAdmin = configuredAdmin ?? admins[0] ?? null;
+  const passwordMatches = targetAdmin
+    ? await bcrypt.compare(config.admin.password, targetAdmin.passwordHash)
+    : false;
+  const passwordHash = passwordMatches
+    ? targetAdmin!.passwordHash
+    : await bcrypt.hash(config.admin.password, 10);
 
-    // Warn if using default credentials in production
-    if (config.admin.password === 'admin123' && config.nodeEnv === 'production') {
-      logger.warn('⚠️  Admin password is the default "admin123". Change it immediately in production!');
+  const synchronizeAdmin = db.transaction(() => {
+    let adminId: string;
+    if (targetAdmin) {
+      adminRepo.updateIdentityAndPassword(
+        targetAdmin.id,
+        config.admin.username,
+        passwordHash,
+      );
+      adminId = targetAdmin.id;
+    } else {
+      adminId = adminRepo.create(config.admin.username, passwordHash).id;
     }
-  } else {
-    logger.info('Admin user already exists, skipping');
-  }
+    return adminRepo.deleteAllExcept(adminId);
+  });
+  const removedStaleAdmins = synchronizeAdmin();
+  logger.info(
+    { username: config.admin.username, removedStaleAdmins },
+    'Environment-managed admin synchronized',
+  );
 
   // Seed FAQ entries
   const existingFaqs = faqRepo.listAllActive();

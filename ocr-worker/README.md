@@ -16,6 +16,7 @@ python -m pip install paddlepaddle==3.0.0 \
   --index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
 python -m pip install -r requirements.txt
 PADDLE_DEVICE=cpu \
+OCR_WORKER_TOKEN='<generate-a-random-secret>' \
   uvicorn app:app --host 127.0.0.1 --port 8001
 ```
 
@@ -23,7 +24,15 @@ The worker reports the installed `paddleocr` package version (`3.0.3` in the
 pinned requirements) as its extraction engine version. Configure the Node
 application with `OCR_SERVICE_URL=http://127.0.0.1:8001` and the matching
 `OCR_ENGINE_VERSION=3.0.3`.
-Set the same optional secret in `OCR_WORKER_TOKEN` and `OCR_SERVICE_TOKEN`.
+Set the same required secret in `OCR_WORKER_TOKEN` and `OCR_SERVICE_TOKEN`.
+The worker refuses to start without it and rejects extraction requests with a
+missing or invalid bearer token. It also limits source bytes, PDF pages, image
+dimensions/pixels, one in-flight extraction, processing time, result pages and
+blocks, and serialized output size.
+If native inference exceeds the processing deadline, the worker returns `504`
+and then exits so its process supervisor can terminate the stuck inference.
+The provided Compose service uses `restart: unless-stopped`; direct `uvicorn`
+deployments must use an equivalent process supervisor.
 `paddlex` is pinned to `3.0.3` as well because newer PaddleX releases are not
 runtime-compatible with PaddleOCR `3.0.3` pipeline initialization.
 
@@ -33,6 +42,7 @@ From the repository root:
 
 ```bash
 OCR_SERVICE_URL=http://ocr-worker:8001 \
+OCR_SERVICE_TOKEN='<generate-a-random-secret>' \
   docker compose --profile ocr up --build
 ```
 

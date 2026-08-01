@@ -20,6 +20,26 @@ export interface RetryOptions {
   onRetry?: (params: { attempt: number; maxRetries: number; delay: number; error: Error }) => void;
 }
 
+export class BoundedStreamBuffer {
+  private content = '';
+  private byteLength = 0;
+
+  constructor(private readonly maxBytes: number) {}
+
+  append(chunk: string): void {
+    const nextByteLength = this.byteLength + Buffer.byteLength(chunk, 'utf8');
+    if (nextByteLength > this.maxBytes) {
+      throw new Error(`LLM stream exceeded ${this.maxBytes} bytes`);
+    }
+    this.content += chunk;
+    this.byteLength = nextByteLength;
+  }
+
+  get value(): string {
+    return this.content;
+  }
+}
+
 export async function runWithRetry<T>(
   operation: (signal: AbortSignal) => Promise<T>,
   options: RetryOptions = {},
@@ -88,10 +108,10 @@ class OpenAIClientImpl implements LLMClient {
 
   /**
    * Build (or rebuild) the embed OpenAI instance from current config.
-   * Key priority: config.embed.apiKey → fallback config.llm.apiKey.
+   * Credentials are already bound to their resolved endpoint during config hydration.
    */
   private buildEmbedClient(): OpenAI {
-    const apiKey = config.embed.apiKey || config.llm.apiKey || undefined;
+    const apiKey = config.embed.apiKey || undefined;
     const baseURL = config.embed.apiBase || undefined;
     return new OpenAI({
       apiKey,
@@ -174,17 +194,17 @@ class OpenAIClientImpl implements LLMClient {
         { signal },
       );
 
-      let fullContent = '';
+      const fullContent = new BoundedStreamBuffer(config.llm.streamMaxBytes);
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta?.content;
         if (delta) {
           emittedToken = true;
-          fullContent += delta;
+          fullContent.append(delta);
           onToken(delta);
         }
       }
 
-      return fullContent;
+      return fullContent.value;
     }, options?.maxRetries, () => !emittedToken, options?.timeoutMs);
   }
 

@@ -3,7 +3,13 @@ import cors from 'cors';
 import { config } from './config';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
-import { chatRateLimiter, adminRateLimiter, loginRateLimiter } from './middleware/rateLimit';
+import {
+  chatRateLimiter,
+  adminRateLimiter,
+  loginRateLimiter,
+  faqSearchRateLimiter,
+} from './middleware/rateLimit';
+import { createConcurrencyLimiter } from './middleware/concurrencyLimit';
 import type { Server } from 'node:http';
 
 // Route imports — loaded lazily after DB init
@@ -20,6 +26,10 @@ let adminQualityRoutes: express.Router;
 let adminEscalationRoutes: express.Router;
 let adminRetrievalRoutes: express.Router;
 let ready = false;
+const faqSearchConcurrencyLimiter = createConcurrencyLimiter(
+  config.faqSearch.maxConcurrency,
+  'FAQ search is busy. Please try again later.',
+);
 
 function createApp(): express.Application {
   const app = express();
@@ -35,6 +45,7 @@ function createApp(): express.Application {
   app.use('/api/chat', chatRateLimiter);
   app.use('/api/admin', adminRateLimiter);
   app.use('/api/auth/login', loginRateLimiter);
+  app.use('/api/faq/search', faqSearchRateLimiter, faqSearchConcurrencyLimiter);
 
   // ---- API routes (registered after DB init) ----
   app.use('/api/auth', (_req, _res, next) => {

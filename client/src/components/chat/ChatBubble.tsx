@@ -1,10 +1,10 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
 import { Tag } from 'tdesign-react';
 import type { ChatMessage } from '../../hooks/useChat';
 import { intentLabel } from '../../i18n';
 import { useTranslation } from '../../hooks/usePreferences';
 import { SatisfactionRating } from './SatisfactionRating';
+import { SafeMarkdown } from '../common/SafeMarkdown';
 
 interface ChatBubbleProps {
   message: ChatMessage;
@@ -48,7 +48,7 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
         {message.content ? (
           isUser
             ? message.content
-            : <ReactMarkdown className="app-chat-markdown" skipHtml>{message.content}</ReactMarkdown>
+            : <SafeMarkdown className="app-chat-markdown" content={message.content} />
         ) : (message.isStreaming ? (
           <span style={{ opacity: 0.6 }}>{t('chat.thinking')}</span>
         ) : '')}
