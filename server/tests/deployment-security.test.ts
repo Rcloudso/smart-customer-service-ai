@@ -25,6 +25,34 @@ async function testComposeRequiresSecretsAndBindsLocalPorts(): Promise<void> {
   assert.match(compose, /ocr-worker:[\s\S]*restart:\s*unless-stopped/);
 }
 
+async function testCiUsesCurrentActionRuntimesAndExercisesOcrRestart(): Promise<void> {
+  const ci = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
+  const smokeWorkflow = fs.readFileSync(
+    path.resolve('.github/workflows/ocr-restart-smoke.yml'),
+    'utf8',
+  );
+  const smokeCompose = fs.readFileSync(
+    path.resolve('ocr-worker/tests/docker-compose.restart-smoke.yml'),
+    'utf8',
+  );
+  const smokeScript = fs.readFileSync(
+    path.resolve('ocr-worker/tests/verify_restart_smoke.sh'),
+    'utf8',
+  );
+
+  assert.doesNotMatch(ci, /actions\/(?:checkout|setup-node)@v4|actions\/setup-python@v5/);
+  assert.match(ci, /actions\/checkout@v6/);
+  assert.match(ci, /actions\/setup-node@v6/);
+  assert.match(ci, /actions\/setup-python@v6/);
+  assert.match(smokeWorkflow, /actions\/checkout@v6/);
+  assert.match(smokeWorkflow, /verify_restart_smoke\.sh/);
+  assert.match(smokeCompose, /fake_paddleocr\.py:\/worker\/paddleocr\.py:ro/);
+  assert.match(smokeScript, /http_status[\s\S]*"504"/);
+  assert.match(smokeScript, /RestartCount/);
+  assert.match(smokeScript, /health_status/);
+  assert.doesNotMatch(smokeScript, /(?:--format|curl)\s+\+/);
+}
+
 async function testSeedRotatesExistingAdminPassword(): Promise<void> {
   const [databaseModule, { seed }, { AdminRepo }, { config }] = await Promise.all([
     import('../db'),
@@ -70,6 +98,7 @@ async function testSeedRotatesExistingAdminPassword(): Promise<void> {
 async function main(): Promise<void> {
   try {
     await testComposeRequiresSecretsAndBindsLocalPorts();
+    await testCiUsesCurrentActionRuntimesAndExercisesOcrRestart();
     await testSeedRotatesExistingAdminPassword();
     console.log('Deployment security checks passed');
   } finally {

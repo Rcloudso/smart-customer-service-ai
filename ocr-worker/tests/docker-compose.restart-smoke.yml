@@ -1,0 +1,19 @@
+services:
+  ocr-worker:
+    environment:
+      OCR_PROCESSING_TIMEOUT_SECONDS: "0.25"
+      OCR_RESTART_SMOKE_DELAY_SECONDS: "10"
+    volumes:
+      - ./ocr-worker/tests/fake_paddleocr.py:/worker/paddleocr.py:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2).read()
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
