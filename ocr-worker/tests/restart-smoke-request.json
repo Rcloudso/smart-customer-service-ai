@@ -1,0 +1,12 @@
+{
+  "contractVersion": "ocr-worker-request-v1",
+  "source": {
+    "mimeType": "image/png",
+    "contentBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+    "sha256": "ecf0dce902ac46dca39935c2a594d0cb4782f4fc6b4875b124f228ec3a8ed155"
+  },
+  "requestedEngine": {
+    "name": "paddleocr_ppstructurev3",
+    "version": "3.0.3"
+  }
+}
