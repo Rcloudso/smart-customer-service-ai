@@ -9,8 +9,8 @@
 [![SQLite](https://img.shields.io/badge/Storage-SQLite-044a64.svg)](https://www.sqlite.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-10a37f.svg)](https://platform.openai.com/docs/api-reference)
 [![Docker](https://img.shields.io/badge/Run-Docker-2496ed.svg)](Dockerfile)
-[![CI](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml)
-[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/smart-customer-service-ai?style=social)](https://github.com/Rcloudso/smart-customer-service-ai/stargazers)
+[![CI](https://github.com/Rcloudso/resolveweave/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/resolveweave/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/resolveweave?style=social)](https://github.com/Rcloudso/resolveweave/stargazers)
 
 **English version**: [README.md](README.md)
 
@@ -21,13 +21,13 @@
 [v0.3.4 版本验证证据](docs/releases/v0.3.4-evidence.md)
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
+  <a href="https://github.com/Rcloudso/resolveweave/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
     <img src="docs/demo/v0.3.2-preview.gif" width="880" alt="ResolveWeave v0.3.2 Qdrant 索引激活、检索 Trace 与回滚演示">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">观看检索运维演示（v0.3.2）</a>
+  <a href="https://github.com/Rcloudso/resolveweave/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">观看检索运维演示（v0.3.2）</a>
   · <a href="docs/releases/v0.3.2.md">v0.3.2 版本说明</a>
   · <a href="docs/releases/v0.3.2-evidence.md">v0.3.2 版本验证证据</a>
 </p>
@@ -44,7 +44,7 @@ Qdrant 的路径下，引导管理员得到第一条带文档来源的可信回�
 [快速开始](#快速开始) · [为什么做这个项目](#为什么做这个项目) · [特性](#特性) · [架构](ARCHITECTURE.md) · [评测与调试](#评测与调试) · [路线图](ROADMAP.md)
 
 如果你也认同这个方向，可以
-[给仓库一个 Star](https://github.com/Rcloudso/smart-customer-service-ai)，
+[给仓库一个 Star](https://github.com/Rcloudso/resolveweave)，
 持续关注企业智能客服路线的实现过程。
 
 ---

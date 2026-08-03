@@ -10,8 +10,8 @@
 [![SQLite](https://img.shields.io/badge/Storage-SQLite-044a64.svg)](https://www.sqlite.org/)
 [![OpenAI Compatible](https://img.shields.io/badge/API-OpenAI_Compatible-10a37f.svg)](https://platform.openai.com/docs/api-reference)
 [![Docker](https://img.shields.io/badge/Run-Docker-2496ed.svg)](Dockerfile)
-[![CI](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/smart-customer-service-ai/actions/workflows/ci.yml)
-[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/smart-customer-service-ai?style=social)](https://github.com/Rcloudso/smart-customer-service-ai/stargazers)
+[![CI](https://github.com/Rcloudso/resolveweave/actions/workflows/ci.yml/badge.svg)](https://github.com/Rcloudso/resolveweave/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/Rcloudso/resolveweave?style=social)](https://github.com/Rcloudso/resolveweave/stargazers)
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
@@ -22,13 +22,13 @@ to change before 1.0.
 [v0.3.4 release evidence](docs/releases/v0.3.4-evidence.md)
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
+  <a href="https://github.com/Rcloudso/resolveweave/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
     <img src="docs/demo/v0.3.2-preview.gif" width="880" alt="ResolveWeave v0.3.2 Qdrant index activation, retrieval trace, and rollback demo">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">Watch the retrieval operations demo (v0.3.2)</a>
+  <a href="https://github.com/Rcloudso/resolveweave/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">Watch the retrieval operations demo (v0.3.2)</a>
   · <a href="docs/releases/v0.3.2.md">v0.3.2 release notes</a>
   · <a href="docs/releases/v0.3.2-evidence.md">v0.3.2 release evidence</a>
 </p>
@@ -49,7 +49,7 @@ model key or Qdrant.
 [Quick Start](#quick-start) · [Why This Project](#why-this-project) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Evaluation](#evaluation-and-debugging) · [Roadmap](ROADMAP.md)
 
 If this direction is useful to you, consider
-[starring the repository](https://github.com/Rcloudso/smart-customer-service-ai)
+[starring the repository](https://github.com/Rcloudso/resolveweave)
 to follow the enterprise customer-service roadmap.
 
 ---
