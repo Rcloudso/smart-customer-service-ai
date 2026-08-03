@@ -88,7 +88,7 @@ Those exclusions are part of the engineering quality. They keep the public codeb
 - Document workflow: `server/services/document.service.ts`, document repositories/routes, and `client/src/pages/admin/DocumentManagementPage.tsx`.
 - Retrieval design: `server/ai/knowledge-retriever.ts`, `server/ai/vector-store.ts`, and the retrieval evaluations.
 - Compatibility and safety: chat SSE routes, intent-classifier tests, model-config security tests, and prompt-isolation tests.
-- End-to-end proof: `tests/e2e/api.spec.ts`, `tests/e2e/web.spec.ts`, and the [v0.2.6 demo video](https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4).
+- End-to-end proof: `tests/e2e/api.spec.ts`, `tests/e2e/web.spec.ts`, and the [v0.2.6 demo video](https://github.com/Rcloudso/resolveweave/releases/download/v0.2.6/smart-customer-service-v0.2.6-demo.mp4).
 
 ## Takeaway
 
