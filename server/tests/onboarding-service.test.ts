@@ -5,7 +5,7 @@ import { MessageRepo } from '../db/repos/message.repo';
 import { SessionRepo } from '../db/repos/session.repo';
 import { OnboardingService } from '../services/onboarding.service';
 import { Document, MessageRole } from '../types/domain';
-import { NotFoundError, ValidationError } from '../utils/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../utils/errors';
 
 const DOCUMENT_ID = '22222222-2222-4222-8222-222222222222';
 
@@ -98,6 +98,8 @@ async function testSamplePackAndGroundedCompletion(): Promise<void> {
     });
     const answered = service.recordGuidedAnswer({ sessionId: onboarding.id, messageId: answer.id });
     assert.equal(answered.firstAnswerMessageId, answer.id);
+    assert.equal(answered.verifiedAnswer?.content, '7 days');
+    assert.equal(answered.verifiedAnswer?.knowledgeSources[0]?.documentId, DOCUMENT_ID);
     assert.throws(() => service.evidenceReviewed(forged.id), ValidationError);
     const completed = service.evidenceReviewed(answer.id);
     assert.equal(completed.status, 'completed');
@@ -108,6 +110,63 @@ async function testSamplePackAndGroundedCompletion(): Promise<void> {
   }
 }
 
-void testSamplePackAndGroundedCompletion().then(() => {
+async function testRetryAfterPartialIndexFailureDoesNotDuplicateKnowledge(): Promise<void> {
+  const db = new Database(':memory:');
+  let indexAttempts = 0;
+  let uploads = 0;
+  try {
+    initSchema(db);
+    const service = new OnboardingService(db, {
+      updateFaqIndex: async () => {
+        indexAttempts += 1;
+        if (indexAttempts === 1) throw new Error('simulated index failure');
+      },
+      uploadDocument: async () => { uploads += 1; return readyDocument(); },
+      retryDocument: async () => readyDocument(),
+    });
+    service.start();
+    await assert.rejects(() => service.installSamplePack(), /simulated index failure/);
+    await service.installSamplePack();
+    assert.equal(indexAttempts, 2);
+    assert.equal(uploads, 1);
+    assert.equal(
+      (db.prepare("SELECT COUNT(*) AS total FROM faq_entries WHERE updated_by = 'sample-pack-v1'").get() as { total: number }).total,
+      6,
+    );
+  } finally {
+    db.close();
+  }
+}
+
+async function testConcurrentInstallHasOneOwner(): Promise<void> {
+  const db = new Database(':memory:');
+  let releaseIndex!: () => void;
+  const indexBlocked = new Promise<void>((resolve) => { releaseIndex = resolve; });
+  try {
+    initSchema(db);
+    const service = new OnboardingService(db, {
+      updateFaqIndex: async () => indexBlocked,
+      uploadDocument: async () => readyDocument(),
+      retryDocument: async () => readyDocument(),
+    });
+    service.start();
+    const owner = service.installSamplePack();
+    await assert.rejects(() => service.installSamplePack(), ConflictError);
+    releaseIndex();
+    await owner;
+    assert.equal(
+      (db.prepare("SELECT COUNT(*) AS total FROM faq_entries WHERE updated_by = 'sample-pack-v1'").get() as { total: number }).total,
+      6,
+    );
+  } finally {
+    db.close();
+  }
+}
+
+void Promise.all([
+  testSamplePackAndGroundedCompletion(),
+  testRetryAfterPartialIndexFailureDoesNotDuplicateKnowledge(),
+  testConcurrentInstallHasOneOwner(),
+]).then(() => {
   console.log('onboarding service tests passed');
 });

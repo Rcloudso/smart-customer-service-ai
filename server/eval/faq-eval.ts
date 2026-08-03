@@ -85,13 +85,13 @@ function evaluateCase(testCase: FaqEvalCase, matches: FaqDebugMatch[]): FaqEvalC
 async function main(): Promise<void> {
   resetEvalDb();
 
-  const [{ seed }, { semanticSearch }, { closeDatabase }] = await Promise.all([
-    import('../db/seed'),
+  const [{ semanticSearch }, { closeDatabase, getDatabase }, { seedFaqEvalFixture }] = await Promise.all([
     import('../ai/semantic-search'),
     import('../db'),
+    import('./faq-eval-fixture'),
   ]);
 
-  await seed();
+  seedFaqEvalFixture(getDatabase());
   await semanticSearch.rebuildIndex();
 
   const cases = loadCases();

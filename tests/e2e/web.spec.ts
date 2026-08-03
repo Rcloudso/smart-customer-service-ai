@@ -3,8 +3,11 @@ import type { Page } from '@playwright/test';
 
 async function clearBrowserState(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+    if (window.sessionStorage.getItem('__resolveweave_e2e_initialized') !== '1') {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.sessionStorage.setItem('__resolveweave_e2e_initialized', '1');
+    }
   });
 }
 
@@ -292,7 +295,19 @@ test.describe('Web automation: first value and responsive operations', () => {
     await expect(page.getByTestId('onboarding-answer')).toContainText('7');
     await expect(page.getByTestId('onboarding-sources')).toContainText('document');
     await expect(page.getByTestId('onboarding-sources')).toContainText('demo-return-policy-bilingual.md');
-    expect(Date.now() - appReadyAt).toBeLessThanOrEqual(60_000);
+    const firstGroundedAnswerMs = Date.now() - appReadyAt;
+    expect(firstGroundedAnswerMs).toBeLessThanOrEqual(60_000);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      console.log(`[release-evidence] app-ready-to-first-grounded-answer-ms=${firstGroundedAnswerMs}`);
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.4-first-grounded-answer.png',
+        fullPage: true,
+      });
+    }
+
+    await page.reload();
+    await expect(page.getByTestId('onboarding-answer')).toContainText('7');
+    await expect(page.getByTestId('onboarding-sources')).toContainText('demo-return-policy-bilingual.md');
 
     await page.getByTestId('theme-toggle').click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -321,6 +336,12 @@ test.describe('Web automation: first value and responsive operations', () => {
     await expect(page).toHaveURL(/\/admin\/operations$/);
     await expect(page.getByTestId('operations-page')).toBeVisible();
     await expect(page.getByText('可选未启用', { exact: true }).first()).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.4-operations-mobile.png',
+        fullPage: true,
+      });
+    }
   });
 });
 

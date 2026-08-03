@@ -76,6 +76,7 @@ export class FaqRepo {
   }
 
   create(params: {
+    id?: string;
     question: string;
     answer: string;
     category: IntentCategory;
@@ -87,7 +88,7 @@ export class FaqRepo {
   }): FaqEntry {
     const now = new Date().toISOString();
     const entry: FaqEntry = {
-      id: uuidv4(),
+      id: params.id ?? uuidv4(),
       question: params.question,
       answer: params.answer,
       category: params.category,

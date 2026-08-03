@@ -780,6 +780,11 @@ export interface OnboardingOverview {
     failureCode: string | null;
     completedAt: string | null;
   } | null;
+  verifiedAnswer: {
+    messageId: string;
+    content: string;
+    knowledgeSources: KnowledgeRetrievalSnapshot[];
+  } | null;
   readiness: {
     database: 'ready';
     answerMode: 'provider_configured' | 'deterministic_local';

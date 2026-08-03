@@ -198,7 +198,7 @@ export class EscalationPacketRepo {
     whereClause: string;
     params: unknown[];
   } {
-    const clauses: string[] = [];
+    const clauses: string[] = ["s.origin = 'customer'"];
     const params: unknown[] = [];
     if (filters.status) {
       clauses.push('e.status = ?');

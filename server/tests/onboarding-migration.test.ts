@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { initSchema } from '../db';
 import { MessageRepo } from '../db/repos/message.repo';
+import { EscalationPacketRepo } from '../db/repos/escalation-packet.repo';
+import { EscalationRepo } from '../db/repos/escalation.repo';
 import { SessionRepo } from '../db/repos/session.repo';
-import { MessageRole } from '../types/domain';
+import { buildDeterministicEscalationPacket } from '../services/escalation-triage';
+import { EscalationStatus, MessageRole } from '../types/domain';
 
 function testFreshInstallAndIdempotentRestart(): void {
   const db = new Database(':memory:');
@@ -74,7 +77,66 @@ function testOnboardingSessionsAreExcludedFromOperationsAnalytics(): void {
   }
 }
 
+function testInterruptedSampleClaimIsRecoverableAfterRestart(): void {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    db.prepare(`
+      INSERT INTO sample_pack_installations (
+        pack_version, status, faq_ids, attempt_id, created_at, updated_at
+      ) VALUES ('sample-pack-v1', 'installing', '[]', 'abandoned-attempt', ?, ?)
+    `).run('2026-08-03T00:00:00.000Z', '2026-08-03T00:00:00.000Z');
+    initSchema(db);
+    assert.deepEqual(
+      db.prepare(`
+        SELECT status, failure_code FROM sample_pack_installations
+        WHERE pack_version = 'sample-pack-v1'
+      `).get(),
+      { status: 'failed', failure_code: 'sample_pack_interrupted' },
+    );
+  } finally {
+    db.close();
+  }
+}
+
+function testOnboardingEscalationsAreExcludedFromOrdinaryQueues(): void {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const session = new SessionRepo(db).create('onboarding-escalation', {
+      origin: 'onboarding',
+      onboardingRunId: '11111111-1111-4111-8111-111111111111',
+    });
+    const escalationId = '22222222-2222-4222-8222-222222222222';
+    const escalationRepo = new EscalationRepo(db);
+    escalationRepo.create({
+      id: escalationId,
+      sessionId: session.id,
+      reason: 'test onboarding isolation',
+      status: EscalationStatus.PENDING,
+      resolvedAt: null,
+      createdAt: '2026-08-03T00:00:00.000Z',
+    });
+    const packetRepo = new EscalationPacketRepo(db);
+    packetRepo.create(buildDeterministicEscalationPacket({
+      escalationId,
+      sessionId: session.id,
+      reason: 'test onboarding isolation',
+      messages: [],
+      now: new Date('2026-08-03T00:00:00.000Z'),
+    }));
+    assert.deepEqual(escalationRepo.countByStatus(), { pending: 0, resolved: 0, total: 0 });
+    assert.equal(escalationRepo.listPending().length, 0);
+    assert.equal(packetRepo.countLatestBySession({}), 0);
+    assert.equal(packetRepo.listLatestBySession({}, 20, 0).length, 0);
+  } finally {
+    db.close();
+  }
+}
+
 testFreshInstallAndIdempotentRestart();
 testExistingDatabaseBecomesLegacyAndKeepsCustomerStats();
 testOnboardingSessionsAreExcludedFromOperationsAnalytics();
+testInterruptedSampleClaimIsRecoverableAfterRestart();
+testOnboardingEscalationsAreExcludedFromOrdinaryQueues();
 console.log('onboarding migration tests passed');

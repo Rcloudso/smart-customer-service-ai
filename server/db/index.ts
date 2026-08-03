@@ -733,6 +733,11 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'sample_pack_installations', 'attempt_id', 'TEXT');
   const now = new Date().toISOString();
   database.prepare(`
+    UPDATE sample_pack_installations
+    SET status = 'failed', failure_code = 'sample_pack_interrupted', updated_at = ?
+    WHERE status = 'installing'
+  `).run(now);
+  database.prepare(`
     INSERT OR IGNORE INTO installation_state (
       id, install_kind, onboarding_status, created_at, updated_at
     ) VALUES (1, ?, ?, ?, ?)

@@ -90,6 +90,43 @@ async function main(): Promise<void> {
     });
     assert.equal(replay.headers.get('Idempotency-Replayed'), 'true');
 
+    const englishChat = await fetch(`${base}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Within how many days must a return request be submitted?',
+        userIdent: 'guided-onboarding-user-en',
+        onboardingRunId: start.data.runId,
+      }),
+    });
+    assert.equal(englishChat.status, 200);
+    const englishDone = parseSse(await englishChat.text())
+      .find((event) => event.type === 'done')?.content;
+    assert.equal(englishDone?.groundingStatus, 'sufficient');
+    assert.ok((englishDone?.knowledgeSources as Array<{ documentId?: string }>).some(
+      (source) => source.documentId === sampleBody.data.samplePack.documentId,
+    ));
+
+    const escalationAttempt = await fetch(`${base}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: '转人工',
+        userIdent: 'guided-onboarding-escalation',
+        onboardingRunId: start.data.runId,
+      }),
+    });
+    assert.equal(escalationAttempt.status, 200);
+    assert.equal(parseSse(await escalationAttempt.text()).some((event) => event.type === 'escalate'), false);
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS total FROM escalation_log').get() as { total: number }).total,
+      0,
+    );
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS total FROM knowledge_review_items').get() as { total: number }).total,
+      0,
+    );
+
     const chat = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

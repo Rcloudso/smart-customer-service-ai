@@ -14,8 +14,11 @@
 
 **English version**: [README.md](README.md)
 
-开发版本：**v0.3.3（pre-1.0）**。最新公开发布版为 v0.3.2；在 1.0
-之前，API 和持久化数据结构仍可能调整。
+当前版本：**v0.3.4（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能
+调整。
+
+[v0.3.4 版本说明](docs/releases/v0.3.4.md) ·
+[v0.3.4 版本验证证据](docs/releases/v0.3.4-evidence.md)
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
@@ -34,9 +37,9 @@ ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
 怎样携带有效上下文交给人工。
 
 当前版本已经把用户聊天、FAQ 与文档知识、混合检索、来源持久化、确定性
-Grounding 决策、结构化转人工、可选 Qdrant、检索 Trace、运营后台和可重复
-质量评测放在同一工程内。没有付费模型 Key 或 Qdrant 也可以启动基础路径；
-后续将演进到受限 Agentic Retrieval，但不会把答案放行或业务操作权限交给模型。
+Grounding 决策、结构化转人工、可选 Qdrant、检索 Trace、统一运行中心和可重复
+质量评测放在同一工程内。全新安装首次登录后，会在没有付费模型 Key 和
+Qdrant 的路径下，引导管理员得到第一条带文档来源的可信回答。
 
 [快速开始](#快速开始) · [为什么做这个项目](#为什么做这个项目) · [特性](#特性) · [架构](ARCHITECTURE.md) · [评测与调试](#评测与调试) · [路线图](ROADMAP.md)
 
@@ -99,9 +102,9 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 - **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
   Retrieval 分开交付，不进行一次性框架重写。
 
-| v0.3.2 已实现 | 下一阶段 — v0.3.3+ |
+| 截至 v0.3.4 已实现 | 下一步 |
 | --- | --- |
-| 可选 Qdrant、可恢复索引任务、Quality Lab 后端对比、alias 原子激活/回滚、检索 Trace，以及 v0.3.1 的 OCR 复核路径 | 受限 Agentic Retrieval、企业知识运营，之后再接 mock 业务工具 |
+| 首次价值引导、统一运行状态与低风险恢复、可选 Qdrant、可恢复索引、Quality Lab、检索 Trace 和 OCR 复核 | 先验证下一个企业工作流，再考虑业务工具、多租户或 Agentic Retrieval |
 
 完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
 
@@ -122,6 +125,8 @@ flowchart LR
 - **用户聊天体验** - 支持安全 Markdown 渲染、上下文对话、紧凑文档来源、FAQ 参考、满意度反馈和历史会话。
 - **可信回答策略** - 在模型生成前确定 FAQ 直答、基于证据生成或拒答，并持久化决策和来源证据。
 - **管理后台** - FAQ 管理、会话列表、数据看板和运行时模型配置。
+- **首次价值引导** - 全新数据库首次登录后显式加载样例，在无 Key 路径完成中英文文档问答和来源检查；升级实例不会被强制打断。
+- **统一运行中心** - 汇总 SQLite、回答模式、Embedding、Qdrant、OCR、有界任务计数与最近故障，不探测付费模型；可重试失败文档或幂等创建失败质量任务的重跑。
 - **知识缺口反馈闭环** - 无匹配、低检索分和 1–2 星负反馈会进入知识审核，管理员可编辑、忽略或转换为已索引 FAQ。
 - **结构感知文档入库** - 后台上传 TXT、Markdown、含文本层 PDF 和 DOCX，进入版本化 `DocumentIR`；保留标题、段落、列表、表格、页码和 Block 来源，检查质量与处理阶段，再原子发布结构感知切片。
 - **需复核的 OCR 入库** - PNG、JPEG、WebP 和扫描 PDF 进入持久化 PaddleOCR PP-StructureV3 队列；管理员检查、编辑 Block 后原子发布，并可启用不具发布权的 DeepSeek-OCR-2 影子对照。
@@ -214,7 +219,13 @@ EMBED_PROVIDER=other npm run dev
 
 本地管理员用户名默认为 `admin`，密码来自 `ADMIN_PASSWORD`。当部署值发生
 变化时，seed 会同步唯一的环境管理员账号，并清理旧启动遗留的可登录管理员行。
-不要复用示例值或其他部署的凭据。
+`db:seed` 不再创建演示知识。全新数据库登录后，请在“首次使用”中显式安装
+幂等的 `sample-pack-v1`；它包含 6 条演示 FAQ 和 1 份双语 Markdown 退货政策
+文档。不要复用示例值或其他部署的凭据。
+
+推荐问题是“退货申请需要在几天内提交？”及其英文对应问题。确定性本地路径
+会从演示 Markdown 文档回答并显示来源。之后可随时从后台导航重新进入
+“首次使用”或“运行中心”。
 
 ---
 
@@ -232,7 +243,10 @@ Docker 默认暴露：
 - 前端：http://localhost:5173/
 - 后端健康检查：http://localhost:3001/api/health
 
-Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时也能启动。确定性本地路径支持 FAQ 与文档检索；文档回答会回退到最高分原文片段。
+Compose 示例使用 `EMBED_PROVIDER=other`，所以没有付费模型 Key 时也能启动。
+在应用容器中执行 `npm run db:seed`（或使用部署环境的等价命令）只会同步管理员；
+演示知识需从“首次使用”显式安装。确定性本地路径支持 FAQ 与文档检索；文档
+回答会回退到最高分原文片段。
 
 通过部署配置选择可选、固定版本的 Qdrant 后端：
 
@@ -422,9 +436,6 @@ data/          本地 SQLite 数据库文件
 
 ## Roadmap
 
-有顺序的版本计划见 [ROADMAP.md](ROADMAP.md)。下一阶段重点为：
-
-- v0.3.3：实现由确定性 Grounding Gate 约束的受限 Agentic Retrieval。
-- v0.3.4–v0.3.8：企业知识运营、mock 优先的订单只读工具、人工协作、
-  客户身份/记忆和受控写操作。
-- v0.4.0：多知识库和租户边界、RBAC、审计、迁移、备份恢复与生产可观测性。
+产品方向见 [ROADMAP.md](ROADMAP.md)。v0.3.4 交付首次价值引导和统一低风险
+运行中心，不包含 Agentic Retrieval、业务工具、多租户或通用任务编排。后续
+版本继续以真实证据为门槛，而不是固定日期承诺。

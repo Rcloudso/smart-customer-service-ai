@@ -17,19 +17,30 @@ export class EscalationRepo {
        ) VALUES (?, ?, ?, ?, ?, ?)`,
     );
     this.listPendingStmt = db.prepare(
-      "SELECT * FROM escalation_log WHERE status = 'pending' ORDER BY created_at ASC",
+      `SELECT e.* FROM escalation_log e
+       JOIN sessions s ON s.id = e.session_id
+       WHERE e.status = 'pending' AND s.origin = 'customer'
+       ORDER BY e.created_at ASC`,
     );
     this.findBySessionStmt = db.prepare(
       'SELECT * FROM escalation_log WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
     );
     this.findByIdStmt = db.prepare('SELECT * FROM escalation_log WHERE id = ?');
     this.countPendingStmt = db.prepare(
-      "SELECT COUNT(DISTINCT session_id) AS count FROM escalation_log WHERE status = 'pending'",
+      `SELECT COUNT(DISTINCT e.session_id) AS count FROM escalation_log e
+       JOIN sessions s ON s.id = e.session_id
+       WHERE e.status = 'pending' AND s.origin = 'customer'`,
     );
     this.countResolvedStmt = db.prepare(
-      "SELECT COUNT(DISTINCT session_id) AS count FROM escalation_log WHERE status = 'resolved'",
+      `SELECT COUNT(DISTINCT e.session_id) AS count FROM escalation_log e
+       JOIN sessions s ON s.id = e.session_id
+       WHERE e.status = 'resolved' AND s.origin = 'customer'`,
     );
-    this.countAllStmt = db.prepare('SELECT COUNT(DISTINCT session_id) AS count FROM escalation_log');
+    this.countAllStmt = db.prepare(
+      `SELECT COUNT(DISTINCT e.session_id) AS count FROM escalation_log e
+       JOIN sessions s ON s.id = e.session_id
+       WHERE s.origin = 'customer'`,
+    );
   }
 
   create(escalation: EscalationLog): EscalationLog {

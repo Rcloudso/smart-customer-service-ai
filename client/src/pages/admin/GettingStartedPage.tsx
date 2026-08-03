@@ -27,6 +27,10 @@ export default function GettingStartedPage(): React.ReactElement {
   const question = state?.recommendedQuestions[language] ?? '';
   const sampleReady = state?.samplePack?.status === 'ready';
   const firstAnswerReady = Boolean(state?.firstAnswerMessageId);
+  const displayedAnswer = answer || state?.verifiedAnswer?.content || '';
+  const displayedSources = sources.length > 0
+    ? sources
+    : state?.verifiedAnswer?.knowledgeSources ?? [];
   const steps = useMemo(() => [
     { key: 'ready', done: Boolean(state), label: t('onboarding.step.ready') },
     { key: 'sample', done: sampleReady, label: t('onboarding.step.sample') },
@@ -138,11 +142,11 @@ export default function GettingStartedPage(): React.ReactElement {
           >
             {firstAnswerReady ? t('onboarding.answerVerified') : t('onboarding.ask')}
           </Button>
-          {answer && <div className="app-onboarding-answer" data-testid="onboarding-answer">{answer}</div>}
-          {sources.length > 0 && (
+          {displayedAnswer && <div className="app-onboarding-answer" data-testid="onboarding-answer">{displayedAnswer}</div>}
+          {displayedSources.length > 0 && (
             <div className="app-onboarding-sources" data-testid="onboarding-sources">
               <strong>{t('onboarding.sources')}</strong>
-              {sources.map((source) => (
+              {displayedSources.map((source) => (
                 <div key={`${source.knowledgeType}-${source.knowledgeId}`}>
                   <Tag theme={source.knowledgeType === 'document' ? 'success' : 'default'}>{source.knowledgeType}</Tag>
                   <span>{source.title}</span>
@@ -157,7 +161,7 @@ export default function GettingStartedPage(): React.ReactElement {
           <Button
             theme="primary"
             icon={<ArrowRightIcon />}
-            disabled={!firstAnswerReady || state?.status === 'completed'}
+            disabled={!firstAnswerReady || displayedSources.length === 0 || state?.status === 'completed'}
             loading={action === 'finish'}
             onClick={() => void finish()}
           >

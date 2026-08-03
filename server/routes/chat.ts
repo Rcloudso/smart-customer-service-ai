@@ -151,6 +151,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       userIdent: inputUserIdent,
       onboardingRunId,
     } = parsed.data;
+    const isOnboarding = Boolean(onboardingRunId);
     const userIdent = inputUserIdent || req.ip || 'anonymous';
     const retrievalPolicy = getQualityLabService().getCurrentPolicy();
     trace = new RetrievalTraceCollector({ backend: config.vectorStore.provider });
@@ -197,7 +198,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       intent: intentResult.intent.intent,
       faqMatches: intentResult.faqMatches,
       retrievalResults: intentResult.retrievalResults,
-      explicitEscalation: intentResult.escalationType === 'explicit',
+      explicitEscalation: !isOnboarding && intentResult.escalationType === 'explicit',
       policy: retrievalPolicy.config,
     });
     trace.record('context_budget', {
@@ -275,9 +276,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     let escalationReason: string | null = null;
-    if (intentResult.escalationType === 'explicit' && intentResult.escalationReason) {
+    if (!isOnboarding && intentResult.escalationType === 'explicit' && intentResult.escalationReason) {
       escalationReason = intentResult.escalationReason;
-    } else if (grounding.shouldEscalate) {
+    } else if (!isOnboarding && grounding.shouldEscalate) {
       escalationReason = grounding.groundingStatus === 'conflicting'
         ? '知识库存在冲突答案，需要人工核实'
         : '当前请求涉及尚未授权的业务操作，需要人工处理';
@@ -313,7 +314,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         : conversationService.saveMessage(messageParams);
       finalizeTrace(assistantMessage.id);
 
-      if (grounding.groundingStatus !== 'high_risk') {
+      if (!isOnboarding && grounding.groundingStatus !== 'high_risk') {
         captureKnowledgeGapSafely({
           userMessage,
           assistantMessage,
@@ -396,14 +397,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const escalateMatch = fullContent.match(/ESCALATE:\s*(.+?)(?:\n|$)/);
     if (escalateMatch) {
       const reason = escalateMatch[1].trim();
-      if (!escalationReason) escalationReason = reason;
+      if (!isOnboarding && !escalationReason) escalationReason = reason;
 
       // Clean content by removing the ESCALATE marker
       fullContent = fullContent.replace(/ESCALATE:\s*.+?(?:\n|$)/g, '').trim();
     }
 
     // Also check content for frustration triggers via escalation service
-    if (!escalationReason) {
+    if (!isOnboarding && !escalationReason) {
       const checkResult = escalationService.checkEscalation(message);
       if (checkResult.shouldEscalate && checkResult.reason) {
         escalationReason = checkResult.reason;
@@ -447,15 +448,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     assistantMessageId = assistantMessage.id;
     finalizeTrace(assistantMessage.id);
 
-    captureKnowledgeGapSafely({
-      userMessage,
-      assistantMessage,
-      intent: intentResult.intent.intent,
-      intentConf: intentResult.intent.confidence,
-      faqMatches: intentResult.faqMatches,
-      retrievalResults: intentResult.retrievalResults,
-      escalationType: intentResult.escalationType,
-    });
+    if (!isOnboarding) {
+      captureKnowledgeGapSafely({
+        userMessage,
+        assistantMessage,
+        intent: intentResult.intent.intent,
+        intentConf: intentResult.intent.confidence,
+        faqMatches: intentResult.faqMatches,
+        retrievalResults: intentResult.retrievalResults,
+        escalationType: intentResult.escalationType,
+      });
+    }
 
     if (escalationReason) sseSend({ type: 'escalate', content: escalationReason });
 

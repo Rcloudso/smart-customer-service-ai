@@ -16,19 +16,19 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.2.9 | Released | Structured Escalation & Triage | 以结构化交接包、确定性优先级和只读双语分流页承接转人工流程。 |
 | v0.3.0 | Released | Structure-Aware Ingestion Foundation | 统一结构表示、质量门禁、结构切片、处理时间线和显式影子重处理已公开发布。 |
 | v0.3.1 | Released | Multimodal Knowledge Review | PNG/JPEG/WebP/扫描 PDF 经持久化 PaddleOCR 队列进入可编辑复核草稿；可选 DeepSeek 影子对照，发布后保留引擎、页码和 Block 来源。 |
-| v0.3.2 | Current | Qdrant & Retrieval Observability | 可选 Qdrant、可恢复索引任务、Quality Lab 后端影子评测、alias 原子激活/回滚和八阶段检索 Trace 形成独立运维闭环。 |
+| v0.3.2 | Released | Qdrant & Retrieval Observability | 可选 Qdrant、可恢复索引任务、Quality Lab 后端影子评测、alias 原子激活/回滚和八阶段检索 Trace 形成独立运维闭环。 |
+| v0.3.3 | Released | Security Hardening | 收紧部署 Secret、模型端点、公共 API、浏览器输出、统计查询、LLM 流和 OCR Worker 边界。 |
+| v0.3.4 | Current | First Value & Unified Operations | 全新安装在无 Key 路径获得首个带来源回答；统一运行状态与低风险恢复，并修复移动端后台导航。 |
 
-v0.3.2 已经形成可运行且带回答边界、结构化人工交接和检索运维的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
+v0.3.4 已经形成可运行且带首次价值、回答边界、结构化人工交接和统一运维入口的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、可选 Qdrant、可恢复索引、检索 Trace、转人工记录、满意度、知识审核、会话分析、双语后台、
 可信回答决策、来源持久化、接口幂等、防重复提交、Docker、检索评测和 Playwright 回归在同一工程内闭环。后续版本不再以增加
-“另一个聊天 Demo”为目标，而是先补齐企业知识工程与 Agentic Retrieval，再扩展业务处理和人工协作。
+“另一个聊天 Demo”为目标；Agentic Retrieval、业务工具和多租户必须分别获得真实场景证据后再进入版本合同。
 
 ## Planned Sequence / 计划顺序
 
 | Version | Theme | Intended outcome |
 | --- | --- | --- |
-| v0.3.3 | Bounded Agentic Retrieval | LLM 在预算内选择、组合和重试检索工具；确定性 Grounding Gate 决定引用、拒答、转人工和答案放行。 |
-| v0.3.4 | Enterprise Knowledge Operations | 增加可观测入库任务、文档版本、重建索引、失败恢复、白名单远程来源和定时刷新。 |
 | v0.3.5 | Read-Only Customer Service Tools | 以 mock 订单/物流查询验证类型化工具和外部订单系统接口，不执行业务写操作。 |
 | v0.3.6 | Human Collaboration | 增加人工接管、处理队列、分配、内部备注、解决结果和知识回流。 |
 | v0.3.7 | Persistent Customer Identity & Memory | 在统一身份、明确同意、保留期限和删除能力之上提供结构化长期上下文。 |
@@ -101,22 +101,24 @@ v0.3.2 已经形成可运行且带回答边界、结构化人工交接和检索�
 - 独立双语检索运维页展示健康、索引任务和固定八阶段 Trace；Trace 只保存
   有界安全元数据，默认保留 30 天。
 
-### v0.3.3 — Bounded Agentic Retrieval
+### v0.3.3 — Security Hardening
 
-- 将查询分析、改写、拆解、知识源选择、检索、重排和证据评估暴露为
-  类型化受限工具。
-- Agent 必须受最大轮数、模型调用数、候选数、上下文、延迟和成本预算约束。
-- 每一步记录输入摘要、工具、结果引用、分数和停止原因，支持回放与评测。
-- Agent 只能提出证据集合；确定性 Grounding Gate 继续决定证据是否充分、
-  是否引用、拒答、转人工和答案放行。
-- 无 Key 路径继续使用确定性单轮检索，不因 Agent 不可用而破坏基础问答。
+- 部署必须显式提供 JWT 与管理员 Secret，模型端点由部署环境控制。
+- 公共 API、CSV/Markdown 输出、统计查询和 LLM 流均增加有界资源与泄漏防护。
+- OCR Worker 增加鉴权、输入/输出上限、单并发和超时退出恢复，并保留真实
+  Paddle 运行时与 Docker restart smoke 的不同证据边界。
+- 不改变聊天 SSE、SQLite 权威数据源或无模型 Key 的本地回退路径。
 
-### v0.3.4 — Enterprise Knowledge Operations
+### v0.3.4 — First Value & Unified Operations
 
-- 将固定、项目自有的入库阶段做成可观测任务，不先建设通用低代码编排器。
-- 支持文档版本、增量更新、重建索引、失败恢复、停用/回滚和来源新鲜度。
-- 网页与远程文档仅允许白名单来源，保存快照、审核状态、版本和刷新记录；
-  外部内容始终按不可信输入处理。
+- 全新安装首次登录进入独立引导，显式加载幂等演示包，在无 Key 路径用双语
+  Markdown 文档完成第一条带来源回答；升级实例不强制跳转。
+- 引导会话与普通客服统计隔离，服务端验证充分 Grounding 和文档来源后才完成。
+- 统一运行中心聚合配置就绪、任务计数和有界近期故障，不探测付费 LLM。
+- 只集中失败文档重试和失败质量任务重跑；索引激活/回滚、OCR 复核仍由原
+  工作台负责。
+- 移动端后台使用完整标签、44px 点击目标和键盘可关闭 Drawer。
+- 不加入 Agentic Retrieval、业务工具、多租户或通用任务编排。
 
 ### v0.3.5 — Read-Only Customer Service Tools
 

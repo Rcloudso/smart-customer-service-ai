@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
 import { config } from '../config';
 import { getDatabase } from '../db';
 import { DocumentRepo } from '../db/repos/document.repo';
@@ -13,6 +13,7 @@ import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError 
 
 export const SAMPLE_PACK_VERSION = 'sample-pack-v1';
 export const SAMPLE_PACK_ACTOR = 'sample-pack-v1';
+const SAMPLE_PACK_NAMESPACE = '69de78c9-c396-4c0f-a120-91ae9bdf1f12';
 export const RECOMMENDED_QUESTIONS = {
   zh: '退货申请需要在几天内提交？',
   en: 'Within how many days must a return request be submitted?',
@@ -116,12 +117,20 @@ export class OnboardingService {
   getOverview() {
     const state = this.onboardingRepo.getState();
     const samplePack = this.onboardingRepo.getPack(SAMPLE_PACK_VERSION);
+    const verifiedMessage = state.firstAnswerMessageId
+      ? this.messageRepo.findById(state.firstAnswerMessageId)
+      : null;
     return {
       ...state,
       shouldAutoRedirect: state.installKind === 'fresh'
         && (state.status === 'not_started' || state.status === 'in_progress'),
       recommendedQuestions: RECOMMENDED_QUESTIONS,
       samplePack,
+      verifiedAnswer: verifiedMessage?.role === MessageRole.ASSISTANT ? {
+        messageId: verifiedMessage.id,
+        content: verifiedMessage.content,
+        knowledgeSources: verifiedMessage.retrievalSnapshot,
+      } : null,
       readiness: {
         database: 'ready' as const,
         answerMode: config.llm.apiKey ? 'provider_configured' as const : 'deterministic_local' as const,
@@ -157,17 +166,32 @@ export class OnboardingService {
     if (!claim.claimed) throw new ConflictError('Sample pack installation is already in progress');
 
     try {
-      let faqIds = claim.installation.faqIds;
-      let faqs = this.faqRepo.findActiveByIds(faqIds);
-      if (faqs.length !== SAMPLE_FAQS.length) {
-        faqs = this.db.transaction(() => SAMPLE_FAQS.map((faq) => this.faqRepo.create({
-          ...faq,
-          keywords: [...faq.keywords],
-          updatedBy: SAMPLE_PACK_ACTOR,
-        })))();
-        faqIds = faqs.map((faq) => faq.id);
-        this.onboardingRepo.saveFaqIds(SAMPLE_PACK_VERSION, attemptId, faqIds, new Date().toISOString());
-      }
+      const faqIds = SAMPLE_FAQS.map((faq) => uuidv5(faq.question, SAMPLE_PACK_NAMESPACE));
+      const faqs = this.db.transaction(() => {
+        const entries = SAMPLE_FAQS.map((faq, index) => {
+          const id = faqIds[index];
+          const existing = this.faqRepo.findById(id);
+          if (existing) {
+            if (existing.updatedBy !== SAMPLE_PACK_ACTOR) {
+              throw new ConflictError('Sample FAQ id is already owned by another record');
+            }
+            return existing;
+          }
+          return this.faqRepo.create({
+            id,
+            ...faq,
+            keywords: [...faq.keywords],
+            updatedBy: SAMPLE_PACK_ACTOR,
+          });
+        });
+        this.onboardingRepo.saveFaqIds(
+          SAMPLE_PACK_VERSION,
+          attemptId,
+          faqIds,
+          new Date().toISOString(),
+        );
+        return entries;
+      })();
       await this.dependencies.updateFaqIndex(faqs);
 
       let document = await this.resolveSampleDocument(claim.installation.documentId);

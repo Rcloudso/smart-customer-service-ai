@@ -15,8 +15,11 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Development version: **v0.3.3 (pre-1.0)**. The latest published release is
-v0.3.2; APIs and persisted data remain subject to change before 1.0.
+Current version: **v0.3.4 (pre-1.0)**. APIs and persisted data remain subject
+to change before 1.0.
+
+[v0.3.4 release notes](docs/releases/v0.3.4.md) ·
+[v0.3.4 release evidence](docs/releases/v0.3.4-evidence.md)
 
 <p align="center">
   <a href="https://github.com/Rcloudso/smart-customer-service-ai/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
@@ -38,10 +41,10 @@ hand risky cases to people with useful context.
 
 The current release combines customer chat, FAQ and document knowledge,
 hybrid retrieval, persisted sources, deterministic Grounding decisions,
-structured escalation, optional Qdrant, retrieval traces, an operations
-console, and repeatable quality evaluation. It starts without a paid model key
-or Qdrant and is evolving toward bounded Agentic Retrieval without giving the
-model authority over answer release or business actions.
+structured escalation, optional Qdrant, retrieval traces, a unified operations
+center, and repeatable quality evaluation. A fresh installation now guides an
+administrator from first login to a document-grounded answer without a paid
+model key or Qdrant.
 
 [Quick Start](#quick-start) · [Why This Project](#why-this-project) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Evaluation](#evaluation-and-debugging) · [Roadmap](ROADMAP.md)
 
@@ -109,9 +112,9 @@ into one accountable customer-resolution flow.
   bounded Agentic Retrieval are planned as separately testable releases rather
   than one framework rewrite.
 
-| Implemented in v0.3.2 | Next — v0.3.3+ |
+| Implemented through v0.3.4 | Next |
 | --- | --- |
-| Optional Qdrant, recoverable index jobs, Quality Lab backend comparison, atomic alias activation/rollback, Retrieval Trace, plus the v0.3.1 reviewed OCR path | Bounded Agentic Retrieval, enterprise knowledge operations, then mock-first business tools |
+| First-value onboarding, unified runtime status and low-risk recovery, optional Qdrant, recoverable index jobs, Quality Lab, Retrieval Trace, and reviewed OCR | Validate the next enterprise workflow before adding business tools, multi-tenancy, or agentic retrieval |
 
 See [ROADMAP.md](ROADMAP.md) for release boundaries and non-goals.
 
@@ -132,6 +135,8 @@ flowchart LR
 - **Customer chat experience** - streaming-style support UI with safe Markdown rendering, conversation context, compact document references, feedback, and history.
 - **Answer-evidence policy** - choose deterministic FAQ, retrieval-supported generation, or refusal before answer generation; persist the decision and retrieved sources.
 - **Admin console** - FAQ management, conversation list, dashboard analytics, and runtime model configuration.
+- **First-value onboarding** - a fresh database routes the first admin login through explicit sample loading, a no-key bilingual document answer, source review, and a clear next step; upgraded installations are not interrupted.
+- **Unified operations center** - summarize SQLite, answer mode, embeddings, Qdrant, OCR, bounded task counts, and recent failures without paid-provider probes; retry failed documents or create an idempotent rerun of a failed quality task.
 - **Knowledge gap feedback loop** - no-match, low-score, and negatively rated answers become review items that admins can edit, dismiss, or convert into indexed FAQs.
 - **Structure-aware document ingestion** - upload TXT, Markdown, text-layer PDF, and DOCX files into a versioned `DocumentIR`; preserve headings, paragraphs, lists, tables, page and block provenance; inspect quality and processing stages; then publish structure-aware chunks atomically.
 - **Reviewed OCR ingestion** - route PNG, JPEG, WebP, and scan-only PDF sources to a durable PaddleOCR PP-StructureV3 queue; inspect and edit extracted Blocks before atomic publication, with optional non-authoritative DeepSeek-OCR-2 shadow comparison.
@@ -233,7 +238,16 @@ Open:
 The local admin username defaults to `admin`; its password comes from
 `ADMIN_PASSWORD`. Seeding synchronizes the single environment-managed account
 when either value changes and removes stale privileged rows left by earlier
-starts. Never reuse the example or another deployment's credentials.
+starts. `db:seed` does not create demo knowledge. On a fresh database, sign in
+and use **Getting Started** to explicitly install the idempotent
+`sample-pack-v1`; it contains six demo FAQ records and one bilingual Markdown
+return-policy document. Never reuse the example or another deployment's
+credentials.
+
+The guided question is “退货申请需要在几天内提交？” / “Within how many days
+must a return request be submitted?”. The local deterministic path answers
+from the demo Markdown document and shows its source. You can reopen the guide
+or the unified **Operations** page from the admin navigation at any time.
 
 ---
 
@@ -251,7 +265,12 @@ Docker exposes:
 - Frontend: http://localhost:5173/
 - Backend health check: http://localhost:3001/api/health
 
-The compose example uses `EMBED_PROVIDER=other`, so the project can start without paid model keys. The deterministic local path supports FAQ and document retrieval; document answers fall back to the highest-ranked source excerpt instead of inventing a summary.
+The compose example uses `EMBED_PROVIDER=other`, so the project can start
+without paid model keys. Run `npm run db:seed` in the application container (or
+use the equivalent deployment command) to synchronize only the administrator,
+then install demo knowledge explicitly from **Getting Started**. The
+deterministic local path supports FAQ and document retrieval; document answers
+fall back to the highest-ranked source excerpt instead of inventing a summary.
 
 Start the optional pinned Qdrant backend and select it at deployment time:
 
@@ -466,13 +485,10 @@ data/          Local SQLite database files
 
 ## Roadmap
 
-The ordered version plan lives in [ROADMAP.md](ROADMAP.md). The next milestones are:
-
-- v0.3.3: bounded Agentic Retrieval behind a deterministic Grounding Gate.
-- v0.3.4–v0.3.8: enterprise knowledge operations, mock-first read-only order
-  tools, human collaboration, customer identity/memory and guarded actions.
-- v0.4.0: multi-knowledge-base and tenant boundaries, RBAC, audit, migration,
-  backup, recovery and production observability.
+The ordered product direction lives in [ROADMAP.md](ROADMAP.md). v0.3.4 ships
+first-value onboarding and unified low-risk operations without Agentic
+Retrieval, business tools, multi-tenancy, or a generic workflow orchestrator.
+Future releases remain evidence-gated rather than fixed-date commitments.
 
 ---
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Drawer, Dropdown } from 'tdesign-react';
 import {
@@ -51,6 +51,15 @@ export function AdminLayout(): React.ReactElement {
   const { user, logout } = useAuth();
   const { t } = useTranslation();
   const [mobileNavVisible, setMobileNavVisible] = useState(false);
+
+  useEffect(() => {
+    if (!mobileNavVisible) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileNavVisible(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileNavVisible]);
 
   const handleMenuClick = (value: string | number) => {
     navigate(String(value));
