@@ -749,3 +749,74 @@ export interface ChatHistorySession {
   messageCount: number;
   preview: string | null;
 }
+
+export type OnboardingStatus =
+  | 'not_started'
+  | 'in_progress'
+  | 'completed'
+  | 'dismissed'
+  | 'legacy';
+
+export interface OnboardingOverview {
+  installKind: 'fresh' | 'legacy';
+  status: OnboardingStatus;
+  runId: string | null;
+  startedAt: string | null;
+  sampleLoadedAt: string | null;
+  firstAnswerAt: string | null;
+  firstAnswerSessionId: string | null;
+  firstAnswerMessageId: string | null;
+  evidenceReviewedAt: string | null;
+  completedAt: string | null;
+  dismissedAt: string | null;
+  lastFailureCode: string | null;
+  shouldAutoRedirect: boolean;
+  recommendedQuestions: { zh: string; en: string };
+  samplePack: {
+    packVersion: string;
+    status: 'installing' | 'ready' | 'failed';
+    faqIds: string[];
+    documentId: string | null;
+    failureCode: string | null;
+    completedAt: string | null;
+  } | null;
+  verifiedAnswer: {
+    messageId: string;
+    content: string;
+    knowledgeSources: KnowledgeRetrievalSnapshot[];
+  } | null;
+  readiness: {
+    database: 'ready';
+    answerMode: 'provider_configured' | 'deterministic_local';
+    externalTelemetry: false;
+  };
+}
+
+export type OperationHealth = 'healthy' | 'configured' | 'optional_disabled' | 'degraded' | 'failed';
+
+export interface OperationsOverview {
+  generatedAt: string;
+  services: Array<{
+    key: 'sqlite' | 'answer' | 'embedding' | 'qdrant' | 'ocr';
+    health: OperationHealth;
+    mode: string;
+    detail: string;
+    ownerPath: string;
+  }>;
+  tasks: Record<'total' | 'documents' | 'quality' | 'indexes' | 'ocr', {
+    queued: number;
+    running: number;
+    failed: number;
+  }>;
+  recentProblems: Array<{
+    id: string;
+    kind: 'document' | 'quality' | 'index' | 'trace' | 'ocr';
+    title: string;
+    status: string;
+    failureCode: string | null;
+    occurredAt: string;
+    ownerPath: string;
+    recovery: 'retry_document' | 'rerun_quality' | null;
+  }>;
+  limits: { recentProblems: number };
+}

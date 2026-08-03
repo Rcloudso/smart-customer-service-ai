@@ -4,6 +4,8 @@ export enum SessionStatus {
   ESCALATED = 'escalated',
 }
 
+export type SessionOrigin = 'customer' | 'onboarding';
+
 export enum MessageRole {
   USER = 'user',
   ASSISTANT = 'assistant',
@@ -261,6 +263,8 @@ export interface Session {
   updatedAt: string;
   closedAt: string | null;
   closeReason: string | null;
+  origin: SessionOrigin;
+  onboardingRunId: string | null;
 }
 
 export interface Message {

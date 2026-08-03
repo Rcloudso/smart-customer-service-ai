@@ -55,6 +55,8 @@ import type {
   EscalationStatus,
   EscalationListItem,
   EscalationDetail,
+  OnboardingOverview,
+  OperationsOverview,
 } from '../types';
 
 // Re-export types
@@ -101,6 +103,8 @@ export type {
   EscalationStatus,
   EscalationListItem,
   EscalationDetail,
+  OnboardingOverview,
+  OperationsOverview,
 };
 
 function idempotentRequest(): { idempotencyKey: string } {
@@ -111,6 +115,39 @@ function idempotentRequest(): { idempotencyKey: string } {
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
   return post<LoginResponse>('/auth/login', { username, password }, { auth: false });
+}
+
+// ── First value onboarding ─────────────────────────
+
+export async function getOnboarding(): Promise<OnboardingOverview> {
+  return get<OnboardingOverview>('/admin/onboarding');
+}
+
+export async function startOnboarding(): Promise<OnboardingOverview> {
+  return post<OnboardingOverview>('/admin/onboarding/start', {});
+}
+
+export async function installSamplePack(): Promise<OnboardingOverview> {
+  return post<OnboardingOverview>('/admin/onboarding/sample-pack', {}, idempotentRequest());
+}
+
+export async function recordGuidedAnswer(data: {
+  sessionId: string;
+  messageId: string;
+}): Promise<OnboardingOverview> {
+  return post<OnboardingOverview>('/admin/onboarding/guided-answer', data, idempotentRequest());
+}
+
+export async function completeEvidenceReview(messageId: string): Promise<OnboardingOverview> {
+  return post<OnboardingOverview>('/admin/onboarding/evidence-reviewed', { messageId }, idempotentRequest());
+}
+
+export async function dismissOnboarding(): Promise<OnboardingOverview> {
+  return post<OnboardingOverview>('/admin/onboarding/dismiss', {}, idempotentRequest());
+}
+
+export async function getOperationsOverview(): Promise<OperationsOverview> {
+  return get<OperationsOverview>('/admin/operations/overview');
 }
 
 // ── Conversations ──────────────────────────────────
@@ -473,6 +510,10 @@ export async function createQualityRun(data: {
 
 export async function cancelQualityRun(runId: string): Promise<QualityRun> {
   return post(`/admin/quality/runs/${runId}/cancel`, {}, idempotentRequest());
+}
+
+export async function rerunQualityRun(runId: string): Promise<QualityRun> {
+  return post(`/admin/quality/runs/${runId}/rerun`, {}, idempotentRequest());
 }
 
 export async function getQualityPolicies(): Promise<{

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import { IntentCategory, MessageRole, SatisfactionRating, Session, SessionStatus } from '../../types/domain';
+import { IntentCategory, MessageRole, SatisfactionRating, Session, SessionOrigin, SessionStatus } from '../../types/domain';
 import { escapeLikePattern } from '../../utils/sql';
 
 export interface ConversationFilters {
@@ -45,8 +45,9 @@ export class SessionRepo {
     this.db = db;
     this.insertStmt = db.prepare(
       `INSERT INTO sessions (
-         id, user_ident, status, created_at, updated_at, closed_at, close_reason
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         id, user_ident, status, created_at, updated_at, closed_at, close_reason,
+         origin, onboarding_run_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.updateStatusStmt = db.prepare(
       `UPDATE sessions
@@ -58,19 +59,19 @@ export class SessionRepo {
     );
     this.findByIdStmt = db.prepare('SELECT * FROM sessions WHERE id = ?');
     this.findByUserIdentStmt = db.prepare(
-      'SELECT * FROM sessions WHERE user_ident = ? AND status = ? ORDER BY created_at DESC LIMIT 1',
+      "SELECT * FROM sessions WHERE user_ident = ? AND status = ? AND origin = 'customer' ORDER BY created_at DESC LIMIT 1",
     );
     this.listByUserIdentStmt = db.prepare(
-      'SELECT * FROM sessions WHERE user_ident = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+      "SELECT * FROM sessions WHERE user_ident = ? AND origin = 'customer' ORDER BY updated_at DESC LIMIT ? OFFSET ?",
     );
     this.countByUserIdentStmt = db.prepare(
-      'SELECT COUNT(*) as total FROM sessions WHERE user_ident = ?',
+      "SELECT COUNT(*) as total FROM sessions WHERE user_ident = ? AND origin = 'customer'",
     );
     this.listStmt = db.prepare(
-      'SELECT * FROM sessions WHERE (? IS NULL OR status = ?) ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      "SELECT * FROM sessions WHERE origin = 'customer' AND (? IS NULL OR status = ?) ORDER BY created_at DESC LIMIT ? OFFSET ?",
     );
     this.countStmt = db.prepare(
-      'SELECT COUNT(*) as total FROM sessions WHERE (? IS NULL OR status = ?)',
+      "SELECT COUNT(*) as total FROM sessions WHERE origin = 'customer' AND (? IS NULL OR status = ?)",
     );
     this.expireInactiveStmt = db.prepare(
       `UPDATE sessions
@@ -79,7 +80,10 @@ export class SessionRepo {
     );
   }
 
-  create(userIdent: string): Session {
+  create(userIdent: string, options: {
+    origin?: SessionOrigin;
+    onboardingRunId?: string | null;
+  } = {}): Session {
     const now = new Date().toISOString();
     const session: Session = {
       id: uuidv4(),
@@ -89,6 +93,8 @@ export class SessionRepo {
       updatedAt: now,
       closedAt: null,
       closeReason: null,
+      origin: options.origin ?? 'customer',
+      onboardingRunId: options.onboardingRunId ?? null,
     };
 
     this.insertStmt.run(
@@ -99,6 +105,8 @@ export class SessionRepo {
       session.updatedAt,
       session.closedAt,
       session.closeReason,
+      session.origin,
+      session.onboardingRunId,
     );
     return session;
   }
@@ -166,7 +174,8 @@ export class SessionRepo {
          AVG(m.satisfaction) AS avg_satisfaction
        FROM sessions s
        LEFT JOIN messages m ON m.session_id = s.id
-       WHERE (? IS NULL OR s.created_at >= ?)
+       WHERE s.origin = 'customer'
+         AND (? IS NULL OR s.created_at >= ?)
          AND (? IS NULL OR s.created_at <= ?)`,
     ).get(
       dateFrom ?? null,
@@ -187,7 +196,7 @@ export class SessionRepo {
 
   activeCount(cutoff: string): number {
     const row = this.db.prepare(
-      "SELECT COUNT(*) as total FROM sessions WHERE status = 'active' AND updated_at >= ?",
+      "SELECT COUNT(*) as total FROM sessions WHERE origin = 'customer' AND status = 'active' AND updated_at >= ?",
     ).get(cutoff) as { total: number };
     return row.total;
   }
@@ -274,7 +283,7 @@ export class SessionRepo {
     whereClause: string;
     params: unknown[];
   } {
-    const conditions: string[] = [];
+    const conditions: string[] = ["s.origin = 'customer'"];
     const params: unknown[] = [];
     if (filters.createdFrom) {
       conditions.push('s.created_at >= ?');
@@ -315,6 +324,8 @@ export class SessionRepo {
       updatedAt: row.updated_at as string,
       closedAt: row.closed_at as string | null,
       closeReason: row.close_reason as string | null,
+      origin: (row.origin ?? 'customer') as SessionOrigin,
+      onboardingRunId: row.onboarding_run_id as string | null,
     };
   }
 }

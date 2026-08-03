@@ -49,6 +49,44 @@ read model.
 Routes do not own SQL or provider calls. Repositories do not depend on Express.
 The model never directly performs database writes or business actions.
 
+## First-Value And Installation State
+
+SQLite records whether an installation is `fresh` or `legacy`, the current
+onboarding state, and idempotent sample-pack installation attempts. Existing
+databases are classified as legacy during the additive migration and are never
+forced into the guide. Fresh installations may dismiss or resume the guide.
+
+`sample-pack-v1` is installed only through an explicit admin action. Stable
+sample keys, one installation row, a transaction boundary, and retryable
+failure state prevent duplicate FAQ or document records across request replay,
+concurrent calls, or a failed document-processing attempt. `db:seed` has the
+smaller responsibility of synchronizing the deployment-managed administrator;
+it does not create knowledge.
+
+Guided chat uses the existing `POST /api/chat` surface with one optional
+`onboardingRunId`. Its SSE event names and ordinary-client behavior remain
+unchanged. Onboarding sessions are identified by `sessions.origin` and an
+optional run id, and are excluded in SQL from ordinary session, satisfaction,
+and escalation metrics. The server records first value only after the
+assistant message has sufficient grounding and a source from the installed
+sample document; client-supplied session or message ids are not trusted.
+
+## Unified Operations Read Model
+
+`GET /api/admin/operations/overview` composes a bounded, read-only operational
+snapshot from SQLite, deployment configuration, and the existing vector-store
+status boundary. It distinguishes healthy local deterministic operation from
+optional OCR or Qdrant that is not configured. Model status means
+configuration readiness only: the overview does not call an LLM provider or
+create hidden usage.
+
+The unified page deliberately exposes only low-risk recovery. Failed documents
+reuse the document workbench retry contract, and failed quality runs create a
+new idempotent run with the original dataset versions, policy grid, backend
+targets, and active-policy snapshot. Index build, activation, rollback, and OCR
+review remain in their owner workbenches, where existing confirmations and
+invariants stay visible.
+
 ## Grounded Chat Flow
 
 ```mermaid

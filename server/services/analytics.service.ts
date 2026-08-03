@@ -28,8 +28,10 @@ export class AnalyticsService {
 
     // Calculate escalation rate — use the same date range
     const escalationCountStmt = db.prepare(
-      `SELECT COUNT(DISTINCT session_id) as count FROM escalation_log
-       WHERE (? IS NULL OR created_at >= ?) AND (? IS NULL OR created_at <= ?)`,
+      `SELECT COUNT(DISTINCT e.session_id) as count FROM escalation_log e
+       JOIN sessions s ON s.id = e.session_id
+       WHERE s.origin = 'customer'
+         AND (? IS NULL OR e.created_at >= ?) AND (? IS NULL OR e.created_at <= ?)`,
     );
     const escalationCount = (
       escalationCountStmt.get(

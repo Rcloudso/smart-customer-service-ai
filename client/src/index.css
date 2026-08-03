@@ -252,6 +252,91 @@ select {
   text-transform: uppercase;
 }
 
+.app-centered-state {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+}
+
+.app-onboarding-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.app-onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-onboarding-steps li {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--app-text-muted);
+  border-bottom: 2px solid var(--app-border);
+}
+
+.app-onboarding-steps li > span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--app-border);
+  border-radius: 50%;
+}
+
+.app-onboarding-steps li.is-complete {
+  color: var(--app-text);
+  border-bottom-color: var(--app-success);
+}
+
+.app-onboarding-steps li.is-complete > span {
+  color: var(--app-success);
+  border-color: var(--app-success);
+}
+
+.app-onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.app-onboarding-answer-card {
+  grid-column: 1 / -1;
+}
+
+.app-onboarding-question {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.app-onboarding-answer,
+.app-onboarding-sources {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface-muted);
+  white-space: pre-wrap;
+}
+
+.app-onboarding-sources > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .app-admin-header {
   height: var(--app-header-height);
   background-color: color-mix(in srgb, var(--app-surface) 92%, transparent);
@@ -262,6 +347,84 @@ select {
   padding: 0 24px;
   gap: 12px;
   backdrop-filter: blur(12px);
+}
+
+.app-mobile-nav-trigger {
+  display: none;
+}
+
+.app-operations-services {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.app-operations-service-card .t-card__body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.app-operations-card-heading,
+.app-operations-problem,
+.app-operations-problem-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-operations-mode {
+  font-family: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
+  color: var(--app-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.app-operations-section {
+  margin-top: 16px;
+}
+
+.app-operations-task-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.app-operations-task-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: var(--app-surface-muted);
+  border-radius: var(--app-radius);
+}
+
+.app-operations-task-grid span {
+  color: var(--app-text-secondary);
+}
+
+.app-operations-task-grid .has-failures {
+  color: var(--app-danger);
+}
+
+.app-operations-problems {
+  display: grid;
+}
+
+.app-operations-problem {
+  min-height: 64px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.app-operations-problem:last-child {
+  border-bottom: 0;
+}
+
+.app-operations-problem p {
+  margin-top: 6px;
+  color: var(--app-text-muted);
 }
 
 .app-content {
@@ -1521,6 +1684,27 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
     transition: none;
   }
 
+  .app-admin-sidebar {
+    display: none !important;
+  }
+
+  .app-admin-layout.t-layout--with-sider {
+    flex-direction: row !important;
+  }
+
+  .app-mobile-nav-trigger {
+    display: inline-flex;
+    margin-right: auto;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .app-mobile-nav-drawer .t-menu__item {
+    min-height: 44px;
+    height: auto;
+    white-space: normal;
+  }
+
   .app-admin-sidebar .t-default-menu,
   .app-admin-sidebar .t-default-menu__inner {
     width: 100% !important;
@@ -1556,6 +1740,29 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
 
   .app-content {
     padding: 16px 12px;
+  }
+
+  .app-onboarding-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .app-onboarding-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-onboarding-answer-card {
+    grid-column: auto;
+  }
+
+  .app-operations-services,
+  .app-operations-task-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-operations-problem,
+  .app-operations-problem-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .app-page-header {

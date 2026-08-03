@@ -60,22 +60,27 @@ export class MessageRepo {
     this.countBySessionStmt = db.prepare(
       'SELECT COUNT(*) as total FROM messages WHERE session_id = ?',
     );
-    this.totalMessagesStmt = db.prepare('SELECT COUNT(*) as total FROM messages');
+    this.totalMessagesStmt = db.prepare(
+      "SELECT COUNT(*) as total FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.origin = 'customer'",
+    );
     this.avgSatisfactionStmt = db.prepare(
-      'SELECT AVG(satisfaction) as avg_rating FROM messages WHERE satisfaction IS NOT NULL',
+      "SELECT AVG(m.satisfaction) as avg_rating FROM messages m JOIN sessions s ON s.id = m.session_id WHERE s.origin = 'customer' AND m.satisfaction IS NOT NULL",
     );
     this.intentDistributionStmt = db.prepare(
-      `SELECT intent, COUNT(*) as count FROM messages
-       WHERE intent IS NOT NULL AND (? IS NULL OR created_at >= ?) AND (? IS NULL OR created_at <= ?)
-       GROUP BY intent`,
+      `SELECT m.intent, COUNT(*) as count FROM messages m
+       JOIN sessions s ON s.id = m.session_id
+       WHERE s.origin = 'customer' AND m.intent IS NOT NULL
+         AND (? IS NULL OR m.created_at >= ?) AND (? IS NULL OR m.created_at <= ?)
+       GROUP BY m.intent`,
     );
     this.satisfactionTrendStmt = db.prepare(
-      `SELECT DATE(created_at) as date, AVG(satisfaction) as avg_rating, COUNT(*) as count
-       FROM messages
-       WHERE satisfaction IS NOT NULL
-         AND (? IS NULL OR created_at >= ?)
-         AND (? IS NULL OR created_at <= ?)
-       GROUP BY DATE(created_at)
+      `SELECT DATE(m.created_at) as date, AVG(m.satisfaction) as avg_rating, COUNT(*) as count
+       FROM messages m
+       JOIN sessions s ON s.id = m.session_id
+       WHERE s.origin = 'customer' AND m.satisfaction IS NOT NULL
+         AND (? IS NULL OR m.created_at >= ?)
+         AND (? IS NULL OR m.created_at <= ?)
+       GROUP BY DATE(m.created_at)
        ORDER BY date ASC`,
     );
   }

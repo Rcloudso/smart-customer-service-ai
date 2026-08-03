@@ -3,8 +3,11 @@ import type { Page } from '@playwright/test';
 
 async function clearBrowserState(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+    if (window.sessionStorage.getItem('__resolveweave_e2e_initialized') !== '1') {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.sessionStorage.setItem('__resolveweave_e2e_initialized', '1');
+    }
   });
 }
 
@@ -17,7 +20,12 @@ async function loginAsAdmin(page: Page): Promise<void> {
     page.getByRole('button', { name: '登录' }).click(),
   ]);
   expect(response.status()).toBe(200);
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin(?:\/getting-started)?$/);
+  await page.waitForLoadState('networkidle');
+  if (new URL(page.url()).pathname === '/admin/getting-started') {
+    await page.getByRole('button', { name: '暂时跳过' }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+  }
 }
 
 function knowledgeReviewRow(page: Page, question: string) {
@@ -265,6 +273,75 @@ test.describe('Web automation: customer chat experience', () => {
     await rating.click();
     await expect(page.getByText('已评价')).toBeVisible();
     expect(ratingRequests).toBe(2);
+  });
+});
+
+test.describe('Web automation: first value and responsive operations', () => {
+  test('fresh admin completes the no-key grounded onboarding flow', async ({ page }) => {
+    test.setTimeout(60_000);
+    await clearBrowserState(page);
+    await page.goto('/login');
+    await page.getByTestId('login-username').locator('input').fill('admin');
+    await page.getByTestId('login-password').locator('input').fill('admin123');
+    await page.getByRole('button', { name: '登录' }).click();
+    await expect(page).toHaveURL(/\/admin\/getting-started$/);
+    await expect(page.getByTestId('getting-started-page')).toBeVisible();
+
+    const appReadyAt = Date.now();
+    await page.getByRole('button', { name: '开始首次体验' }).click();
+    await page.getByRole('button', { name: '加载 sample-pack-v1' }).click();
+    await expect(page.getByText('样例已加载', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '发送推荐问题' }).click();
+    await expect(page.getByTestId('onboarding-answer')).toContainText('7');
+    await expect(page.getByTestId('onboarding-sources')).toContainText('document');
+    await expect(page.getByTestId('onboarding-sources')).toContainText('demo-return-policy-bilingual.md');
+    const firstGroundedAnswerMs = Date.now() - appReadyAt;
+    expect(firstGroundedAnswerMs).toBeLessThanOrEqual(60_000);
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      console.log(`[release-evidence] app-ready-to-first-grounded-answer-ms=${firstGroundedAnswerMs}`);
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.4-first-grounded-answer.png',
+        fullPage: true,
+      });
+    }
+
+    await page.reload();
+    await expect(page.getByTestId('onboarding-answer')).toContainText('7');
+    await expect(page.getByTestId('onboarding-sources')).toContainText('demo-return-policy-bilingual.md');
+
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.getByTestId('language-toggle').click();
+    await expect(page.getByRole('heading', { name: /first grounded answer/i })).toBeVisible();
+    await page.getByRole('button', { name: 'I reviewed the source' }).click();
+    await expect(page.getByText('Getting started complete', { exact: true })).toBeVisible();
+    await page.getByTestId('language-toggle').click();
+    await page.getByTestId('theme-toggle').click();
+  });
+
+  test('390px admin uses a full-label keyboard-closeable Drawer', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await clearBrowserState(page);
+    await loginAsAdmin(page);
+    const trigger = page.getByRole('button', { name: '打开后台导航' });
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const drawer = page.locator('.app-mobile-nav-drawer');
+    await expect(drawer.getByText('运行中心', { exact: true })).toBeVisible();
+    await expect(drawer.getByText('检索运维', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('后台导航', { exact: true })).toBeHidden();
+    await trigger.click();
+    await drawer.getByText('运行中心', { exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/operations$/);
+    await expect(page.getByTestId('operations-page')).toBeVisible();
+    await expect(page.getByText('可选未启用', { exact: true }).first()).toBeVisible();
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.4-operations-mobile.png',
+        fullPage: true,
+      });
+    }
   });
 });
 

@@ -90,6 +90,7 @@ export async function sendMessage(
   message: string,
   sessionId: string | undefined,
   callbacks: SSECallbacks,
+  options: { onboardingRunId?: string } = {},
 ): Promise<SendMessageResult> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -105,6 +106,9 @@ export async function sendMessage(
   const body: Record<string, unknown> = { message, userIdent: getAnonymousUserId() };
   if (sessionId) {
     body.sessionId = sessionId;
+  }
+  if (options.onboardingRunId) {
+    body.onboardingRunId = options.onboardingRunId;
   }
 
   const response = await fetch('/api/chat', {
