@@ -14,6 +14,7 @@ import {
   SessionStatus,
   Message,
   MessageRole,
+  SessionOrigin,
 } from '../types/domain';
 import { ChatHistorySession, ConversationDetail, PaginationResponse } from '../types/api';
 import { ConflictError, NotFoundError } from '../utils/errors';
@@ -77,8 +78,11 @@ export class ConversationService {
     this.now = options.now ?? (() => new Date());
   }
 
-  createSession(userIdent: string): Session {
-    const session = this.sessionRepo.create(userIdent);
+  createSession(userIdent: string, options: {
+    origin?: SessionOrigin;
+    onboardingRunId?: string | null;
+  } = {}): Session {
+    const session = this.sessionRepo.create(userIdent, options);
     logger.info({ sessionId: session.id, userIdent }, 'New session created');
     return session;
   }
@@ -92,11 +96,18 @@ export class ConversationService {
     return session;
   }
 
-  resolveSessionForMessage(sessionId: string | undefined, userIdent: string): Session {
+  resolveSessionForMessage(
+    sessionId: string | undefined,
+    userIdent: string,
+    context: { origin?: SessionOrigin; onboardingRunId?: string | null } = {},
+  ): Session {
     this.expireInactiveSessions();
+    const origin = context.origin ?? 'customer';
     if (sessionId) {
       const existing = this.sessionRepo.findById(sessionId);
-      if (existing?.userIdent === userIdent) {
+      const matchesContext = existing?.origin === origin
+        && (origin !== 'onboarding' || existing.onboardingRunId === context.onboardingRunId);
+      if (existing?.userIdent === userIdent && matchesContext) {
         if (existing.status === SessionStatus.ACTIVE) return existing;
         if (
           existing.status === SessionStatus.CLOSED
@@ -105,8 +116,14 @@ export class ConversationService {
           return this.sessionRepo.updateStatus(existing.id, SessionStatus.ACTIVE) ?? existing;
         }
       }
+      if (origin === 'onboarding') {
+        throw new ConflictError('Session does not belong to this onboarding run');
+      }
     }
-    return this.createSession(userIdent);
+    return this.createSession(userIdent, {
+      origin,
+      onboardingRunId: origin === 'onboarding' ? context.onboardingRunId ?? null : null,
+    });
   }
 
   expireInactiveSessions(): number {
@@ -189,7 +206,7 @@ export class ConversationService {
 
   assertSessionOwnership(sessionId: string, userIdent: string): Session {
     const session = this.sessionRepo.findById(sessionId);
-    if (!session || session.userIdent !== userIdent) {
+    if (!session || session.userIdent !== userIdent || session.origin !== 'customer') {
       throw new NotFoundError('对话记录不存在');
     }
     return session;

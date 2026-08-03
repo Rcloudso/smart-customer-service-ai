@@ -13,6 +13,7 @@ import {
   SearchIcon,
   QueueIcon,
   ServerIcon,
+  CheckCircleIcon,
 } from 'tdesign-icons-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from '../../hooks/usePreferences';
@@ -28,6 +29,7 @@ interface MenuItem {
 
 const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', labelKey: 'nav.dashboard', icon: <DashboardIcon /> },
+  { path: '/admin/getting-started', labelKey: 'nav.gettingStarted', icon: <CheckCircleIcon /> },
   { path: '/admin/conversations', labelKey: 'nav.conversations', icon: <ChatIcon /> },
   { path: '/admin/escalations', labelKey: 'nav.escalations', icon: <QueueIcon /> },
   { path: '/admin/faq', labelKey: 'nav.faq', icon: <HelpCircleIcon /> },
@@ -59,6 +61,7 @@ export function AdminLayout(): React.ReactElement {
   // Determine active menu item based on current path
   const activePath = (() => {
     if (location.pathname === '/admin') return '/admin';
+    if (location.pathname.startsWith('/admin/getting-started')) return '/admin/getting-started';
     if (location.pathname.startsWith('/admin/conversations')) return '/admin/conversations';
     if (location.pathname.startsWith('/admin/escalations')) return '/admin/escalations';
     if (location.pathname.startsWith('/admin/faq')) return '/admin/faq';

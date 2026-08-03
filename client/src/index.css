@@ -252,6 +252,91 @@ select {
   text-transform: uppercase;
 }
 
+.app-centered-state {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+}
+
+.app-onboarding-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.app-onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-onboarding-steps li {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--app-text-muted);
+  border-bottom: 2px solid var(--app-border);
+}
+
+.app-onboarding-steps li > span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--app-border);
+  border-radius: 50%;
+}
+
+.app-onboarding-steps li.is-complete {
+  color: var(--app-text);
+  border-bottom-color: var(--app-success);
+}
+
+.app-onboarding-steps li.is-complete > span {
+  color: var(--app-success);
+  border-color: var(--app-success);
+}
+
+.app-onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.app-onboarding-answer-card {
+  grid-column: 1 / -1;
+}
+
+.app-onboarding-question {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.app-onboarding-answer,
+.app-onboarding-sources {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface-muted);
+  white-space: pre-wrap;
+}
+
+.app-onboarding-sources > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .app-admin-header {
   height: var(--app-header-height);
   background-color: color-mix(in srgb, var(--app-surface) 92%, transparent);
@@ -1556,6 +1641,18 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
 
   .app-content {
     padding: 16px 12px;
+  }
+
+  .app-onboarding-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .app-onboarding-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-onboarding-answer-card {
+    grid-column: auto;
   }
 
   .app-page-header {

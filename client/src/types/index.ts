@@ -749,3 +749,40 @@ export interface ChatHistorySession {
   messageCount: number;
   preview: string | null;
 }
+
+export type OnboardingStatus =
+  | 'not_started'
+  | 'in_progress'
+  | 'completed'
+  | 'dismissed'
+  | 'legacy';
+
+export interface OnboardingOverview {
+  installKind: 'fresh' | 'legacy';
+  status: OnboardingStatus;
+  runId: string | null;
+  startedAt: string | null;
+  sampleLoadedAt: string | null;
+  firstAnswerAt: string | null;
+  firstAnswerSessionId: string | null;
+  firstAnswerMessageId: string | null;
+  evidenceReviewedAt: string | null;
+  completedAt: string | null;
+  dismissedAt: string | null;
+  lastFailureCode: string | null;
+  shouldAutoRedirect: boolean;
+  recommendedQuestions: { zh: string; en: string };
+  samplePack: {
+    packVersion: string;
+    status: 'installing' | 'ready' | 'failed';
+    faqIds: string[];
+    documentId: string | null;
+    failureCode: string | null;
+    completedAt: string | null;
+  } | null;
+  readiness: {
+    database: 'ready';
+    answerMode: 'provider_configured' | 'deterministic_local';
+    externalTelemetry: false;
+  };
+}

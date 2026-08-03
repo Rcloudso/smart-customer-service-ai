@@ -8,7 +8,8 @@ import { usePreferences, useTranslation } from './hooks/usePreferences';
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
-const DashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
+const AdminIndexRoute = lazy(() => import('./pages/admin/AdminIndexRoute'));
+const GettingStartedPage = lazy(() => import('./pages/admin/GettingStartedPage'));
 const ConversationsPage = lazy(() => import('./pages/admin/ConversationsPage'));
 const FaqManagementPage = lazy(() => import('./pages/admin/FaqManagementPage'));
 const ModelConfigPage = lazy(() => import('./pages/admin/ModelConfigPage'));
@@ -47,7 +48,8 @@ export function App(): React.ReactElement {
                 </AuthGuard>
               }
             >
-              <Route index element={<DashboardPage />} />
+              <Route index element={<AdminIndexRoute />} />
+              <Route path="getting-started" element={<GettingStartedPage />} />
               <Route path="conversations" element={<ConversationsPage />} />
               <Route path="escalations" element={<EscalationTriagePage />} />
               <Route path="faq" element={<FaqManagementPage />} />

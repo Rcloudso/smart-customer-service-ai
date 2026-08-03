@@ -22,6 +22,7 @@ import { getQualityLabService } from '../services/quality-lab.service';
 import { RetrievalTraceCollector } from '../services/retrieval-trace-collector';
 import { getRetrievalTraceService } from '../services/retrieval-trace.service';
 import { config } from '../config';
+import { getOnboardingService } from '../services/onboarding.service';
 
 const router = Router();
 router.use(idempotencyMiddleware);
@@ -30,6 +31,7 @@ const chatSchema = z.object({
   message: z.string().min(1, '消息不能为空').max(2000, '消息过长'),
   sessionId: z.string().optional(),
   userIdent: z.string().optional(),
+  onboardingRunId: z.string().uuid().optional(),
 });
 
 const historyQuerySchema = z.object({
@@ -143,13 +145,22 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       throw new ValidationError(parsed.error.errors.map((e) => e.message).join('; '));
     }
 
-    const { message, sessionId: inputSessionId, userIdent: inputUserIdent } = parsed.data;
+    const {
+      message,
+      sessionId: inputSessionId,
+      userIdent: inputUserIdent,
+      onboardingRunId,
+    } = parsed.data;
     const userIdent = inputUserIdent || req.ip || 'anonymous';
     const retrievalPolicy = getQualityLabService().getCurrentPolicy();
     trace = new RetrievalTraceCollector({ backend: config.vectorStore.provider });
 
     // Step 1: Get or create session
-    const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent);
+    if (onboardingRunId) getOnboardingService().assertActiveRun(onboardingRunId);
+    const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent, {
+      origin: onboardingRunId ? 'onboarding' : 'customer',
+      onboardingRunId: onboardingRunId ?? null,
+    });
     const sessionId = session.id;
 
     // Step 2: Save user message

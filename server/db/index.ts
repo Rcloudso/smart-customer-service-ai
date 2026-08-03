@@ -30,6 +30,9 @@ export function getDatabase(): Database.Database {
 }
 
 export function initSchema(database: Database.Database): void {
+  const isExistingInstallation = Boolean(database.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
+  ).get());
   database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -627,6 +630,8 @@ export function initSchema(database: Database.Database): void {
   ensureColumn(database, 'messages', 'grounding_reason', 'TEXT');
   ensureColumn(database, 'messages', 'retrieval_policy_id', 'TEXT');
   ensureColumn(database, 'sessions', 'close_reason', 'TEXT');
+  ensureColumn(database, 'sessions', 'origin', "TEXT NOT NULL DEFAULT 'customer' CHECK(origin IN ('customer', 'onboarding'))");
+  ensureColumn(database, 'sessions', 'onboarding_run_id', 'TEXT');
   ensureColumn(database, 'faq_entries', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'document_chunks', 'embedding_profile', 'TEXT');
   ensureColumn(database, 'documents', 'source_version', 'INTEGER NOT NULL DEFAULT 1');
@@ -687,6 +692,56 @@ export function initSchema(database: Database.Database): void {
       AND result_warning_codes = '[]'
   `).run();
   database.exec('CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to_message_id)');
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_origin_created
+      ON sessions(origin, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_onboarding_run
+      ON sessions(onboarding_run_id);
+
+    CREATE TABLE IF NOT EXISTS installation_state (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      install_kind TEXT NOT NULL CHECK(install_kind IN ('fresh', 'legacy')),
+      onboarding_status TEXT NOT NULL CHECK(onboarding_status IN (
+        'not_started', 'in_progress', 'completed', 'dismissed', 'legacy'
+      )),
+      current_run_id TEXT,
+      started_at TEXT,
+      sample_loaded_at TEXT,
+      first_answer_at TEXT,
+      first_answer_session_id TEXT,
+      first_answer_message_id TEXT,
+      evidence_reviewed_at TEXT,
+      completed_at TEXT,
+      dismissed_at TEXT,
+      last_failure_code TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sample_pack_installations (
+      pack_version TEXT PRIMARY KEY,
+      status TEXT NOT NULL CHECK(status IN ('installing', 'ready', 'failed')),
+      faq_ids TEXT NOT NULL DEFAULT '[]',
+      document_id TEXT,
+      attempt_id TEXT,
+      failure_code TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+  `);
+  ensureColumn(database, 'sample_pack_installations', 'attempt_id', 'TEXT');
+  const now = new Date().toISOString();
+  database.prepare(`
+    INSERT OR IGNORE INTO installation_state (
+      id, install_kind, onboarding_status, created_at, updated_at
+    ) VALUES (1, ?, ?, ?, ?)
+  `).run(
+    isExistingInstallation ? 'legacy' : 'fresh',
+    isExistingInstallation ? 'legacy' : 'not_started',
+    now,
+    now,
+  );
 
   // v0.2.9 migration: preserve historical free-text escalations without
   // inventing facts that were not captured at the time.
