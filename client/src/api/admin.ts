@@ -56,6 +56,7 @@ import type {
   EscalationListItem,
   EscalationDetail,
   OnboardingOverview,
+  OperationsOverview,
 } from '../types';
 
 // Re-export types
@@ -103,6 +104,7 @@ export type {
   EscalationListItem,
   EscalationDetail,
   OnboardingOverview,
+  OperationsOverview,
 };
 
 function idempotentRequest(): { idempotencyKey: string } {
@@ -142,6 +144,10 @@ export async function completeEvidenceReview(messageId: string): Promise<Onboard
 
 export async function dismissOnboarding(): Promise<OnboardingOverview> {
   return post<OnboardingOverview>('/admin/onboarding/dismiss', {}, idempotentRequest());
+}
+
+export async function getOperationsOverview(): Promise<OperationsOverview> {
+  return get<OperationsOverview>('/admin/operations/overview');
 }
 
 // ── Conversations ──────────────────────────────────
@@ -504,6 +510,10 @@ export async function createQualityRun(data: {
 
 export async function cancelQualityRun(runId: string): Promise<QualityRun> {
   return post(`/admin/quality/runs/${runId}/cancel`, {}, idempotentRequest());
+}
+
+export async function rerunQualityRun(runId: string): Promise<QualityRun> {
+  return post(`/admin/quality/runs/${runId}/rerun`, {}, idempotentRequest());
 }
 
 export async function getQualityPolicies(): Promise<{

@@ -96,7 +96,10 @@ export class QualityRunService {
     policies: RetrievalPolicyConfig[];
     backendTargets?: QualityBackendTarget[];
     createdBy: string;
-  }): QualityRun {
+  }, options: {
+    includeCurrentPolicy?: boolean;
+    activePolicyId?: string;
+  } = {}): QualityRun {
     const versionIds = [...new Set(params.datasetVersionIds)];
     if (versionIds.length === 0) throw new ValidationError('Select at least one dataset version');
     const versions = versionIds.map((id) => {
@@ -114,7 +117,11 @@ export class QualityRunService {
     const backendTargets = this.validateBackendTargets(params.backendTargets ?? [{ provider: 'memory' }]);
     const totalCases = caseCount * backendTargets.length;
     const currentPolicy = this.qualityLab.getCurrentPolicy();
-    const policies = this.validatePolicies([currentPolicy.config, ...params.policies]);
+    const policies = this.validatePolicies(
+      options.includeCurrentPolicy === false
+        ? params.policies
+        : [currentPolicy.config, ...params.policies],
+    );
     const includesCurrentKnowledge = versions.some((version) => version.targetKind === 'current');
     const run = this.repo.create({
       datasetVersionIds: versionIds,
@@ -122,7 +129,7 @@ export class QualityRunService {
       backendTargets,
       totalCases,
       knowledgeFingerprint: includesCurrentKnowledge ? this.knowledgeFingerprint() : null,
-      activePolicyId: currentPolicy.id,
+      activePolicyId: options.activePolicyId ?? currentPolicy.id,
       createdBy: params.createdBy,
       now: this.now().toISOString(),
     });
@@ -174,6 +181,22 @@ export class QualityRunService {
     this.repo.requestCancel(id);
     if (run.status === 'queued') this.repo.markCancelled(id, this.now().toISOString());
     return this.getRun(id);
+  }
+
+  rerunFailed(id: string, createdBy: string): QualityRun {
+    const original = this.getRun(id);
+    if (original.status !== 'failed') {
+      throw new ConflictError('Only failed quality runs can be rerun');
+    }
+    return this.createRun({
+      datasetVersionIds: original.datasetVersionIds,
+      policies: original.policies,
+      backendTargets: original.backendTargets,
+      createdBy,
+    }, {
+      includeCurrentPolicy: false,
+      activePolicyId: original.activePolicyId,
+    });
   }
 
   checkPromotion(runId: string, candidateKey: string): PolicyGateResult {

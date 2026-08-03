@@ -33,9 +33,19 @@ async function main(): Promise<void> {
   fs.rmSync(uploadDir, { force: true, recursive: true });
 
   const { seed } = await import('../../server/db/seed');
-  const { closeDatabase } = await import('../../server/db');
+  const { closeDatabase, getDatabase } = await import('../../server/db');
+  const { FaqRepo } = await import('../../server/db/repos/faq.repo');
+  const { IntentCategory } = await import('../../server/types/domain');
 
   await seed();
+  // E2E knowledge is an explicit test fixture. db:seed remains administrator-only.
+  new FaqRepo(getDatabase()).create({
+    question: '如何申请退款？',
+    answer: '您可以登录您的账户，进入“我的订单”，选择订单并提交退款申请。',
+    category: IntentCategory.REFUND,
+    keywords: ['退款', '申请', '退货'],
+    updatedBy: 'e2e-fixture',
+  });
   closeDatabase();
 }
 

@@ -26,6 +26,7 @@ let adminQualityRoutes: express.Router;
 let adminEscalationRoutes: express.Router;
 let adminRetrievalRoutes: express.Router;
 let adminOnboardingRoutes: express.Router;
+let adminOperationsRoutes: express.Router;
 let ready = false;
 const faqSearchConcurrencyLimiter = createConcurrencyLimiter(
   config.faqSearch.maxConcurrency,
@@ -138,6 +139,13 @@ function createApp(): express.Application {
       adminOnboardingRoutes = require('./routes/admin/onboarding').default;
     }
     return adminOnboardingRoutes(_req, _res, next);
+  });
+
+  app.use('/api/admin/operations', (_req, _res, next) => {
+    if (!adminOperationsRoutes) {
+      adminOperationsRoutes = require('./routes/admin/operations').default;
+    }
+    return adminOperationsRoutes(_req, _res, next);
   });
 
   // ---- Health check ----

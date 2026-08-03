@@ -94,6 +94,16 @@ router.post('/runs', (req, res, next) => handle(res, next, () => {
 router.get('/runs/:runId', (req, res, next) => handle(
   res, next, () => qualityRuns.getRun(parse(uuid, req.params.runId)),
 ));
+router.post('/runs/:runId/rerun', (req, res, next) => handle(
+  res,
+  next,
+  () => {
+    requireIdempotencyKey(req);
+    parse(z.object({}).strict(), req.body ?? {});
+    return qualityRuns.rerunFailed(parse(uuid, req.params.runId), actor(req));
+  },
+  202,
+));
 router.post('/runs/:runId/cancel', (req, res, next) => handle(
   res, next, () => qualityRuns.cancelRun(parse(uuid, req.params.runId)),
 ));

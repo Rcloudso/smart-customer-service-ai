@@ -13,7 +13,7 @@ import {
 import { SessionRepo } from '../db/repos/session.repo';
 import { MessageRepo } from '../db/repos/message.repo';
 import { MessageRole } from '../types/domain';
-import { NotFoundError } from '../utils/errors';
+import { ConflictError, NotFoundError } from '../utils/errors';
 import { FaqRepo } from '../db/repos/faq.repo';
 import { QualityRunRepo } from '../db/repos/quality-run.repo';
 import { IntentCategory } from '../types/domain';
@@ -528,6 +528,43 @@ function testMalformedHistoricalQualityJsonUsesSafeFallbacks(): void {
   }
 }
 
+function testFailedRunCanBeRerunWithOriginalParameters(): void {
+  const db = new Database(':memory:');
+  try {
+    initSchema(db);
+    const qualityLab = new QualityLabService(db);
+    qualityLab.bootstrap();
+    const runs = new QualityRunService(db, { qualityLab, autoDrain: false });
+    const original = runs.createRun({
+      datasetVersionIds: [QUALITY_BASELINE_VERSION_ID],
+      policies: [],
+      backendTargets: [{ provider: 'memory' }],
+      createdBy: 'original-admin',
+    });
+    new QualityRunRepo(db).markFailed(original.id, 'simulated_failure', new Date().toISOString());
+    const failed = runs.getRun(original.id);
+    const currentPolicy = qualityLab.getCurrentPolicy();
+    qualityLab.activatePolicy({
+      expectedCurrentPolicyId: currentPolicy.id,
+      config: { ...currentPolicy.config, rerankerMode: 'local_overlap_v1' },
+      sourceRunId: failed.id,
+      sourceCandidateKey: 'changed-after-failure',
+      actor: 'policy-admin',
+    });
+    const rerun = runs.rerunFailed(failed.id, 'recovery-admin');
+    assert.notEqual(rerun.id, failed.id);
+    assert.equal(rerun.status, 'queued');
+    assert.deepEqual(rerun.datasetVersionIds, failed.datasetVersionIds);
+    assert.deepEqual(rerun.backendTargets, failed.backendTargets);
+    assert.deepEqual(rerun.policies, failed.policies);
+    assert.equal(rerun.activePolicyId, failed.activePolicyId);
+    assert.equal(rerun.createdBy, 'recovery-admin');
+    assert.throws(() => runs.rerunFailed(rerun.id, 'recovery-admin'), ConflictError);
+  } finally {
+    db.close();
+  }
+}
+
 async function main(): Promise<void> {
   testDefaultPolicyAndBuiltinDatasetBootstrap();
   testBuiltinDatasetCannotBeRewrittenInPlace();
@@ -535,6 +572,7 @@ async function main(): Promise<void> {
   testPolicyHistoryRollbackAndMessageSnapshot();
   testBuiltinRetrievalDoesNotReadExpectedSources();
   testMalformedHistoricalQualityJsonUsesSafeFallbacks();
+  testFailedRunCanBeRerunWithOriginalParameters();
   await testPersistedRunLifecycle();
   await testCoverageCannotBeAggregatedAcrossSmallVersions();
   await testSuccessfulActivationAndFingerprintStaleness();

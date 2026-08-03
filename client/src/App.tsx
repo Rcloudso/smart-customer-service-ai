@@ -10,6 +10,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminIndexRoute = lazy(() => import('./pages/admin/AdminIndexRoute'));
 const GettingStartedPage = lazy(() => import('./pages/admin/GettingStartedPage'));
+const OperationsPage = lazy(() => import('./pages/admin/OperationsPage'));
 const ConversationsPage = lazy(() => import('./pages/admin/ConversationsPage'));
 const FaqManagementPage = lazy(() => import('./pages/admin/FaqManagementPage'));
 const ModelConfigPage = lazy(() => import('./pages/admin/ModelConfigPage'));
@@ -50,6 +51,7 @@ export function App(): React.ReactElement {
             >
               <Route index element={<AdminIndexRoute />} />
               <Route path="getting-started" element={<GettingStartedPage />} />
+              <Route path="operations" element={<OperationsPage />} />
               <Route path="conversations" element={<ConversationsPage />} />
               <Route path="escalations" element={<EscalationTriagePage />} />
               <Route path="faq" element={<FaqManagementPage />} />

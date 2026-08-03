@@ -786,3 +786,32 @@ export interface OnboardingOverview {
     externalTelemetry: false;
   };
 }
+
+export type OperationHealth = 'healthy' | 'configured' | 'optional_disabled' | 'degraded' | 'failed';
+
+export interface OperationsOverview {
+  generatedAt: string;
+  services: Array<{
+    key: 'sqlite' | 'answer' | 'embedding' | 'qdrant' | 'ocr';
+    health: OperationHealth;
+    mode: string;
+    detail: string;
+    ownerPath: string;
+  }>;
+  tasks: Record<'total' | 'documents' | 'quality' | 'indexes' | 'ocr', {
+    queued: number;
+    running: number;
+    failed: number;
+  }>;
+  recentProblems: Array<{
+    id: string;
+    kind: 'document' | 'quality' | 'index' | 'trace' | 'ocr';
+    title: string;
+    status: string;
+    failureCode: string | null;
+    occurredAt: string;
+    ownerPath: string;
+    recovery: 'retry_document' | 'rerun_quality' | null;
+  }>;
+  limits: { recentProblems: number };
+}

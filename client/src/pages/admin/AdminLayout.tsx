@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Button, Dropdown } from 'tdesign-react';
+import { Layout, Menu, Button, Drawer, Dropdown } from 'tdesign-react';
 import {
   DashboardIcon,
   ChatIcon,
@@ -14,6 +14,7 @@ import {
   QueueIcon,
   ServerIcon,
   CheckCircleIcon,
+  MenuFoldIcon,
 } from 'tdesign-icons-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTranslation } from '../../hooks/usePreferences';
@@ -30,6 +31,7 @@ interface MenuItem {
 const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', labelKey: 'nav.dashboard', icon: <DashboardIcon /> },
   { path: '/admin/getting-started', labelKey: 'nav.gettingStarted', icon: <CheckCircleIcon /> },
+  { path: '/admin/operations', labelKey: 'nav.operations', icon: <ServerIcon /> },
   { path: '/admin/conversations', labelKey: 'nav.conversations', icon: <ChatIcon /> },
   { path: '/admin/escalations', labelKey: 'nav.escalations', icon: <QueueIcon /> },
   { path: '/admin/faq', labelKey: 'nav.faq', icon: <HelpCircleIcon /> },
@@ -48,9 +50,11 @@ export function AdminLayout(): React.ReactElement {
   const location = useLocation();
   const { user, logout } = useAuth();
   const { t } = useTranslation();
+  const [mobileNavVisible, setMobileNavVisible] = useState(false);
 
   const handleMenuClick = (value: string | number) => {
     navigate(String(value));
+    setMobileNavVisible(false);
   };
 
   const handleLogout = () => {
@@ -62,6 +66,7 @@ export function AdminLayout(): React.ReactElement {
   const activePath = (() => {
     if (location.pathname === '/admin') return '/admin';
     if (location.pathname.startsWith('/admin/getting-started')) return '/admin/getting-started';
+    if (location.pathname.startsWith('/admin/operations')) return '/admin/operations';
     if (location.pathname.startsWith('/admin/conversations')) return '/admin/conversations';
     if (location.pathname.startsWith('/admin/escalations')) return '/admin/escalations';
     if (location.pathname.startsWith('/admin/faq')) return '/admin/faq';
@@ -109,6 +114,15 @@ export function AdminLayout(): React.ReactElement {
       <Layout>
         {/* Header */}
         <Header className="app-admin-header">
+          <Button
+            className="app-mobile-nav-trigger"
+            variant="text"
+            shape="square"
+            size="large"
+            icon={<MenuFoldIcon />}
+            aria-label={t('admin.openNavigation')}
+            onClick={() => setMobileNavVisible(true)}
+          />
           <PreferenceControls />
           <Dropdown
             options={dropdownOptions}
@@ -123,6 +137,26 @@ export function AdminLayout(): React.ReactElement {
             </Button>
           </Dropdown>
         </Header>
+
+        <Drawer
+          visible={mobileNavVisible}
+          placement="left"
+          size="min(320px, 88vw)"
+          header={t('admin.navigation')}
+          footer={false}
+          closeOnEscKeydown
+          closeOnOverlayClick
+          onClose={() => setMobileNavVisible(false)}
+          className="app-mobile-nav-drawer"
+        >
+          <Menu value={activePath} onChange={handleMenuClick}>
+            {MENU_ITEMS.map((item) => (
+              <Menu.MenuItem key={item.path} value={item.path} icon={item.icon}>
+                {t(item.labelKey)}
+              </Menu.MenuItem>
+            ))}
+          </Menu>
+        </Drawer>
 
         {/* Main content */}
         <Content className="app-content">
