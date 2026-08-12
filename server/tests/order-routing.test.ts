@@ -4,7 +4,10 @@ import { planOrderToolRoute, sanitizeOrderReferences } from '../tools/order-rout
 function main(): void {
   assert.equal(planOrderToolRoute('请转人工并取消订单 RW-DEMO-1002').kind, 'explicit_human');
   assert.equal(planOrderToolRoute('请取消订单 RW-DEMO-1002').kind, 'write_action');
+  assert.equal(planOrderToolRoute('帮我把 RW-DEMO-1002 取消掉').kind, 'write_action');
   assert.equal(planOrderToolRoute('please refund order RW-DEMO-1002').kind, 'write_action');
+  assert.equal(planOrderToolRoute('Update shipping address for RW-DEMO-1002').kind, 'write_action');
+  assert.equal(planOrderToolRoute('更新订单 RW-DEMO-1002 的配送地址').kind, 'write_action');
   assert.equal(planOrderToolRoute('图片中的退款政策要求几个自然日内申请退款？').kind, 'policy_question');
   assert.equal(planOrderToolRoute('How can I request a refund?').kind, 'policy_question');
   assert.equal(planOrderToolRoute('签收后七天内可以申请退款').kind, 'not_applicable');

@@ -190,6 +190,8 @@ JSON 与 SSE 写接口还支持可选的 `Idempotency-Key` 请求头：同一键
 已保存响应，不重复执行写操作；同键异载荷或仍在处理的并发请求返回 `409`。内置前端为每次
 写操作生成幂等键，并在 React 加载状态渲染前通过同步锁阻止快速重复触发。multipart
 导入/上传不进入通用响应重放；文档上传继续使用 SHA-256 内容去重。
+订单查询也不进入响应重放：必需的幂等键只进入脱敏执行审计，同键重复请求以
+`409` 安全失败，不持久化或重放一次性订单结果。
 
 `FaqMatch` 保留已有的 `similarity` 字段，避免破坏旧响应；同时新增可选调试字段：
 
@@ -312,6 +314,7 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | SQLite 持久化队列轮询，默认 `true` / `1000` 毫秒 |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | 可选、仅用于对照的 DeepSeek-OCR-2 兼容 Worker；不会替换 Paddle 复核内容 |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` / `RATE_LIMIT_FAQ_SEARCH` | 支持 IPv6 子网归一的 API 限流配置 |
+| `RATE_LIMIT_ORDER_VERIFY_IP` | 每 IP 每分钟订单验证次数，默认 `5` |
 | `FAQ_SEARCH_MAX_CONCURRENCY` | 公共语义 FAQ 检索的最大并发数，默认 `4` |
 | `SESSION_INACTIVITY_MINUTES` | 活跃会话无消息后自动关闭的分钟数，默认 `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | 一次同步筛选 CSV 可导出的完整消息行上限，默认 `5000` |

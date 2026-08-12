@@ -32,6 +32,8 @@ function main(): void {
     'chat.orderTool.useDemo',
     'chat.orderTool.retry',
     'chat.orderTool.transfer',
+    'chat.orderTool.grantExpired',
+    'chat.orderTool.rateLimited',
     'chat.orderTool.resultTitle',
     'conversations.toolExecutions',
     'conversations.toolDuration',

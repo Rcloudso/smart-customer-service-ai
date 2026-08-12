@@ -76,7 +76,7 @@ export interface SSEDoneEvent {
     tool?: {
       toolName: 'order_status_lookup';
       toolVersion: '1';
-      status: 'verification_required' | 'succeeded' | 'failed';
+      status: 'verification_required' | 'running' | 'succeeded' | 'failed';
       maskedOrderReference?: string | null;
       executionId?: string;
     };

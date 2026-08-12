@@ -208,6 +208,9 @@ in-flight request returns `409`. The bundled UI generates a key per write
 action and synchronously locks mutation controls against rapid re-entry.
 Multipart imports/uploads stay outside generic response replay; document
 uploads retain SHA-256 duplicate protection.
+Order lookup is also excluded from response replay: its required key is stored
+only in the masked execution audit, and duplicate keys fail closed with `409`
+without persisting or replaying the transient order result.
 
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
@@ -341,6 +344,7 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | Durable SQLite queue polling; defaults to `true` / `1000` ms |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | Optional comparison-only DeepSeek-OCR-2-compatible worker; never replaces Paddle review content |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` / `RATE_LIMIT_FAQ_SEARCH` | IPv6-aware API rate limits |
+| `RATE_LIMIT_ORDER_VERIFY_IP` | Per-IP order verification attempts per minute; defaults to `5` |
 | `FAQ_SEARCH_MAX_CONCURRENCY` | Maximum in-flight public semantic FAQ searches; defaults to `4` |
 | `SESSION_INACTIVITY_MINUTES` | Minutes without activity before an active conversation is closed; defaults to `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | Maximum complete message rows in one synchronous filtered CSV export; defaults to `5000` |

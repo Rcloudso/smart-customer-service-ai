@@ -251,6 +251,10 @@ aligned.
   the request fingerprint and completed response in SQLite after authorization;
   matching retries replay that response, while payload reuse and in-flight
   duplicates fail closed with `409`.
+- Order lookup deliberately bypasses generic response replay. Its required key
+  is recorded only on the masked tool execution, and same-key retries fail
+  closed with `409`, so the transient structured order result is never written
+  to `idempotency_records`.
 
 ## Availability And Failure Behavior
 

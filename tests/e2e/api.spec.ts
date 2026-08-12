@@ -93,8 +93,22 @@ test.describe('API automation: boundaries and exception flows', () => {
       data: { sessionId: done.sessionId, userIdent },
       headers: { 'Idempotency-Key': idempotencyKey },
     });
-    expect(replay.status()).toBe(200);
-    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    expect(replay.status()).toBe(409);
+    expect(replay.headers()['idempotency-replayed']).toBeUndefined();
+
+    const reuseChat = await request.post('/api/chat', {
+      data: {
+        sessionId: done.sessionId,
+        message: '再次查询订单 RW-DEMO-1002 的物流状态',
+        userIdent,
+      },
+      headers: { 'Idempotency-Key': `order-chat-reuse-${Date.now()}` },
+    });
+    expect(reuseChat.status()).toBe(200);
+    expect((await parseSse(reuseChat)).find((event) => event.type === 'tool')?.content).toMatchObject({
+      status: 'running',
+      maskedOrderReference: 'RW-••••-1002',
+    });
 
     const history = await request.get(`/api/chat/sessions/${done.sessionId}`, {
       params: { userIdent },

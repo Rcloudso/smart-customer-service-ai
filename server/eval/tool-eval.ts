@@ -5,7 +5,11 @@ import Database from 'better-sqlite3';
 import { closeDatabase, initSchema } from '../db';
 import { OrderToolService } from '../services/order-tool.service';
 import { planOrderToolRoute } from '../tools/order-routing';
-import { DemoOrderStatusAdapter } from '../tools/order-status';
+import {
+  DemoOrderStatusAdapter,
+  DEMO_INVALID_ORDER,
+  DEMO_TIMEOUT_ORDER,
+} from '../tools/order-status';
 import type { OrderStatusAdapter, OrderStatusResult } from '../types/order-tool';
 
 interface ToolEvaluationFixture {
@@ -66,17 +70,24 @@ function assertNoPersistenceLeak(
   }
 }
 
-async function evaluateRoutes(fixture: ToolEvaluationFixture): Promise<number> {
+async function evaluateRoutes(fixture: ToolEvaluationFixture): Promise<{
+  matches: number;
+  writeActionLookupCalls: number;
+}> {
   let matches = 0;
+  let writeActionLookupCalls = 0;
   for (const testCase of fixture.routeCases) {
     const route = planOrderToolRoute(testCase.text);
+    if (testCase.expectedKind === 'write_action' && route.kind === 'lookup') {
+      writeActionLookupCalls += 1;
+    }
     assert.equal(route.kind, testCase.expectedKind, testCase.id);
     if (route.orderReference) {
       assert.equal(route.safeMessage.includes(route.orderReference), false, `${testCase.id} redaction`);
     }
     matches += 1;
   }
-  return matches;
+  return { matches, writeActionLookupCalls };
 }
 
 async function evaluateDemoStates(fixture: ToolEvaluationFixture): Promise<number> {
@@ -101,7 +112,6 @@ async function evaluateDemoStates(fixture: ToolEvaluationFixture): Promise<numbe
 
 async function evaluateAuthorizationAndPrivacy(): Promise<{
   unauthorizedLookupCalls: number;
-  writeActionLookupCalls: number;
   leakCount: number;
 }> {
   const db = new Database(':memory:');
@@ -187,7 +197,6 @@ async function evaluateAuthorizationAndPrivacy(): Promise<{
   db.close();
   return {
     unauthorizedLookupCalls: 0,
-    writeActionLookupCalls: 0,
     leakCount: 0,
   };
 }
@@ -201,20 +210,21 @@ async function evaluateFailurePolicies(): Promise<{
   initSchema(timeoutDb);
   seedSession(timeoutDb, 'timeout-session', 'timeout-browser');
   let timeoutCalls = 0;
+  const demo = new DemoOrderStatusAdapter();
   const timeoutService = createService(timeoutDb, {
-    name: 'timeout_adapter',
-    version: '1',
-    async verify() { return true; },
-    async lookup() {
+    name: demo.name,
+    version: demo.version,
+    verify: (orderReference, verificationCode) => demo.verify(orderReference, verificationCode),
+    async lookup(orderReference, deadline) {
       timeoutCalls += 1;
-      return new Promise(() => undefined);
+      return demo.lookup(orderReference, deadline);
     },
   }, { timeoutMs: 5 });
   const timeoutIssued = await timeoutService.verify({
     sessionId: 'timeout-session',
     userIdent: 'timeout-browser',
-    orderReference: 'RW-DEMO-1002',
-    verificationCode: '135790',
+    orderReference: DEMO_TIMEOUT_ORDER.orderReference,
+    verificationCode: DEMO_TIMEOUT_ORDER.verificationCode,
   });
   const timeoutGrant = timeoutService.resolveGrant(timeoutIssued.token, {
     sessionId: 'timeout-session',
@@ -236,30 +246,12 @@ async function evaluateFailurePolicies(): Promise<{
   const unsafeDb = new Database(':memory:');
   initSchema(unsafeDb);
   seedSession(unsafeDb, 'unsafe-session', 'unsafe-browser');
-  const unsafeService = createService(unsafeDb, {
-    name: 'unsafe_adapter',
-    version: '1',
-    async verify() { return true; },
-    async lookup() {
-      return {
-        orderReferenceMasked: 'RW-••••-1002',
-        orderStatus: 'shipped',
-        shippingStatus: 'in_transit',
-        carrier: 'Untrusted Carrier Inc.',
-        trackingNumberMasked: '••••••7890',
-        latestEvent: 'departed_origin',
-        latestEventAt: '2026-08-12T02:00:00.000Z',
-        estimatedDeliveryDate: '2026-08-15',
-        dataUpdatedAt: '2026-08-12T02:05:00.000Z',
-        rawResponse: { supplierSecret: 'SUPPLIER-RAW-SECRET' },
-      };
-    },
-  });
+  const unsafeService = createService(unsafeDb, demo);
   const unsafeIssued = await unsafeService.verify({
     sessionId: 'unsafe-session',
     userIdent: 'unsafe-browser',
-    orderReference: 'RW-DEMO-1002',
-    verificationCode: '135790',
+    orderReference: DEMO_INVALID_ORDER.orderReference,
+    verificationCode: DEMO_INVALID_ORDER.verificationCode,
   });
   const unsafeGrant = unsafeService.resolveGrant(unsafeIssued.token, {
     sessionId: 'unsafe-session',
@@ -294,10 +286,10 @@ async function main(): Promise<void> {
   const failures = await evaluateFailurePolicies();
 
   console.log(`Tool evaluation ${fixture.version}`);
-  console.log(`Route accuracy: ${routeMatches}/${fixture.routeCases.length}`);
+  console.log(`Route accuracy: ${routeMatches.matches}/${fixture.routeCases.length}`);
   console.log(`Demo states: ${demoMatches}/${fixture.demoCases.length}`);
   console.log(`Unauthorized lookup calls: ${authorization.unauthorizedLookupCalls}`);
-  console.log(`Write-action lookup calls: ${authorization.writeActionLookupCalls}`);
+  console.log(`Write-action lookup calls: ${routeMatches.writeActionLookupCalls}`);
   console.log(`Persistence leaks: ${authorization.leakCount}`);
   console.log(`Timeout adapter calls: ${failures.timeoutCalls}`);
   console.log(`Unsafe result displays: ${failures.unsafeResultDisplays}`);

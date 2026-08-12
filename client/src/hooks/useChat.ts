@@ -103,6 +103,19 @@ function formatErrorContent(message: string): string {
   return `[${t('chat.errorPrefix')}] ${message}`;
 }
 
+function localizeOrderToolError(
+  error: unknown,
+  stage: 'verify' | 'lookup',
+): string {
+  if (error instanceof ApiError) {
+    if (error.statusCode === 429) return t('chat.orderTool.rateLimited');
+    if (stage === 'lookup' && error.statusCode === 401) {
+      return t('chat.orderTool.grantExpired');
+    }
+  }
+  return t(stage === 'verify' ? 'chat.orderTool.verifyFailed' : 'chat.orderTool.lookupFailed');
+}
+
 function isVisibleChatRole(role: ChatHistoryDetail['messages'][number]['role']): boolean {
   return role === MessageRole.USER || role === MessageRole.ASSISTANT;
 }
@@ -265,16 +278,20 @@ export const useChat = create<ChatState>((set, get) => ({
         },
       });
 
+      const finalMessageId = result.messageId || assistantMsgId;
       // Mark streaming as complete
       set((prev) => ({
         isStreaming: false,
         sessionId: result.sessionId,
         messages: prev.messages.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, id: result.messageId || m.id, isStreaming: false }
+            ? { ...m, id: finalMessageId, isStreaming: false }
             : m,
         ),
       }));
+      if (get().messages.find((message) => message.id === finalMessageId)?.orderTool?.status === 'running') {
+        await get().retryOrderLookup(finalMessageId);
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : t('chat.sendFailed');
       set({
@@ -340,7 +357,7 @@ export const useChat = create<ChatState>((set, get) => ({
         })),
       }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('chat.orderTool.verifyFailed');
+      const message = localizeOrderToolError(error, 'verify');
       set((prev) => ({
         error: message,
         messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
@@ -376,7 +393,7 @@ export const useChat = create<ChatState>((set, get) => ({
         )),
       }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('chat.orderTool.lookupFailed');
+      const message = localizeOrderToolError(error, 'lookup');
       const expired = error instanceof ApiError && error.statusCode === 401;
       set((prev) => ({
         error: message,
@@ -423,7 +440,7 @@ export const useChat = create<ChatState>((set, get) => ({
         )),
       }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('chat.orderTool.lookupFailed');
+      const message = localizeOrderToolError(error, 'lookup');
       const expired = error instanceof ApiError && error.statusCode === 401;
       set((prev) => ({
         error: message,

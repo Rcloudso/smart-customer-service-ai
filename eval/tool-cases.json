@@ -17,6 +17,16 @@
       "expectedKind": "write_action"
     },
     {
+      "id": "zh-cancel-reference-before-command",
+      "text": "帮我把 RW-DEMO-1002 取消掉",
+      "expectedKind": "write_action"
+    },
+    {
+      "id": "en-update-shipping-address",
+      "text": "Update shipping address for RW-DEMO-1002",
+      "expectedKind": "write_action"
+    },
+    {
       "id": "zh-private-lookup",
       "text": "查询订单 RW-DEMO-1002 的物流进度",
       "expectedKind": "lookup"

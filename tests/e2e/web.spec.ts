@@ -102,6 +102,12 @@ test.describe('Web automation: customer chat experience', () => {
       });
     }
 
+    await page.getByTestId('language-toggle').click();
+    await page.getByTestId('order-verification-code-input').locator('input').fill('000000');
+    await verificationCard.getByRole('button', { name: 'Verify and look up' }).click();
+    await expect(verificationCard.getByRole('alert')).toHaveText('Order verification failed');
+    await page.getByTestId('language-toggle').click();
+    await verificationCard.getByRole('button', { name: '使用演示订单' }).click();
     await verificationCard.getByRole('button', { name: '验证并查询' }).click();
     const resultCard = page.getByTestId('order-result-card');
     await expect(resultCard).toBeVisible({ timeout: 15_000 });
@@ -109,15 +115,21 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(resultCard).toContainText('运输中');
     await expect(resultCard).toContainText('••••••7890');
 
+    await page.getByTestId('chat-input').fill('再次查询订单 RW-DEMO-1002 的物流状态');
+    await page.getByTestId('chat-send-button').click();
+    await expect(page.getByTestId('order-result-card')).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.getByTestId('order-verification-card')).toHaveCount(0);
+    const latestResultCard = page.getByTestId('order-result-card').last();
+
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByTestId('language-toggle').click();
     await page.getByTestId('theme-toggle').click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.getByTestId('chat-messages')).toContainText('Order RW-••••-1002: In transit');
-    await expect(resultCard).toContainText('Order and shipping status');
-    await expect(resultCard).toContainText('In transit');
-    await expect(resultCard).toBeInViewport();
+    await expect(latestResultCard).toContainText('Order and shipping status');
+    await expect(latestResultCard).toContainText('In transit');
+    await expect(latestResultCard).toBeInViewport();
 
     if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
       await page.screenshot({

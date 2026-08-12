@@ -460,6 +460,9 @@ export function initSchema(database: Database.Database): void {
       ON tool_executions(status, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_executions_one_running_per_session
       ON tool_executions(session_id) WHERE status = 'running';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_executions_session_idempotency
+      ON tool_executions(session_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS quality_datasets (
       id TEXT PRIMARY KEY,

@@ -130,7 +130,6 @@ router.post(
   '/tools/order/lookup',
   authorizeOrderLookup,
   requireLookupIdempotencyKey,
-  idempotencyMiddleware,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const grant = res.locals.orderGrant as ResolvedOrderGrant;
@@ -236,9 +235,10 @@ async function handlePreRagOrderRoute(input: {
   route: ReturnType<typeof planOrderToolRoute>;
   inputSessionId?: string;
   userIdent: string;
+  request: Request;
   response: Response;
 }): Promise<boolean> {
-  const { route, inputSessionId, userIdent, response } = input;
+  const { route, inputSessionId, userIdent, request, response } = input;
   if (route.kind === 'policy_question' || route.kind === 'not_applicable') return false;
 
   const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent);
@@ -264,9 +264,20 @@ async function handlePreRagOrderRoute(input: {
   send({ type: 'intent', content: intent, confidence: 1 });
 
   if (route.kind === 'lookup') {
-    const toolEnabled = getOrderToolService().isEnabled();
-    const content = toolEnabled
-      ? '请先验证此订单，验证成功后可安全查询当前状态。 / Verify this order to view its current status securely.'
+    const orderToolService = getOrderToolService();
+    const toolEnabled = orderToolService.isEnabled();
+    const existingGrant = toolEnabled && inputSessionId && route.orderReference
+      ? orderToolService.resolveGrant(readCookie(request, 'rw_order_grant') ?? '', {
+        sessionId: session.id,
+        userIdent,
+      })
+      : null;
+    const canReuseGrant = existingGrant?.orderReference === route.orderReference;
+    const toolStatus = canReuseGrant ? 'running' : 'verification_required';
+    const content = canReuseGrant
+      ? '正在安全查询最新订单状态。 / Looking up the latest order status securely.'
+      : toolEnabled
+        ? '请先验证此订单，验证成功后可安全查询当前状态。 / Verify this order to view its current status securely.'
       : '订单查询工具当前未启用。你可以稍后重试或选择转人工。 / Order lookup is not enabled. Retry later or contact support.';
     const assistant = conversationService.saveMessage({
       sessionId: session.id,
@@ -283,7 +294,7 @@ async function handlePreRagOrderRoute(input: {
       content: {
         toolName: ORDER_STATUS_TOOL_NAME,
         toolVersion: ORDER_STATUS_TOOL_VERSION,
-        status: toolEnabled ? 'verification_required' : 'failed',
+        status: toolEnabled ? toolStatus : 'failed',
         maskedOrderReference: route.maskedOrderReference,
         safeErrorCode: toolEnabled ? undefined : 'tool_disabled',
         demoAvailable: config.orderTool.provider === 'demo',
@@ -302,7 +313,7 @@ async function handlePreRagOrderRoute(input: {
         tool: {
           toolName: ORDER_STATUS_TOOL_NAME,
           toolVersion: ORDER_STATUS_TOOL_VERSION,
-          status: toolEnabled ? 'verification_required' : 'failed',
+          status: toolEnabled ? toolStatus : 'failed',
           maskedOrderReference: route.maskedOrderReference,
         },
       },
@@ -397,6 +408,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       route: orderRoute,
       inputSessionId,
       userIdent,
+      request: req,
       response: res,
     })) return;
     const message = orderRoute.safeMessage;

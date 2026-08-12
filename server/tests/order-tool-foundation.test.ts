@@ -6,6 +6,8 @@ import { OrderAccessGrantRepo } from '../db/repos/order-access-grant.repo';
 import { OrderGrantService } from '../services/order-grant.service';
 import {
   DemoOrderStatusAdapter,
+  DEMO_INVALID_ORDER,
+  DEMO_TIMEOUT_ORDER,
   ORDER_STATUS_TOOL_NAME,
   ORDER_STATUS_TOOL_VERSION,
   validateOrderStatusResult,
@@ -41,6 +43,19 @@ async function testDemoAdapterReturnsOnlyNormalizedSafeResults(): Promise<void> 
     () => adapter.lookup('RW-DEMO-9999', Date.now() + 3_000),
     /order_not_found/,
   );
+  assert.equal(
+    await adapter.verify(DEMO_TIMEOUT_ORDER.orderReference, DEMO_TIMEOUT_ORDER.verificationCode),
+    true,
+  );
+  assert.equal(
+    await adapter.verify(DEMO_INVALID_ORDER.orderReference, DEMO_INVALID_ORDER.verificationCode),
+    true,
+  );
+  await assert.rejects(
+    async () => validateOrderStatusResult(
+      await adapter.lookup(DEMO_INVALID_ORDER.orderReference, Date.now() + 3_000),
+    ),
+  );
 }
 
 function testResultContractRejectsUntrustedProviderFields(): void {
@@ -58,6 +73,19 @@ function testResultContractRejectsUntrustedProviderFields(): void {
       recipient: 'must not cross the adapter boundary',
     }),
     /unrecognized/i,
+  );
+  assert.throws(
+    () => validateOrderStatusResult({
+      orderReferenceMasked: 'RW-••••-1002',
+      orderStatus: 'shipped',
+      shippingStatus: 'in_transit',
+      carrier: 'demo_express',
+      trackingNumberMasked: 'TRACKING-RAW-7890',
+      latestEvent: 'departed_origin',
+      latestEventAt: '2026-08-12T02:00:00.000Z',
+      estimatedDeliveryDate: '2026-08-15',
+      dataUpdatedAt: '2026-08-12T02:05:00.000Z',
+    }),
   );
 }
 

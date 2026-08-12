@@ -303,6 +303,14 @@
     "zh": "订单查询失败",
     "en": "Order lookup failed"
   },
+  "chat.orderTool.grantExpired": {
+    "zh": "订单授权已过期，请重新验证",
+    "en": "Order access expired. Please verify again."
+  },
+  "chat.orderTool.rateLimited": {
+    "zh": "尝试次数过多，请稍后再试",
+    "en": "Too many attempts. Please try again later."
+  },
   "chat.orderTool.privacy": {
     "zh": "验证码不会写入聊天记录；订单号和审计记录会脱敏。",
     "en": "The code is never written to chat history; order and audit identifiers are masked."

@@ -75,7 +75,6 @@ export class OrderToolService {
 
   async verify(input: VerifyOrderInput): Promise<ReturnType<OrderGrantService['issue']>> {
     const adapter = this.requireAdapter();
-    this.consumeVerificationAttempt(input.sessionId);
     const session = this.sessionRepo.findById(input.sessionId);
     if (
       !session
@@ -85,6 +84,7 @@ export class OrderToolService {
     ) {
       throw new AuthError('订单号或验证码无效');
     }
+    this.consumeVerificationAttempt(input.sessionId);
 
     let verified = false;
     try {

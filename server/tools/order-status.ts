@@ -13,6 +13,14 @@ interface DemoFixture {
   verificationCode: string;
   result: OrderStatusResult;
 }
+export const DEMO_TIMEOUT_ORDER = Object.freeze({
+  orderReference: 'RW-DEMO-TIMEOUT',
+  verificationCode: '999001',
+});
+export const DEMO_INVALID_ORDER = Object.freeze({
+  orderReference: 'RW-DEMO-INVALID',
+  verificationCode: '999002',
+});
 const DEMO_FIXTURES: Readonly<Record<string, DemoFixture>> = Object.freeze({
   'RW-DEMO-1001': {
     verificationCode: '246810',
@@ -95,7 +103,14 @@ export class DemoOrderStatusAdapter implements OrderStatusAdapter {
   readonly version = '1';
 
   async verify(orderReference: string, verificationCode: string): Promise<boolean> {
-    const fixture = DEMO_FIXTURES[normalizeOrderReference(orderReference)];
+    const normalized = normalizeOrderReference(orderReference);
+    if (normalized === DEMO_TIMEOUT_ORDER.orderReference) {
+      return verificationCode === DEMO_TIMEOUT_ORDER.verificationCode;
+    }
+    if (normalized === DEMO_INVALID_ORDER.orderReference) {
+      return verificationCode === DEMO_INVALID_ORDER.verificationCode;
+    }
+    const fixture = DEMO_FIXTURES[normalized];
     return fixture?.verificationCode === verificationCode;
   }
 
@@ -103,7 +118,25 @@ export class DemoOrderStatusAdapter implements OrderStatusAdapter {
     if (Date.now() >= deadline) {
       throw new Error('deadline_exceeded');
     }
-    const fixture = DEMO_FIXTURES[normalizeOrderReference(orderReference)];
+    const normalized = normalizeOrderReference(orderReference);
+    if (normalized === DEMO_TIMEOUT_ORDER.orderReference) {
+      return new Promise(() => undefined);
+    }
+    if (normalized === DEMO_INVALID_ORDER.orderReference) {
+      return {
+        orderReferenceMasked: maskOrderReference(normalized),
+        orderStatus: 'shipped',
+        shippingStatus: 'in_transit',
+        carrier: 'Untrusted Carrier Inc.',
+        trackingNumberMasked: 'TRACKING-RAW-7890',
+        latestEvent: 'departed_origin',
+        latestEventAt: '2026-08-12T02:00:00.000Z',
+        estimatedDeliveryDate: '2026-08-15',
+        dataUpdatedAt: '2026-08-12T02:05:00.000Z',
+        rawResponse: { supplierSecret: 'SUPPLIER-RAW-SECRET' },
+      };
+    }
+    const fixture = DEMO_FIXTURES[normalized];
     if (!fixture) {
       throw new Error('order_not_found');
     }

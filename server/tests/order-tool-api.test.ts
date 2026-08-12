@@ -178,8 +178,8 @@ async function main(): Promise<void> {
       },
       body: JSON.stringify({ sessionId, userIdent: 'browser-a' }),
     });
-    assert.equal(replay.status, 200);
-    assert.equal(replay.headers.get('Idempotency-Replayed'), 'true');
+    assert.equal(replay.status, 409);
+    assert.equal(replay.headers.get('Idempotency-Replayed'), null);
     assert.equal(
       (db.prepare('SELECT COUNT(*) AS count FROM tool_executions').get() as { count: number }).count,
       1,
@@ -189,11 +189,38 @@ async function main(): Promise<void> {
       messages: db.prepare('SELECT * FROM messages').all(),
       executions: db.prepare('SELECT * FROM tool_executions').all(),
       grants: db.prepare('SELECT * FROM order_access_grants').all(),
+      idempotency: db.prepare('SELECT * FROM idempotency_records').all(),
     });
     for (const secret of ['RW-DEMO-1002', '135790', cookie]) {
       assert.equal(persisted.includes(secret), false, `persisted data leaked ${secret}`);
     }
     assert.equal(persisted.includes('departed_origin'), true, 'safe enum audit is allowed');
+    assert.equal(persisted.includes('in_transit'), true, 'safe enum audit is allowed');
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS count FROM idempotency_records').get() as { count: number }).count,
+      0,
+      'transient lookup responses must not enter generic idempotency storage',
+    );
+
+    const reuseChat = await fetch(base, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Cookie: cookie,
+      },
+      body: JSON.stringify({
+        sessionId,
+        message: '再次查询订单 RW-DEMO-1002 的物流状态',
+        userIdent: 'browser-a',
+      }),
+    });
+    assert.equal(reuseChat.status, 200);
+    const reuseEvents = parseSse(await reuseChat.text());
+    assert.equal(
+      (reuseEvents.find((event) => event.type === 'tool')?.content as Record<string, unknown>).status,
+      'running',
+    );
 
     const close = await fetch(`${base}/sessions/${sessionId}/close`, {
       method: 'POST',

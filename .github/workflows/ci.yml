@@ -43,6 +43,8 @@ jobs:
           EMBED_PROVIDER=other npm run eval:mixed
           EMBED_PROVIDER=other npm run eval:quality
           EMBED_PROVIDER=other npm run eval:ocr
+          EMBED_PROVIDER=other npm run eval:triage
+          EMBED_PROVIDER=other npm run eval:tools
         env:
           JWT_SECRET: test-secret-123
 
