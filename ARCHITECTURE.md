@@ -17,6 +17,7 @@ flowchart LR
   Retrieval["KnowledgeRetriever"]
   Index["Process-local VectorStore"]
   Model["OpenAI-compatible model adapter"]
+  OrderAdapter["OrderStatusAdapter (Demo in v0.3.5)"]
   Files["Private upload directory"]
 
   Browser -->|"HTTP / SSE"| API
@@ -24,6 +25,7 @@ flowchart LR
   Services --> Repos
   Services --> Retrieval
   Services --> Model
+  Services --> OrderAdapter
   Repos -->|"WAL + foreign keys"| SQLite[(SQLite)]
   Retrieval --> Repos
   Retrieval --> Index
@@ -45,6 +47,7 @@ read model.
 | `server/services` | Business workflows, transactions, and cross-module coordination |
 | `server/db/repos` | SQL and row-to-domain mapping |
 | `server/ai` | Model clients, prompts, embeddings, retrieval, and vector-store contracts |
+| `server/tools` | Deterministic tool routing, normalized tool contracts, and replaceable adapters |
 
 Routes do not own SQL or provider calls. Repositories do not depend on Express.
 The model never directly performs database writes or business actions.
@@ -130,6 +133,48 @@ Answer mode, grounding status, reason, and source snapshots are persisted with
 the assistant message. The existing SSE event names remain unchanged; new
 fields are optional in the final `done` event.
 
+## Read-Only Order Tool Flow
+
+`order_status_lookup@1` is the only business tool in v0.3.5. A deterministic
+pre-RAG router applies this precedence: explicit human request, unsupported
+write action, private order lookup, policy question. Policy questions still use
+the knowledge path; refunds, cancellation, returns, and address changes never
+call the adapter.
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant R as Chat/tool routes
+  participant S as OrderToolService
+  participant A as OrderStatusAdapter
+  participant D as SQLite
+
+  B->>R: Ask for one order status
+  R-->>B: tool verification_required SSE
+  B->>R: order reference + verification code
+  R->>S: verify session ownership and rate limits
+  S->>A: verify minimum order context
+  S->>D: encrypted order grant + token hash
+  R-->>B: Strict HttpOnly grant cookie
+  B->>R: lookup + Idempotency-Key
+  R->>S: bind cookie to session, userIdent hash, order, tool
+  S->>D: running execution audit
+  S->>A: one bounded lookup with deadline
+  A-->>S: closed-enum normalized result
+  S->>D: safe history summary + masked audit
+  S-->>B: one transient deterministic result
+```
+
+The browser may render the cropped structured result only on the current page.
+SQLite stores neither that result nor a replayable token: grants contain an
+encrypted order reference, a token hash, HMAC fingerprints, binding metadata,
+and expiry; execution audit contains a mask, closed status, adapter/version,
+duration, and safe error code. Verification codes and raw provider responses
+are never persisted. Startup interrupts orphaned executions and removes expired
+grants. Untrusted adapter output is suppressed and creates an `order_support`
+handoff; timeout or unavailability offers retry or voluntary handoff without
+automatic escalation.
+
 ## Knowledge Ingestion And Consistency
 
 FAQ writes and document ingestion update both durable rows and the process
@@ -194,9 +239,12 @@ aligned.
 - OCR output remains untrusted and non-searchable until an administrator
   publishes the complete validated draft. Shadow output has no publication
   authority.
-- The model has no business-operation tools. Deterministic rules recognize
-  common private order, logistics, account, address, cancellation, and refund
-  action requests, then refuse and route them to human support.
+- The model cannot invoke business operations. The one read-only order tool is
+  selected by deterministic rules, and the adapter receives no conversation,
+  prompt, admin credential, or write authority.
+- Order grants are random Strict HttpOnly cookies whose hashes are bound to one
+  active customer session, `userIdent` fingerprint, order fingerprint, and
+  tool version. New verification revokes the old session grant.
 - Provider calls have bounded, abortable timeouts. Streaming responses are not
   retried after the first token, preventing duplicated partial answers.
 - JSON and SSE mutation clients may send an `Idempotency-Key`. The API stores
@@ -258,6 +306,9 @@ switch today.
   versioned Quality Lab.
 - Escalation records exist, but real-time agent assignment and response are not
   yet implemented.
+- Order lookup uses fictional Demo fixtures unless a future adapter is supplied.
+  It provides no persistent customer identity, order history, notifications,
+  polling, refunds, cancellation, returns, address changes, or other writes.
 - Idempotency is deployment-local and does not coordinate independent API
   replicas or external business systems.
 

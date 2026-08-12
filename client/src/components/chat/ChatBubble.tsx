@@ -45,6 +45,11 @@ export function ChatBubble({
     source.knowledgeType === 'faq'
   )) ?? [];
   const transientFaqMatches = message.knowledgeSources === undefined ? message.faqMatches ?? [] : [];
+  const visibleContent = !isUser
+    && message.orderTool?.status === 'succeeded'
+    && message.orderTool.localizedText
+    ? message.orderTool.localizedText[language]
+    : message.content;
 
   return (
     <div
@@ -59,16 +64,16 @@ export function ChatBubble({
       <div
         className={`app-chat-bubble ${isUser ? 'app-chat-bubble--user' : 'app-chat-bubble--assistant'}`}
       >
-        {message.content ? (
+        {visibleContent ? (
           isUser
-            ? message.content
-            : <SafeMarkdown className="app-chat-markdown" content={message.content} />
+            ? visibleContent
+            : <SafeMarkdown className="app-chat-markdown" content={visibleContent} />
         ) : (message.isStreaming ? (
           <span style={{ opacity: 0.6 }}>{t('chat.thinking')}</span>
         ) : '')}
 
         {/* Streaming cursor */}
-        {message.isStreaming && message.content && (
+        {message.isStreaming && visibleContent && (
           <span
             className="app-chat-stream-cursor"
             style={{
@@ -221,7 +226,7 @@ export function ChatBubble({
       )}
 
       {/* Satisfaction rating (AI messages only, after streaming completes) */}
-      {!isUser && !message.isStreaming && !message.failed && message.content && onSubmitRating
+      {!isUser && !message.isStreaming && !message.failed && visibleContent && onSubmitRating
         && (!message.orderTool || message.orderTool.status === 'succeeded') && (
         <div className="app-chat-rating-row">
           <SatisfactionRating

@@ -5,6 +5,10 @@ function main(): void {
   assert.equal(planOrderToolRoute('请转人工并取消订单 RW-DEMO-1002').kind, 'explicit_human');
   assert.equal(planOrderToolRoute('请取消订单 RW-DEMO-1002').kind, 'write_action');
   assert.equal(planOrderToolRoute('please refund order RW-DEMO-1002').kind, 'write_action');
+  assert.equal(planOrderToolRoute('图片中的退款政策要求几个自然日内申请退款？').kind, 'policy_question');
+  assert.equal(planOrderToolRoute('How can I request a refund?').kind, 'policy_question');
+  assert.equal(planOrderToolRoute('签收后七天内可以申请退款').kind, 'not_applicable');
+  assert.equal(planOrderToolRoute('如何申请退款？').safeMessage, '如何申请退款？');
   assert.equal(planOrderToolRoute('查询订单 RW-DEMO-1002 的物流状态').kind, 'lookup');
   assert.equal(planOrderToolRoute('track my order RW-DEMO-1002').kind, 'lookup');
   assert.equal(planOrderToolRoute('如何查询物流？').kind, 'policy_question');

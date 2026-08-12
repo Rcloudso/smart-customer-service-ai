@@ -114,6 +114,7 @@ test.describe('Web automation: customer chat experience', () => {
     await page.getByTestId('theme-toggle').click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.getByTestId('chat-messages')).toContainText('Order RW-••••-1002: In transit');
     await expect(resultCard).toContainText('Order and shipping status');
     await expect(resultCard).toContainText('In transit');
     await expect(resultCard).toBeInViewport();

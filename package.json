@@ -1,6 +1,6 @@
 {
   "name": "resolve-weave",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "license": "MIT",
   "description": "Evidence-first open-source enterprise customer service platform",
@@ -23,6 +23,7 @@
     "eval:quality": "tsx server/eval/quality-eval.ts",
     "eval:ocr": "tsx server/eval/ocr-eval.ts",
     "eval:triage": "tsx server/eval/triage-eval.ts",
+    "eval:tools": "DB_PATH=./data/tool-eval-test.db JWT_SECRET=test-secret-123 tsx server/eval/tool-eval.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:dev-server": "tsx tests/e2e/setup-e2e-db.ts && npm run dev"
