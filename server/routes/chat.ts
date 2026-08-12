@@ -8,7 +8,12 @@ import { knowledgeReviewService } from '../services/knowledge-review.service';
 import { buildSystemPrompt, buildMessages } from '../ai/prompt-manager';
 import { getWindow } from '../ai/context-manager';
 import { getLLMClient } from '../ai/llm-client';
-import { KnowledgeRetrievalSnapshot, MessageRole, SatisfactionRating } from '../types/domain';
+import {
+  IntentCategory,
+  KnowledgeRetrievalSnapshot,
+  MessageRole,
+  SatisfactionRating,
+} from '../types/domain';
 import { FaqMatch, LLMMessage, RetrievalResult } from '../types/ai';
 import { ValidationError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -23,8 +28,125 @@ import { RetrievalTraceCollector } from '../services/retrieval-trace-collector';
 import { getRetrievalTraceService } from '../services/retrieval-trace.service';
 import { config } from '../config';
 import { getOnboardingService } from '../services/onboarding.service';
+import { orderVerifyIpRateLimiter } from '../middleware/rateLimit';
+import { getOrderToolService } from '../services/order-tool.service';
+import type { ResolvedOrderGrant } from '../services/order-grant.service';
+import {
+  ORDER_STATUS_TOOL_NAME,
+  ORDER_STATUS_TOOL_VERSION,
+} from '../types/order-tool';
+import { planOrderToolRoute } from '../tools/order-routing';
+import { AuthError } from '../utils/errors';
 
 const router = Router();
+
+const orderVerifySchema = z.object({
+  sessionId: z.string().min(1).max(100),
+  userIdent: z.string().min(1).max(200),
+  orderReference: z.string().trim().min(4).max(80),
+  verificationCode: z.string().trim().regex(/^[A-Za-z0-9]{4,12}$/),
+}).strict();
+
+const orderLookupSchema = z.object({
+  sessionId: z.string().min(1).max(100),
+  userIdent: z.string().min(1).max(200),
+}).strict();
+
+function readCookie(req: Request, name: string): string | null {
+  const cookieHeader = req.get('cookie');
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(';')) {
+    const [key, ...valueParts] = part.trim().split('=');
+    if (key !== name) continue;
+    try {
+      return decodeURIComponent(valueParts.join('='));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+router.post(
+  '/tools/order/verify',
+  orderVerifyIpRateLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = orderVerifySchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new ValidationError(parsed.error.errors.map((error) => error.message).join('; '));
+      }
+      const grant = await getOrderToolService().verify(parsed.data);
+      const maxAge = Math.max(0, new Date(grant.expiresAt).getTime() - Date.now());
+      res.cookie('rw_order_grant', grant.token, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: config.nodeEnv === 'production',
+        path: '/api/chat',
+        maxAge,
+      });
+      res.json({
+        code: 0,
+        data: {
+          maskedOrderReference: grant.maskedOrderReference,
+          expiresAt: grant.expiresAt,
+          toolName: grant.toolName,
+          toolVersion: grant.toolVersion,
+        },
+        message: 'ok',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+function authorizeOrderLookup(req: Request, res: Response, next: NextFunction): void {
+  const parsed = orderLookupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    next(new ValidationError(parsed.error.errors.map((error) => error.message).join('; ')));
+    return;
+  }
+  const token = readCookie(req, 'rw_order_grant') ?? '';
+  const grant = getOrderToolService().resolveGrant(token, parsed.data);
+  if (!grant) {
+    next(new AuthError('订单授权无效或已过期，请重新验证'));
+    return;
+  }
+  res.locals.orderGrant = grant;
+  res.locals.idempotencyBinding = grant.id;
+  next();
+}
+
+function requireLookupIdempotencyKey(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.get('Idempotency-Key')) {
+    next(new ValidationError('Idempotency-Key is required for order lookup'));
+    return;
+  }
+  next();
+}
+
+router.post(
+  '/tools/order/lookup',
+  authorizeOrderLookup,
+  requireLookupIdempotencyKey,
+  idempotencyMiddleware,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const grant = res.locals.orderGrant as ResolvedOrderGrant;
+      const result = await getOrderToolService().lookup(
+        grant,
+        req.get('Idempotency-Key')!,
+      );
+      res.json({ code: 0, data: result, message: 'ok' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Verification is deliberately registered before this middleware because a
+// replayed body cannot safely reproduce the Set-Cookie authorization grant.
 router.use(idempotencyMiddleware);
 
 const chatSchema = z.object({
@@ -110,6 +232,123 @@ function captureKnowledgeGapSafely(
   }
 }
 
+async function handlePreRagOrderRoute(input: {
+  route: ReturnType<typeof planOrderToolRoute>;
+  inputSessionId?: string;
+  userIdent: string;
+  response: Response;
+}): Promise<boolean> {
+  const { route, inputSessionId, userIdent, response } = input;
+  if (route.kind === 'policy_question' || route.kind === 'not_applicable') return false;
+
+  const session = conversationService.resolveSessionForMessage(inputSessionId, userIdent);
+  const userMessage = conversationService.saveMessage({
+    sessionId: session.id,
+    role: MessageRole.USER,
+    content: route.safeMessage,
+    intent: route.kind === 'explicit_human' ? IntentCategory.GENERAL : IntentCategory.ORDER,
+    intentConf: 1,
+  });
+  response.setHeader('Content-Type', 'text/event-stream');
+  response.setHeader('Cache-Control', 'no-cache');
+  response.setHeader('Connection', 'keep-alive');
+  response.setHeader('X-Accel-Buffering', 'no');
+  response.flushHeaders();
+  const send = (data: object): void => {
+    response.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const intent = route.kind === 'explicit_human'
+    ? IntentCategory.GENERAL
+    : IntentCategory.ORDER;
+  send({ type: 'intent', content: intent, confidence: 1 });
+
+  if (route.kind === 'lookup') {
+    const toolEnabled = getOrderToolService().isEnabled();
+    const content = toolEnabled
+      ? '请先验证此订单，验证成功后可安全查询当前状态。 / Verify this order to view its current status securely.'
+      : '订单查询工具当前未启用。你可以稍后重试或选择转人工。 / Order lookup is not enabled. Retry later or contact support.';
+    const assistant = conversationService.saveMessage({
+      sessionId: session.id,
+      role: MessageRole.ASSISTANT,
+      content,
+      intent,
+      intentConf: 1,
+      replyToMessageId: userMessage.id,
+      retrievalSnapshot: [],
+    });
+    send({ type: 'token', content });
+    send({
+      type: 'tool',
+      content: {
+        toolName: ORDER_STATUS_TOOL_NAME,
+        toolVersion: ORDER_STATUS_TOOL_VERSION,
+        status: toolEnabled ? 'verification_required' : 'failed',
+        maskedOrderReference: route.maskedOrderReference,
+        safeErrorCode: toolEnabled ? undefined : 'tool_disabled',
+        demoAvailable: config.orderTool.provider === 'demo',
+        demoSample: config.orderTool.provider === 'demo'
+          ? { orderReference: 'RW-DEMO-1002', verificationCode: '135790' }
+          : undefined,
+      },
+    });
+    send({
+      type: 'done',
+      content: {
+        sessionId: session.id,
+        messageId: assistant.id,
+        intent,
+        knowledgeSources: [],
+        tool: {
+          toolName: ORDER_STATUS_TOOL_NAME,
+          toolVersion: ORDER_STATUS_TOOL_VERSION,
+          status: toolEnabled ? 'verification_required' : 'failed',
+          maskedOrderReference: route.maskedOrderReference,
+        },
+      },
+    });
+    response.end();
+    return true;
+  }
+
+  const isExplicit = route.kind === 'explicit_human';
+  const groundingReason = isExplicit
+    ? 'user_requested_human'
+    : 'unsupported_business_action';
+  const escalationReason = isExplicit
+    ? '用户明确要求转人工客服'
+    : '当前请求涉及尚未授权的业务操作，需要人工处理';
+  const content = deterministicGroundingReply(groundingReason);
+  const assistant = await conversationService.saveMessageAndEscalate({
+    sessionId: session.id,
+    role: MessageRole.ASSISTANT,
+    content,
+    intent,
+    intentConf: 1,
+    replyToMessageId: userMessage.id,
+    retrievalSnapshot: [],
+    answerMode: 'refusal',
+    groundingStatus: isExplicit ? 'escalated' : 'high_risk',
+    groundingReason,
+  }, escalationReason);
+  send({ type: 'token', content });
+  send({ type: 'escalate', content: escalationReason });
+  send({
+    type: 'done',
+    content: {
+      sessionId: session.id,
+      messageId: assistant.id,
+      intent,
+      knowledgeSources: [],
+      answerMode: assistant.answerMode,
+      groundingStatus: assistant.groundingStatus,
+      groundingReason: assistant.groundingReason,
+    },
+  });
+  response.end();
+  return true;
+}
+
 /**
  * POST /api/chat
  * Core SSE streaming endpoint for chat messages.
@@ -146,13 +385,21 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     const {
-      message,
+      message: rawMessage,
       sessionId: inputSessionId,
       userIdent: inputUserIdent,
       onboardingRunId,
     } = parsed.data;
     const isOnboarding = Boolean(onboardingRunId);
     const userIdent = inputUserIdent || req.ip || 'anonymous';
+    const orderRoute = planOrderToolRoute(rawMessage);
+    if (!isOnboarding && await handlePreRagOrderRoute({
+      route: orderRoute,
+      inputSessionId,
+      userIdent,
+      response: res,
+    })) return;
+    const message = orderRoute.safeMessage;
     const retrievalPolicy = getQualityLabService().getCurrentPolicy();
     trace = new RetrievalTraceCollector({ backend: config.vectorStore.provider });
 
@@ -570,6 +817,7 @@ router.post('/sessions/:sessionId/close', (req: Request, res: Response, next: Ne
       req.params.sessionId,
       parsed.data.userIdent,
     );
+    getOrderToolService().revokeSession(session.id);
     res.json({ code: 0, data: session, message: 'ok' });
   } catch (err) {
     next(err);

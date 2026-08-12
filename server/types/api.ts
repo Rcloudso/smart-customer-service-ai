@@ -73,6 +73,13 @@ export interface SSEDoneEvent {
     answerMode?: AnswerMode;
     groundingStatus?: GroundingStatus;
     groundingReason?: string;
+    tool?: {
+      toolName: 'order_status_lookup';
+      toolVersion: '1';
+      status: 'verification_required' | 'succeeded' | 'failed';
+      maskedOrderReference?: string | null;
+      executionId?: string;
+    };
   };
 }
 
@@ -86,7 +93,21 @@ export interface SSEEscalateEvent {
   content: string;
 }
 
-export type SSEEvent = SSETokenEvent | SSEIntentEvent | SSEFaqEvent | SSEDoneEvent | SSEErrorEvent | SSEEscalateEvent;
+export interface SSEToolEvent {
+  type: 'tool';
+  content: {
+    toolName: 'order_status_lookup';
+    toolVersion: '1';
+    status: 'verification_required' | 'running' | 'succeeded' | 'failed';
+    maskedOrderReference?: string | null;
+    executionId?: string;
+    safeErrorCode?: string;
+    demoAvailable?: boolean;
+    demoSample?: { orderReference: string; verificationCode: string };
+  };
+}
+
+export type SSEEvent = SSETokenEvent | SSEIntentEvent | SSEFaqEvent | SSEDoneEvent | SSEErrorEvent | SSEEscalateEvent | SSEToolEvent;
 
 export interface ChatHistorySession {
   id: string;

@@ -44,3 +44,25 @@ export interface OrderAccessGrant {
   createdAt: string;
   lastUsedAt: string | null;
 }
+
+export type ToolExecutionStatus = 'running' | 'succeeded' | 'failed' | 'interrupted';
+
+export interface ToolExecution {
+  id: string;
+  sessionId: string;
+  userMessageId: string | null;
+  assistantMessageId: string | null;
+  idempotencyKey: string | null;
+  toolName: typeof ORDER_STATUS_TOOL_NAME;
+  toolVersion: typeof ORDER_STATUS_TOOL_VERSION;
+  adapterName: string;
+  adapterVersion: string;
+  maskedOrderReference: string;
+  orderReferenceFingerprint: string;
+  status: ToolExecutionStatus;
+  safeErrorCode: string | null;
+  durationMs: number | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
