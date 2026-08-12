@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 
-const dbPath = path.resolve('/private/tmp/resolveweave-order-tool-api.db');
+const dbPath = path.join(os.tmpdir(), 'resolveweave-order-tool-api.db');
 
 function removeTestDatabase(): void {
   for (const suffix of ['', '-wal', '-shm', '-journal']) {
