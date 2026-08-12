@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import * as chatApi from '../api/chat';
 import { usePreferences } from './usePreferences';
 import type { ChatHistoryDetail } from '../api/chat';
+import type { OrderStatusResultDTO, OrderToolEvent } from '../api/chat';
+import { ApiError } from '../api/client';
 import {
   AnswerMode,
   GroundingStatus,
@@ -34,6 +36,31 @@ export interface ChatMessage {
   satisfaction?: number | null;
   failed?: boolean;
   isStreaming?: boolean;
+  orderTool?: OrderToolViewState;
+}
+
+export type OrderToolViewStatus =
+  | 'verification_required'
+  | 'verifying'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
+
+export interface OrderToolViewState {
+  status: OrderToolViewStatus;
+  maskedOrderReference?: string | null;
+  orderReference?: string;
+  demoAvailable?: boolean;
+  demoSample?: { orderReference: string; verificationCode: string };
+  expiresAt?: string;
+  executionId?: string;
+  result?: OrderStatusResultDTO;
+  localizedText?: { zh: string; en: string };
+  error?: string;
+  failureStage?: 'verify' | 'lookup';
+  safeErrorCode?: string;
 }
 
 interface ChatState {
@@ -47,6 +74,15 @@ interface ChatState {
   escalationReason: string | null;
   sendMessage: (text: string) => Promise<void>;
   submitRating: (messageId: string, rating: number) => Promise<boolean>;
+  verifyAndLookupOrder: (
+    messageId: string,
+    orderReference: string,
+    verificationCode: string,
+  ) => Promise<void>;
+  retryOrderLookup: (messageId: string) => Promise<void>;
+  cancelOrderTool: (messageId: string) => void;
+  resumeOrderTool: (messageId: string) => void;
+  requestOrderSupport: () => Promise<void>;
   loadHistory: (detail: ChatHistoryDetail) => void;
   clearChat: () => Promise<void>;
   clearError: () => void;
@@ -69,6 +105,22 @@ function formatErrorContent(message: string): string {
 
 function isVisibleChatRole(role: ChatHistoryDetail['messages'][number]['role']): boolean {
   return role === MessageRole.USER || role === MessageRole.ASSISTANT;
+}
+
+function extractOrderReference(message: string): string | undefined {
+  return message.normalize('NFKC').match(/\bRW-[A-Z0-9]+(?:-[A-Z0-9]+)+\b/iu)?.[0].toUpperCase();
+}
+
+function updateOrderToolMessage(
+  messages: ChatMessage[],
+  messageId: string,
+  update: (tool: OrderToolViewState) => OrderToolViewState,
+): ChatMessage[] {
+  return messages.map((message) => (
+    message.id === messageId && message.orderTool
+      ? { ...message, orderTool: update(message.orderTool) }
+      : message
+  ));
 }
 
 export const useChat = create<ChatState>((set, get) => ({
@@ -151,6 +203,30 @@ export const useChat = create<ChatState>((set, get) => ({
         },
         onEscalate: (reason: string) => {
           set({ showEscalation: true, escalationReason: reason });
+        },
+        onTool: (toolEvent: OrderToolEvent) => {
+          set((prev) => ({
+            messages: prev.messages.map((message) => (
+              message.id === assistantMsgId
+                ? {
+                    ...message,
+                    orderTool: {
+                      status: toolEvent.status,
+                      maskedOrderReference: toolEvent.maskedOrderReference,
+                      orderReference: extractOrderReference(text),
+                      demoAvailable: toolEvent.demoAvailable,
+                      demoSample: toolEvent.demoSample,
+                      executionId: toolEvent.executionId,
+                      safeErrorCode: toolEvent.safeErrorCode,
+                      error: toolEvent.safeErrorCode === 'tool_disabled'
+                        ? t('chat.orderTool.disabled')
+                        : undefined,
+                      failureStage: toolEvent.status === 'failed' ? 'lookup' : undefined,
+                    },
+                  }
+                : message
+            )),
+          }));
         },
         onDone: (data) => {
           // Update session ID
@@ -235,6 +311,154 @@ export const useChat = create<ChatState>((set, get) => ({
       set({ error: errorMsg });
       return false;
     }
+  },
+
+  verifyAndLookupOrder: async (messageId, orderReference, verificationCode) => {
+    const sessionId = get().sessionId;
+    if (!sessionId) return;
+    set((prev) => ({
+      messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+        ...tool,
+        status: 'verifying',
+        orderReference,
+        error: undefined,
+        failureStage: undefined,
+      })),
+    }));
+    try {
+      const verified = await chatApi.verifyOrder({
+        sessionId,
+        orderReference,
+        verificationCode,
+      });
+      set((prev) => ({
+        messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+          ...tool,
+          status: 'running',
+          maskedOrderReference: verified.maskedOrderReference,
+          expiresAt: verified.expiresAt,
+        })),
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('chat.orderTool.verifyFailed');
+      set((prev) => ({
+        error: message,
+        messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+          ...tool,
+          status: 'failed',
+          error: message,
+          failureStage: 'verify',
+        })),
+      }));
+      return;
+    }
+
+    try {
+      const lookup = await chatApi.lookupOrder(sessionId);
+      set((prev) => ({
+        messages: prev.messages.map((message) => (
+          message.id === messageId && message.orderTool
+            ? {
+                ...message,
+                id: lookup.messageId,
+                content: lookup.localizedText[usePreferences.getState().language],
+                orderTool: {
+                  ...message.orderTool,
+                  status: 'succeeded',
+                  executionId: lookup.executionId,
+                  result: lookup.result,
+                  localizedText: lookup.localizedText,
+                  error: undefined,
+                  failureStage: undefined,
+                },
+              }
+            : message
+        )),
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('chat.orderTool.lookupFailed');
+      const expired = error instanceof ApiError && error.statusCode === 401;
+      set((prev) => ({
+        error: message,
+        messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+          ...tool,
+          status: expired ? 'expired' : 'failed',
+          error: message,
+          failureStage: expired ? 'verify' : 'lookup',
+        })),
+      }));
+    }
+  },
+
+  retryOrderLookup: async (messageId) => {
+    const sessionId = get().sessionId;
+    if (!sessionId) return;
+    set((prev) => ({
+      messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+        ...tool,
+        status: 'running',
+        error: undefined,
+      })),
+    }));
+    try {
+      const lookup = await chatApi.lookupOrder(sessionId);
+      set((prev) => ({
+        messages: prev.messages.map((message) => (
+          message.id === messageId && message.orderTool
+            ? {
+                ...message,
+                id: lookup.messageId,
+                content: lookup.localizedText[usePreferences.getState().language],
+                orderTool: {
+                  ...message.orderTool,
+                  status: 'succeeded',
+                  executionId: lookup.executionId,
+                  result: lookup.result,
+                  localizedText: lookup.localizedText,
+                  error: undefined,
+                  failureStage: undefined,
+                },
+              }
+            : message
+        )),
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('chat.orderTool.lookupFailed');
+      const expired = error instanceof ApiError && error.statusCode === 401;
+      set((prev) => ({
+        error: message,
+        messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+          ...tool,
+          status: expired ? 'expired' : 'failed',
+          error: message,
+          failureStage: expired ? 'verify' : 'lookup',
+        })),
+      }));
+    }
+  },
+
+  cancelOrderTool: (messageId) => {
+    set((prev) => ({
+      messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+        ...tool,
+        status: 'cancelled',
+        error: undefined,
+      })),
+    }));
+  },
+
+  resumeOrderTool: (messageId) => {
+    set((prev) => ({
+      messages: updateOrderToolMessage(prev.messages, messageId, (tool) => ({
+        ...tool,
+        status: 'verification_required',
+        error: undefined,
+      })),
+    }));
+  },
+
+  requestOrderSupport: async () => {
+    await get().sendMessage(t('chat.orderTool.transferRequest'));
   },
 
   loadHistory: (detail: ChatHistoryDetail) => {

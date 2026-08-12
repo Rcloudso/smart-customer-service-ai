@@ -5,10 +5,16 @@ import { intentLabel } from '../../i18n';
 import { useTranslation } from '../../hooks/usePreferences';
 import { SatisfactionRating } from './SatisfactionRating';
 import { SafeMarkdown } from '../common/SafeMarkdown';
+import { OrderToolCard } from './OrderToolCard';
 
 interface ChatBubbleProps {
   message: ChatMessage;
   onSubmitRating?: (messageId: string, rating: number) => Promise<boolean>;
+  onVerifyOrder?: (messageId: string, orderReference: string, verificationCode: string) => Promise<void>;
+  onRetryOrder?: (messageId: string) => Promise<void>;
+  onCancelOrder?: (messageId: string) => void;
+  onResumeOrder?: (messageId: string) => void;
+  onTransferOrder?: () => Promise<void>;
 }
 
 const INTENT_COLORS: Record<string, string> = {
@@ -21,7 +27,15 @@ const INTENT_COLORS: Record<string, string> = {
 /**
  * Single chat bubble component for user and AI messages.
  */
-export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.ReactElement {
+export function ChatBubble({
+  message,
+  onSubmitRating,
+  onVerifyOrder,
+  onRetryOrder,
+  onCancelOrder,
+  onResumeOrder,
+  onTransferOrder,
+}: ChatBubbleProps): React.ReactElement {
   const isUser = message.role === 'user';
   const { language, t } = useTranslation();
   const documentSources = message.knowledgeSources?.filter((source) => (
@@ -63,6 +77,20 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
           />
         )}
       </div>
+
+      {!isUser && message.orderTool && onVerifyOrder && onRetryOrder
+        && onCancelOrder && onResumeOrder && onTransferOrder && (
+        <OrderToolCard
+          tool={message.orderTool}
+          onVerify={(orderReference, verificationCode) => (
+            onVerifyOrder(message.id, orderReference, verificationCode)
+          )}
+          onRetry={() => onRetryOrder(message.id)}
+          onCancel={() => onCancelOrder(message.id)}
+          onResume={() => onResumeOrder(message.id)}
+          onTransfer={onTransferOrder}
+        />
+      )}
 
       {/* Intent tag (AI messages only) */}
       {!isUser && message.intent && (
@@ -193,7 +221,8 @@ export function ChatBubble({ message, onSubmitRating }: ChatBubbleProps): React.
       )}
 
       {/* Satisfaction rating (AI messages only, after streaming completes) */}
-      {!isUser && !message.isStreaming && !message.failed && message.content && onSubmitRating && (
+      {!isUser && !message.isStreaming && !message.failed && message.content && onSubmitRating
+        && (!message.orderTool || message.orderTool.status === 'succeeded') && (
         <div className="app-chat-rating-row">
           <SatisfactionRating
             currentRating={message.satisfaction ?? undefined}

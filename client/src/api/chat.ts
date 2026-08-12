@@ -26,6 +26,36 @@ export interface FaqMatchDTO {
   keywordRank?: number;
 }
 
+export interface OrderToolEvent {
+  toolName: 'order_status_lookup';
+  toolVersion: '1';
+  status: 'verification_required' | 'running' | 'succeeded' | 'failed';
+  maskedOrderReference?: string | null;
+  executionId?: string;
+  safeErrorCode?: string;
+  demoAvailable?: boolean;
+  demoSample?: { orderReference: string; verificationCode: string };
+}
+
+export interface OrderStatusResultDTO {
+  orderReferenceMasked: string;
+  orderStatus: 'processing' | 'shipped' | 'delivered' | 'exception';
+  shippingStatus: 'not_shipped' | 'in_transit' | 'delivered' | 'exception';
+  carrier: 'not_assigned' | 'demo_express';
+  trackingNumberMasked: string | null;
+  latestEvent: 'order_processing' | 'departed_origin' | 'delivered' | 'delivery_exception';
+  latestEventAt: string | null;
+  estimatedDeliveryDate: string | null;
+  dataUpdatedAt: string;
+}
+
+export interface OrderLookupDTO {
+  executionId: string;
+  messageId: string;
+  result: OrderStatusResultDTO;
+  localizedText: { zh: string; en: string };
+}
+
 /**
  * Generate or retrieve a stable anonymous user identifier.
  * Uses localStorage so chat history survives page refreshes on the same browser.
@@ -52,6 +82,7 @@ export interface SSECallbacks {
   onIntent?: (intent: string, confidence: number) => void;
   onFaq?: (faqMatches: FaqMatchDTO[]) => void;
   onEscalate?: (reason: string) => void;
+  onTool?: (event: OrderToolEvent) => void;
   onDone?: (data: {
     sessionId: string;
     messageId: string;
@@ -61,6 +92,7 @@ export interface SSECallbacks {
     groundingStatus?: GroundingStatus;
     groundingReason?: string;
     retrievalPolicyId?: string;
+    tool?: OrderToolEvent;
   }) => void;
   onError?: (message: string) => void;
 }
@@ -188,6 +220,9 @@ export async function sendMessage(
           case 'escalate':
             callbacks.onEscalate?.(event.content as string);
             break;
+          case 'tool':
+            callbacks.onTool?.(event.content as OrderToolEvent);
+            break;
           case 'done': {
             const doneData = event.content as {
               sessionId: string;
@@ -198,6 +233,7 @@ export async function sendMessage(
               groundingStatus?: GroundingStatus;
               groundingReason?: string;
               retrievalPolicyId?: string;
+              tool?: OrderToolEvent;
             };
             resultSessionId = doneData.sessionId;
             resultMessageId = doneData.messageId;
@@ -265,6 +301,29 @@ export async function submitRating(messageId: string, sessionId: string, rating:
 
 export function getCurrentAnonymousUserId(): string {
   return getAnonymousUserId();
+}
+
+export async function verifyOrder(input: {
+  sessionId: string;
+  orderReference: string;
+  verificationCode: string;
+}): Promise<{
+  maskedOrderReference: string;
+  expiresAt: string;
+  toolName: 'order_status_lookup';
+  toolVersion: '1';
+}> {
+  return post('/chat/tools/order/verify', {
+    ...input,
+    userIdent: getAnonymousUserId(),
+  }, { auth: false });
+}
+
+export async function lookupOrder(sessionId: string): Promise<OrderLookupDTO> {
+  return post('/chat/tools/order/lookup', {
+    sessionId,
+    userIdent: getAnonymousUserId(),
+  }, { auth: false, idempotencyKey: createIdempotencyKey() });
 }
 
 export async function closeSession(sessionId: string): Promise<void> {

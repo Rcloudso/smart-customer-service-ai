@@ -20,6 +20,11 @@ export function ChatPage(): React.ReactElement {
     error,
     sendMessage,
     submitRating,
+    verifyAndLookupOrder,
+    retryOrderLookup,
+    cancelOrderTool,
+    resumeOrderTool,
+    requestOrderSupport,
     loadHistory,
     clearChat,
     clearError,
@@ -181,6 +186,11 @@ export function ChatPage(): React.ReactElement {
                 key={msg.id}
                 message={msg}
                 onSubmitRating={handleSubmitRating}
+                onVerifyOrder={verifyAndLookupOrder}
+                onRetryOrder={retryOrderLookup}
+                onCancelOrder={cancelOrderTool}
+                onResumeOrder={resumeOrderTool}
+                onTransferOrder={requestOrderSupport}
               />
             ))
           )}

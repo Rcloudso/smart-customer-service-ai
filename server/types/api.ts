@@ -225,4 +225,17 @@ export interface ConversationDetail {
     createdAt: string;
     packet?: EscalationPacket;
   } | null;
+  toolExecutions?: Array<{
+    id: string;
+    toolName: 'order_status_lookup';
+    toolVersion: '1';
+    adapterName: string;
+    adapterVersion: string;
+    maskedOrderReference: string;
+    status: 'running' | 'succeeded' | 'failed' | 'interrupted';
+    safeErrorCode: string | null;
+    durationMs: number | null;
+    createdAt: string;
+    completedAt: string | null;
+  }>;
 }

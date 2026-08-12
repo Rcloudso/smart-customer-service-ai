@@ -227,6 +227,148 @@
     "zh": "提交评分失败",
     "en": "Failed to submit rating"
   },
+  "chat.orderTool.readOnly": {
+    "zh": "只读订单工具",
+    "en": "Read-only order tool"
+  },
+  "chat.orderTool.verifyTitle": {
+    "zh": "验证订单后查询",
+    "en": "Verify this order to look it up"
+  },
+  "chat.orderTool.verifyDescription": {
+    "zh": "授权仅用于当前会话中的这一个订单，10 分钟后失效。",
+    "en": "Access is limited to this order in this chat and expires after 10 minutes."
+  },
+  "chat.orderTool.orderReference": {
+    "zh": "订单号",
+    "en": "Order reference"
+  },
+  "chat.orderTool.orderReferencePlaceholder": {
+    "zh": "例如 RW-DEMO-1002",
+    "en": "For example, RW-DEMO-1002"
+  },
+  "chat.orderTool.verificationCode": {
+    "zh": "验证码",
+    "en": "Verification code"
+  },
+  "chat.orderTool.verificationCodePlaceholder": {
+    "zh": "请输入验证码",
+    "en": "Enter the verification code"
+  },
+  "chat.orderTool.useDemo": {
+    "zh": "使用演示订单",
+    "en": "Use demo order"
+  },
+  "chat.orderTool.verifyAndLookup": {
+    "zh": "验证并查询",
+    "en": "Verify and look up"
+  },
+  "chat.orderTool.verifying": {
+    "zh": "正在安全验证订单…",
+    "en": "Verifying the order securely…"
+  },
+  "chat.orderTool.running": {
+    "zh": "正在查询最新订单状态…",
+    "en": "Looking up the latest order status…"
+  },
+  "chat.orderTool.retry": {
+    "zh": "重试查询",
+    "en": "Retry lookup"
+  },
+  "chat.orderTool.transfer": {
+    "zh": "转人工",
+    "en": "Contact support"
+  },
+  "chat.orderTool.transferRequest": {
+    "zh": "请转人工客服处理我的订单查询",
+    "en": "Please transfer my order lookup to human support"
+  },
+  "chat.orderTool.cancelled": {
+    "zh": "订单验证已取消",
+    "en": "Order verification cancelled"
+  },
+  "chat.orderTool.resume": {
+    "zh": "继续验证",
+    "en": "Resume verification"
+  },
+  "chat.orderTool.disabled": {
+    "zh": "订单查询工具当前未启用。",
+    "en": "Order lookup is not enabled."
+  },
+  "chat.orderTool.verifyFailed": {
+    "zh": "订单验证失败",
+    "en": "Order verification failed"
+  },
+  "chat.orderTool.lookupFailed": {
+    "zh": "订单查询失败",
+    "en": "Order lookup failed"
+  },
+  "chat.orderTool.privacy": {
+    "zh": "验证码不会写入聊天记录；订单号和审计记录会脱敏。",
+    "en": "The code is never written to chat history; order and audit identifiers are masked."
+  },
+  "chat.orderTool.refreshNotice": {
+    "zh": "此结果仅在当前页面显示。刷新后需再次验证。",
+    "en": "This result is shown only on this page. Reverification is required after refresh."
+  },
+  "chat.orderTool.resultTitle": {
+    "zh": "订单与物流状态",
+    "en": "Order and shipping status"
+  },
+  "chat.orderTool.orderStatus": {
+    "zh": "订单状态",
+    "en": "Order status"
+  },
+  "chat.orderTool.shippingStatus": {
+    "zh": "物流状态",
+    "en": "Shipping status"
+  },
+  "chat.orderTool.carrier": {
+    "zh": "承运商",
+    "en": "Carrier"
+  },
+  "chat.orderTool.trackingNumber": {
+    "zh": "运单号",
+    "en": "Tracking number"
+  },
+  "chat.orderTool.latestEvent": {
+    "zh": "最新进度",
+    "en": "Latest event"
+  },
+  "chat.orderTool.latestEventAt": {
+    "zh": "进度时间",
+    "en": "Event time"
+  },
+  "chat.orderTool.estimatedDelivery": {
+    "zh": "预计送达",
+    "en": "Estimated delivery"
+  },
+  "chat.orderTool.dataUpdatedAt": {
+    "zh": "数据更新时间",
+    "en": "Data updated"
+  },
+  "chat.orderTool.orderStatus.processing": { "zh": "处理中", "en": "Processing" },
+  "chat.orderTool.orderStatus.shipped": { "zh": "已发货", "en": "Shipped" },
+  "chat.orderTool.orderStatus.delivered": { "zh": "已送达", "en": "Delivered" },
+  "chat.orderTool.orderStatus.exception": { "zh": "异常", "en": "Exception" },
+  "chat.orderTool.shippingStatus.not_shipped": { "zh": "尚未发货", "en": "Not shipped" },
+  "chat.orderTool.shippingStatus.in_transit": { "zh": "运输中", "en": "In transit" },
+  "chat.orderTool.shippingStatus.delivered": { "zh": "已送达", "en": "Delivered" },
+  "chat.orderTool.shippingStatus.exception": { "zh": "物流异常", "en": "Shipping exception" },
+  "chat.orderTool.carrier.not_assigned": { "zh": "尚未分配", "en": "Not assigned" },
+  "chat.orderTool.carrier.demo_express": { "zh": "演示快递", "en": "Demo Express" },
+  "chat.orderTool.event.order_processing": { "zh": "订单处理中", "en": "Order processing" },
+  "chat.orderTool.event.departed_origin": { "zh": "已离开始发站", "en": "Departed origin" },
+  "chat.orderTool.event.delivered": { "zh": "已完成投递", "en": "Delivered" },
+  "chat.orderTool.event.delivery_exception": { "zh": "配送出现异常", "en": "Delivery exception" },
+  "chat.orderTool.status.verification_required": { "zh": "待验证", "en": "Verification required" },
+  "chat.orderTool.status.verifying": { "zh": "验证中", "en": "Verifying" },
+  "chat.orderTool.status.running": { "zh": "查询中", "en": "Running" },
+  "chat.orderTool.status.succeeded": { "zh": "查询成功", "en": "Succeeded" },
+  "chat.orderTool.status.failed": { "zh": "查询失败", "en": "Failed" },
+  "chat.orderTool.status.interrupted": { "zh": "已中断", "en": "Interrupted" },
+  "chat.orderTool.status.expired": { "zh": "授权已过期", "en": "Grant expired" },
+  "chat.orderTool.status.cancelled": { "zh": "已取消", "en": "Cancelled" },
   "login.title": {
     "zh": "管理员登录",
     "en": "Admin Login"
@@ -566,6 +708,34 @@
   "conversations.rating": {
     "zh": "评分",
     "en": "Rating"
+  },
+  "conversations.toolExecutions": {
+    "zh": "工具执行记录",
+    "en": "Tool executions"
+  },
+  "conversations.toolName": {
+    "zh": "工具",
+    "en": "Tool"
+  },
+  "conversations.toolOrder": {
+    "zh": "脱敏订单号",
+    "en": "Masked order"
+  },
+  "conversations.toolAdapter": {
+    "zh": "适配器",
+    "en": "Adapter"
+  },
+  "conversations.toolDuration": {
+    "zh": "耗时",
+    "en": "Duration"
+  },
+  "conversations.toolError": {
+    "zh": "安全错误",
+    "en": "Safe error"
+  },
+  "conversations.toolStarted": {
+    "zh": "开始时间",
+    "en": "Started"
   },
   "conversations.listLoadFailed": {
     "zh": "加载对话列表失败",
