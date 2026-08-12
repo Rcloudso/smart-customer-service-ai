@@ -42,6 +42,101 @@ test.describe('API automation: boundaries and exception flows', () => {
     expect(body.data.uptime).toEqual(expect.any(Number));
   });
 
+  test('read-only order lookup keeps transient result separate from safe audit', async ({ request }) => {
+    const userIdent = `order-tool-api-${Date.now()}`;
+    const chat = await request.post('/api/chat', {
+      data: {
+        message: '查询订单 RW-DEMO-1002 的物流状态',
+        userIdent,
+      },
+      headers: { 'Idempotency-Key': `order-chat-${Date.now()}` },
+    });
+    expect(chat.status()).toBe(200);
+    const events = await parseSse(chat);
+    const tool = events.find((event) => event.type === 'tool')?.content;
+    const done = events.find((event) => event.type === 'done')?.content;
+    expect(tool).toMatchObject({
+      status: 'verification_required',
+      maskedOrderReference: 'RW-••••-1002',
+    });
+
+    const invalidLookup = await request.post('/api/chat/tools/order/lookup', {
+      data: { sessionId: done.sessionId, userIdent },
+      headers: { 'Idempotency-Key': `order-before-auth-${Date.now()}` },
+    });
+    expect(invalidLookup.status()).toBe(401);
+
+    const verified = await request.post('/api/chat/tools/order/verify', {
+      data: {
+        sessionId: done.sessionId,
+        userIdent,
+        orderReference: 'RW-DEMO-1002',
+        verificationCode: '135790',
+      },
+    });
+    expect(verified.status()).toBe(200);
+    expect(verified.headers()['set-cookie']).toMatch(/HttpOnly.*SameSite=Strict/i);
+
+    const idempotencyKey = `order-lookup-${Date.now()}`;
+    const lookup = await request.post('/api/chat/tools/order/lookup', {
+      data: { sessionId: done.sessionId, userIdent },
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+    expect(lookup.status()).toBe(200);
+    const lookupBody = await readJson(lookup);
+    expect(lookupBody.data.result).toMatchObject({
+      orderReferenceMasked: 'RW-••••-1002',
+      shippingStatus: 'in_transit',
+    });
+
+    const replay = await request.post('/api/chat/tools/order/lookup', {
+      data: { sessionId: done.sessionId, userIdent },
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+    expect(replay.status()).toBe(409);
+    expect(replay.headers()['idempotency-replayed']).toBeUndefined();
+
+    const reuseChat = await request.post('/api/chat', {
+      data: {
+        sessionId: done.sessionId,
+        message: '再次查询订单 RW-DEMO-1002 的物流状态',
+        userIdent,
+      },
+      headers: { 'Idempotency-Key': `order-chat-reuse-${Date.now()}` },
+    });
+    expect(reuseChat.status()).toBe(200);
+    expect((await parseSse(reuseChat)).find((event) => event.type === 'tool')?.content).toMatchObject({
+      status: 'running',
+      maskedOrderReference: 'RW-••••-1002',
+    });
+
+    const history = await request.get(`/api/chat/sessions/${done.sessionId}`, {
+      params: { userIdent },
+    });
+    const historyJson = JSON.stringify(await readJson(history));
+    expect(historyJson).not.toContain('RW-DEMO-1002');
+    expect(historyJson).not.toContain('135790');
+    expect(historyJson).toContain('重新查看需再次验证');
+
+    const token = await login(request);
+    const detail = await request.get(`/api/admin/conversations/${done.sessionId}`, {
+      headers: authHeaders(token),
+    });
+    expect(detail.status()).toBe(200);
+    const detailBody = await readJson(detail);
+    expect(detailBody.data.toolExecutions).toHaveLength(1);
+    expect(detailBody.data.toolExecutions[0]).toMatchObject({
+      toolName: 'order_status_lookup',
+      adapterName: 'demo',
+      maskedOrderReference: 'RW-••••-1002',
+      status: 'succeeded',
+      safeErrorCode: null,
+    });
+    const auditJson = JSON.stringify(detailBody.data.toolExecutions);
+    expect(auditJson).not.toContain('RW-DEMO-1002');
+    expect(auditJson).not.toContain('135790');
+  });
+
   test('login accepts valid credentials and rejects missing/wrong credentials', async ({ request }) => {
     const token = await login(request);
     expect(token.length).toBeGreaterThan(20);

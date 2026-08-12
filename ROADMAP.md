@@ -18,7 +18,8 @@ This roadmap describes the product direction rather than fixed delivery dates. T
 | v0.3.1 | Released | Multimodal Knowledge Review | PNG/JPEG/WebP/扫描 PDF 经持久化 PaddleOCR 队列进入可编辑复核草稿；可选 DeepSeek 影子对照，发布后保留引擎、页码和 Block 来源。 |
 | v0.3.2 | Released | Qdrant & Retrieval Observability | 可选 Qdrant、可恢复索引任务、Quality Lab 后端影子评测、alias 原子激活/回滚和八阶段检索 Trace 形成独立运维闭环。 |
 | v0.3.3 | Released | Security Hardening | 收紧部署 Secret、模型端点、公共 API、浏览器输出、统计查询、LLM 流和 OCR Worker 边界。 |
-| v0.3.4 | Current | First Value & Unified Operations | 全新安装在无 Key 路径获得首个带来源回答；统一运行状态与低风险恢复，并修复移动端后台导航。 |
+| v0.3.4 | Released | First Value & Unified Operations | 全新安装在无 Key 路径获得首个带来源回答；统一运行状态与低风险恢复，并修复移动端后台导航。 |
+| v0.3.5 | Current | Read-Only Customer Service Tools | 当前聊天验证单个 Demo 订单后，安全查询确定性订单状态与最新物流，并保留脱敏审计。 |
 
 v0.3.4 已经形成可运行且带首次价值、回答边界、结构化人工交接和统一运维入口的小规模客服产品基线：用户聊天、匿名会话历史、FAQ
 与文档知识、混合检索、可选 Qdrant、可恢复索引、检索 Trace、转人工记录、满意度、知识审核、会话分析、双语后台、
@@ -29,7 +30,6 @@ v0.3.4 已经形成可运行且带首次价值、回答边界、结构化人工�
 
 | Version | Theme | Intended outcome |
 | --- | --- | --- |
-| v0.3.5 | Read-Only Customer Service Tools | 以 mock 订单/物流查询验证类型化工具和外部订单系统接口，不执行业务写操作。 |
 | v0.3.6 | Human Collaboration | 增加人工接管、处理队列、分配、内部备注、解决结果和知识回流。 |
 | v0.3.7 | Persistent Customer Identity & Memory | 在统一身份、明确同意、保留期限和删除能力之上提供结构化长期上下文。 |
 | v0.3.8 | Controlled Business Actions | 在身份、确认、权限、策略、幂等和审计边界内处理退款申请等受控写操作。 |
@@ -122,13 +122,14 @@ v0.3.4 已经形成可运行且带首次价值、回答边界、结构化人工�
 
 ### v0.3.5 — Read-Only Customer Service Tools
 
-- 只选择一个可验证的垂直场景：订单状态和物流查询。
-- 没有真实订单系统时使用可替换 mock adapter，同时冻结外部订单系统
-  request/result、错误、超时、授权和审计接口。
-- LLM 只生成类型化工具请求；服务端负责身份/归属、参数、权限、超时、
-  重试、响应裁剪和审计。
-- 工具失败或结果不确定时安全降级为解释、补充信息请求或结构化转人工。
-- 不执行退款、取消订单、修改地址等写操作。
+- 只交付一个垂直场景：当前聊天验证单个订单后查询订单状态和最新物流。
+- 使用可替换 Demo Adapter 和四个虚构状态；生产默认禁用，未接真实订单系统。
+- 确定性路由优先处理明确转人工与退款/取消/改址等写请求，政策问题继续 RAG。
+- 10 分钟授权绑定会话、浏览器标识、单个订单与工具；Cookie 只保存随机令牌，
+  服务端保存哈希、加密订单引用和 HMAC 指纹。
+- 完整结果只在当前页面显示；历史保存安全摘要，后台会话详情只读展示脱敏审计。
+- 超时/不可用允许重试或主动转人工；非法结果不展示并进入 `order_support`。
+- 不执行退款、取消订单、修改地址，不引入通用 Agent 框架、MCP 或工具后台。
 
 ### v0.3.6 — Human Collaboration
 

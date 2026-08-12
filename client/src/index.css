@@ -697,6 +697,64 @@ select {
   color: var(--app-warning);
 }
 
+.app-conversation-tool-executions {
+  margin-bottom: 16px;
+}
+
+.app-conversation-tool-executions h3 {
+  margin: 0 0 8px;
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-conversation-tool-execution {
+  margin-bottom: 8px;
+  padding: 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background-color: var(--app-surface);
+}
+
+.app-conversation-tool-execution__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--app-text);
+  font-family: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+}
+
+.app-conversation-tool-execution dl,
+.app-order-tool-result__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.app-conversation-tool-execution dl > div,
+.app-order-tool-result__grid > div {
+  min-width: 0;
+}
+
+.app-conversation-tool-execution dt,
+.app-order-tool-result__grid dt {
+  margin-bottom: 2px;
+  color: var(--app-text-muted);
+  font-size: 11px;
+}
+
+.app-conversation-tool-execution dd,
+.app-order-tool-result__grid dd {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .app-conversation-message {
   margin-bottom: 12px;
   padding: 12px;
@@ -1398,6 +1456,98 @@ html[data-theme='dark'] .app-triage-table .t-table--striped > .t-table__content 
   gap: 6px;
 }
 
+.app-order-tool-card-shell {
+  width: min(74%, 640px);
+  margin-top: 8px;
+}
+
+.app-order-tool-card {
+  width: 100%;
+  color: var(--app-text);
+}
+
+.app-order-tool-card .t-card__body {
+  padding: 14px;
+}
+
+.app-order-tool-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-order-tool-card__header strong {
+  display: block;
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.app-order-tool-card__eyebrow {
+  margin-bottom: 2px;
+  color: var(--app-text-muted);
+  font-family: 'Geist Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.app-order-tool-card__description,
+.app-order-tool-card__summary,
+.app-order-tool-card__privacy,
+.app-order-tool-card__progress {
+  margin: 10px 0 0;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.app-order-tool-card__privacy {
+  color: var(--app-text-muted);
+}
+
+.app-order-tool-card__error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--app-danger) 28%, transparent);
+  border-radius: var(--app-radius-sm);
+  background: color-mix(in srgb, var(--app-danger) 7%, var(--app-surface));
+  color: var(--app-danger);
+  font-size: 12px;
+}
+
+.app-order-tool-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.app-order-tool-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.app-order-tool-form > .t-button {
+  justify-self: start;
+}
+
+.app-order-tool-card__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.app-order-tool-result__grid {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--app-border-soft);
+}
+
 .app-chat-faq-reference {
   width: min(74%, 640px);
   margin-top: 8px;
@@ -1865,6 +2015,16 @@ html[data-theme='dark'] .t-menu__item.t-is-active {
 
   .app-chat-bubble {
     max-width: calc(100vw - 56px);
+  }
+
+  .app-order-tool-card-shell {
+    width: calc(100vw - 56px);
+  }
+
+  .app-order-tool-form,
+  .app-order-tool-result__grid,
+  .app-conversation-tool-execution dl {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .app-chat-input-dock {

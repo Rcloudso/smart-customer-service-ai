@@ -49,3 +49,15 @@ export const faqSearchRateLimiter = rateLimit({
     message: 'Too many FAQ search requests. Please try again later.',
   },
 });
+
+export const orderVerifyIpRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: config.rateLimit.orderVerifyIp,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: 429,
+    data: null,
+    message: '订单验证尝试过多，请稍后重试',
+  },
+});

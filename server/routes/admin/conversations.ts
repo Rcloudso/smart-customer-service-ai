@@ -7,6 +7,7 @@ import { escalationService } from '../../services/escalation.service';
 import { logger } from '../../utils/logger';
 import { IntentCategory, SessionStatus } from '../../types/domain';
 import { ValidationError } from '../../utils/errors';
+import { getOrderToolService } from '../../services/order-tool.service';
 
 const router = Router();
 
@@ -132,6 +133,19 @@ router.get('/:sessionId', async (req: Request, res: Response, next: NextFunction
     const sessionId = req.params.sessionId as string;
 
     const detail = conversationService.getConversationDetail(sessionId);
+    detail.toolExecutions = getOrderToolService().listExecutions(sessionId).map((execution) => ({
+      id: execution.id,
+      toolName: execution.toolName,
+      toolVersion: execution.toolVersion,
+      adapterName: execution.adapterName,
+      adapterVersion: execution.adapterVersion,
+      maskedOrderReference: execution.maskedOrderReference,
+      status: execution.status,
+      safeErrorCode: execution.safeErrorCode,
+      durationMs: execution.durationMs,
+      createdAt: execution.createdAt,
+      completedAt: execution.completedAt,
+    }));
 
     // Add escalation info if available
     const escalation = escalationService.findBySession(sessionId);

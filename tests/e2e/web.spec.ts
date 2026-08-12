@@ -83,6 +83,69 @@ test.describe('Web automation: customer chat experience', () => {
     await expect(page.getByTestId('chat-grounding-status')).toContainText('FAQ 原文');
   });
 
+  test('order verification shows transient result and refresh-safe history', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('chat-input').fill('查询订单 RW-DEMO-1002 的物流状态');
+    await page.getByTestId('chat-send-button').click();
+
+    const verificationCard = page.getByTestId('order-verification-card');
+    await expect(verificationCard).toBeVisible();
+    await expect(verificationCard).toContainText('验证订单后查询');
+    await verificationCard.getByRole('button', { name: '使用演示订单' }).click();
+    await expect(page.getByTestId('order-reference-input').locator('input')).toHaveValue('RW-DEMO-1002');
+    await expect(page.getByTestId('order-verification-code-input').locator('input')).toHaveValue('135790');
+
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.5-order-verification-zh-desktop.png',
+        fullPage: true,
+      });
+    }
+
+    await page.getByTestId('language-toggle').click();
+    await page.getByTestId('order-verification-code-input').locator('input').fill('000000');
+    await verificationCard.getByRole('button', { name: 'Verify and look up' }).click();
+    await expect(verificationCard.getByRole('alert')).toHaveText('Order verification failed');
+    await page.getByTestId('language-toggle').click();
+    await verificationCard.getByRole('button', { name: '使用演示订单' }).click();
+    await verificationCard.getByRole('button', { name: '验证并查询' }).click();
+    const resultCard = page.getByTestId('order-result-card');
+    await expect(resultCard).toBeVisible({ timeout: 15_000 });
+    await expect(resultCard).toContainText('RW-••••-1002');
+    await expect(resultCard).toContainText('运输中');
+    await expect(resultCard).toContainText('••••••7890');
+
+    await page.getByTestId('chat-input').fill('再次查询订单 RW-DEMO-1002 的物流状态');
+    await page.getByTestId('chat-send-button').click();
+    await expect(page.getByTestId('order-result-card')).toHaveCount(2, { timeout: 15_000 });
+    await expect(page.getByTestId('order-verification-card')).toHaveCount(0);
+    const latestResultCard = page.getByTestId('order-result-card').last();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByTestId('language-toggle').click();
+    await page.getByTestId('theme-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.getByTestId('chat-messages')).toContainText('Order RW-••••-1002: In transit');
+    await expect(latestResultCard).toContainText('Order and shipping status');
+    await expect(latestResultCard).toContainText('In transit');
+    await expect(latestResultCard).toBeInViewport();
+
+    if (process.env.CAPTURE_RELEASE_EVIDENCE === '1') {
+      await page.screenshot({
+        path: 'docs/releases/assets/v0.3.5-order-result-en-mobile-dark.png',
+        fullPage: true,
+      });
+    }
+
+    await page.reload();
+    const historyItem = page.getByTestId('chat-history-item').filter({ hasText: 'RW-••••-1002' }).first();
+    await expect(historyItem).toBeVisible({ timeout: 10_000 });
+    await historyItem.click();
+    await expect(page.getByTestId('chat-messages')).toContainText('reverify to view it again');
+    await expect(page.getByTestId('order-result-card')).toHaveCount(0);
+  });
+
   test('language and theme toggles update fixed copy and document theme', async ({ page }) => {
     await page.goto('/');
 
@@ -1031,6 +1094,19 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
               createdAt: timestamp,
             }],
             escalation: null,
+            toolExecutions: [{
+              id: 'tool-execution-1',
+              toolName: 'order_status_lookup',
+              toolVersion: '1',
+              adapterName: 'demo',
+              adapterVersion: '1',
+              maskedOrderReference: 'RW-****-1002',
+              status: 'succeeded',
+              errorCode: null,
+              durationMs: 42,
+              createdAt: timestamp,
+              completedAt: timestamp,
+            }],
           },
           message: 'ok',
         }),
@@ -1043,6 +1119,10 @@ test.describe('Web automation: admin boundaries and FAQ index operation', () => 
     await expect(conversationDetail.locator('strong')).toHaveText('粗体回答');
     await expect(conversationDetail.locator('ol li')).toHaveCount(2);
     await expect(conversationDetail.locator('script')).toHaveCount(0);
+    const toolExecutions = page.getByTestId('conversation-tool-executions');
+    await expect(toolExecutions).toContainText('工具执行记录');
+    await expect(toolExecutions).toContainText('RW-****-1002');
+    await expect(toolExecutions).toContainText('demo@1');
     await page.locator('.t-dialog:visible .t-dialog__close').click();
     await expect(conversationDetail).toBeHidden();
 

@@ -15,11 +15,11 @@
 
 **Chinese version**: [README_CN.md](README_CN.md)
 
-Current version: **v0.3.4 (pre-1.0)**. APIs and persisted data remain subject
+Current version: **v0.3.5 (pre-1.0)**. APIs and persisted data remain subject
 to change before 1.0.
 
-[v0.3.4 release notes](docs/releases/v0.3.4.md) ·
-[v0.3.4 release evidence](docs/releases/v0.3.4-evidence.md)
+[v0.3.5 release notes](docs/releases/v0.3.5.md) ·
+[v0.3.5 release evidence](docs/releases/v0.3.5-evidence.md)
 
 <p align="center">
   <a href="https://github.com/Rcloudso/resolveweave/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
@@ -42,9 +42,9 @@ hand risky cases to people with useful context.
 The current release combines customer chat, FAQ and document knowledge,
 hybrid retrieval, persisted sources, deterministic Grounding decisions,
 structured escalation, optional Qdrant, retrieval traces, a unified operations
-center, and repeatable quality evaluation. A fresh installation now guides an
-administrator from first login to a document-grounded answer without a paid
-model key or Qdrant.
+center, repeatable quality evaluation, and one guarded read-only order-status
+tool. A fresh installation can run both its grounded knowledge path and the
+Demo order lookup without a paid model key or Qdrant.
 
 [Quick Start](#quick-start) · [Why This Project](#why-this-project) · [Features](#features) · [Architecture](ARCHITECTURE.md) · [Evaluation](#evaluation-and-debugging) · [Roadmap](ROADMAP.md)
 
@@ -112,9 +112,9 @@ into one accountable customer-resolution flow.
   bounded Agentic Retrieval are planned as separately testable releases rather
   than one framework rewrite.
 
-| Implemented through v0.3.4 | Next |
+| Implemented through v0.3.5 | Next |
 | --- | --- |
-| First-value onboarding, unified runtime status and low-risk recovery, optional Qdrant, recoverable index jobs, Quality Lab, Retrieval Trace, and reviewed OCR | Validate the next enterprise workflow before adding business tools, multi-tenancy, or agentic retrieval |
+| Verified read-only order lookup, first-value onboarding, unified operations, optional Qdrant, Quality Lab, Retrieval Trace, and reviewed OCR | Add human collaboration before persistent identity or controlled write actions |
 
 See [ROADMAP.md](ROADMAP.md) for release boundaries and non-goals.
 
@@ -125,7 +125,7 @@ flowchart LR
   G --> A["Grounded answer"]
   G --> H["Human escalation"]
   P["Bounded Agentic Retrieval (planned)"] -.-> R
-  T["Guarded business tools (planned)"] -.-> G
+  T["Read-only order tool"] --> G
 ```
 
 ---
@@ -133,6 +133,7 @@ flowchart LR
 ## Features
 
 - **Customer chat experience** - streaming-style support UI with safe Markdown rendering, conversation context, compact document references, feedback, and history.
+- **Read-only order lookup** - verify one Demo order inside the current chat, receive a deterministic status and latest shipping event, and retain only a safe history summary plus masked audit. No refund, cancellation, or address-change execution is available.
 - **Answer-evidence policy** - choose deterministic FAQ, retrieval-supported generation, or refusal before answer generation; persist the decision and retrieved sources.
 - **Admin console** - FAQ management, conversation list, dashboard analytics, and runtime model configuration.
 - **First-value onboarding** - a fresh database routes the first admin login through explicit sample loading, a no-key bilingual document answer, source review, and a clear next step; upgraded installations are not interrupted.
@@ -207,6 +208,9 @@ in-flight request returns `409`. The bundled UI generates a key per write
 action and synchronously locks mutation controls against rapid re-entry.
 Multipart imports/uploads stay outside generic response replay; document
 uploads retain SHA-256 duplicate protection.
+Order lookup is also excluded from response replay: its required key is stored
+only in the masked execution audit, and duplicate keys fail closed with `409`
+without persisting or replaying the transient order result.
 
 `FaqMatch` keeps the existing `similarity` field for compatibility and adds optional debugging fields:
 
@@ -248,6 +252,12 @@ The guided question is “退货申请需要在几天内提交？” / “Within
 must a return request be submitted?”. The local deterministic path answers
 from the demo Markdown document and shows its source. You can reopen the guide
 or the unified **Operations** page from the admin navigation at any time.
+
+To try the read-only tool in development, ask for the status of
+`RW-DEMO-1002`, then use verification code `135790` in the inline card. The
+browser receives a ten-minute, strict HttpOnly grant for that session and order.
+Production disables the Demo Adapter unless `ORDER_TOOL_PROVIDER=demo` is set
+explicitly. Demo fixtures are fictional and are not an order-system connector.
 
 ---
 
@@ -334,9 +344,13 @@ Copy `.env.example` to `.env`, then configure the values you need:
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | Durable SQLite queue polling; defaults to `true` / `1000` ms |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | Optional comparison-only DeepSeek-OCR-2-compatible worker; never replaces Paddle review content |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` / `RATE_LIMIT_FAQ_SEARCH` | IPv6-aware API rate limits |
+| `RATE_LIMIT_ORDER_VERIFY_IP` | Per-IP order verification attempts per minute; defaults to `5` |
 | `FAQ_SEARCH_MAX_CONCURRENCY` | Maximum in-flight public semantic FAQ searches; defaults to `4` |
 | `SESSION_INACTIVITY_MINUTES` | Minutes without activity before an active conversation is closed; defaults to `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | Maximum complete message rows in one synchronous filtered CSV export; defaults to `5000` |
+| `ORDER_TOOL_PROVIDER` | `demo` or `disabled`; defaults to `demo` in development/test and `disabled` in production |
+| `ORDER_TOOL_TIMEOUT_MS` | One-call order adapter deadline; defaults to `3000` ms |
+| `ORDER_TOOL_GRANT_TTL_SECONDS` | Session/user/order-bound access-grant lifetime; defaults to `600` seconds |
 
 The environment is the source of truth for model configuration. The admin
 model page may update provider and model name, but API Base URLs and credentials
@@ -361,9 +375,10 @@ EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
 EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
+npm run eval:tools
 ```
 
-The reports include FAQ Top1/Top3/no-match metrics, a 12-case document benchmark across TXT, Markdown, PDF, and DOCX, a six-case OCR contract benchmark covering screenshots, scan PDFs, tables, rotation/noise and low-quality gating, and deterministic triage coverage. The document report compares `semantic-v1` with a structure-only baseline and requires 100% Top3 recall without MRR regression.
+The reports include FAQ Top1/Top3/no-match metrics, a 12-case document benchmark across TXT, Markdown, PDF, and DOCX, a six-case OCR contract benchmark, deterministic triage, and a fixed tool suite covering bilingual routing, authorization binding, four Demo states, timeout, unsafe output rejection, and zero-leak gates.
 
 To exercise a real Qdrant instance separately from the default suite:
 
@@ -413,6 +428,7 @@ EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
 EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
+npm run eval:tools
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
@@ -429,7 +445,7 @@ build checks, and an independent integration job against
 client/        React + Vite frontend
 server/        Express API, services, AI adapters, SQLite repositories
 ocr-worker/    Optional FastAPI PaddleOCR PP-StructureV3 CPU worker
-eval/          FAQ, document, quality, and OCR evaluation cases
+eval/          FAQ, document, quality, OCR, and tool evaluation cases
 tests/e2e/     Playwright end-to-end tests
 ARCHITECTURE.md Runtime topology, trust boundaries, and scaling triggers
 data/          Local SQLite database files
@@ -471,8 +487,11 @@ data/          Local SQLite database files
 - Idempotency replay is scoped to one deployment and retained for 24 hours;
   multipart uploads are protected by workflow-specific duplicate checks rather
   than generic response replay.
-- Escalation triage is read-only in v0.2.9. It does not add human assignment,
-  ownership, notes, resolution actions, live takeover, or business tools.
+- Human escalation still has no assignment, ownership, notes, resolution
+  actions, or live takeover.
+- The only business tool is a replaceable Demo Adapter for read-only status of
+  one verified order. It is not customer login, does not retain a reusable
+  order history, and cannot refund, cancel, modify, notify, or poll.
 - Optional LLM extraction has a two-second total budget and may improve only
   summaries, cited facts, and missing-information candidates. Deterministic
   priority, risk, queue, and next-step rules remain authoritative.
@@ -485,9 +504,9 @@ data/          Local SQLite database files
 
 ## Roadmap
 
-The ordered product direction lives in [ROADMAP.md](ROADMAP.md). v0.3.4 ships
-first-value onboarding and unified low-risk operations without Agentic
-Retrieval, business tools, multi-tenancy, or a generic workflow orchestrator.
+The ordered product direction lives in [ROADMAP.md](ROADMAP.md). v0.3.5 ships
+one guarded read-only order lookup without persistent customer identity,
+write actions, multi-tenancy, or a generic agent/tool orchestrator.
 Future releases remain evidence-gated rather than fixed-date commitments.
 
 ---

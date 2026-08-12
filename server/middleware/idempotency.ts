@@ -54,12 +54,20 @@ export function idempotencyMiddleware(
       ? body.userIdent
       : req.ip || 'anonymous');
   const actorHash = service.fingerprint(actor);
+  const credentialBinding = typeof res.locals.idempotencyBinding === 'string'
+    ? service.fingerprint(res.locals.idempotencyBinding)
+    : null;
   const scope = JSON.stringify([
     actorHash,
+    credentialBinding,
     req.method,
     req.originalUrl.split('?')[0],
   ]);
-  const requestHash = service.fingerprint({ query: req.query, body: req.body });
+  const requestHash = service.fingerprint({
+    query: req.query,
+    body: req.body,
+    credentialBinding,
+  });
   const begin = service.begin(scope, key, requestHash);
 
   if (begin.status === 'mismatch') {

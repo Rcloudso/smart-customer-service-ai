@@ -14,11 +14,11 @@
 
 **English version**: [README.md](README.md)
 
-当前版本：**v0.3.4（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能
+当前版本：**v0.3.5（pre-1.0）**。在 1.0 之前，API 和持久化数据结构仍可能
 调整。
 
-[v0.3.4 版本说明](docs/releases/v0.3.4.md) ·
-[v0.3.4 版本验证证据](docs/releases/v0.3.4-evidence.md)
+[v0.3.5 版本说明](docs/releases/v0.3.5.md) ·
+[v0.3.5 版本验证证据](docs/releases/v0.3.5-evidence.md)
 
 <p align="center">
   <a href="https://github.com/Rcloudso/resolveweave/releases/download/v0.3.2/resolveweave-v0.3.2-demo.mp4">
@@ -37,9 +37,9 @@ ResolveWeave 是一个 pre-1.0 的企业级智能客服平台。它关注的
 怎样携带有效上下文交给人工。
 
 当前版本已经把用户聊天、FAQ 与文档知识、混合检索、来源持久化、确定性
-Grounding 决策、结构化转人工、可选 Qdrant、检索 Trace、统一运行中心和可重复
-质量评测放在同一工程内。全新安装首次登录后，会在没有付费模型 Key 和
-Qdrant 的路径下，引导管理员得到第一条带文档来源的可信回答。
+Grounding 决策、结构化转人工、可选 Qdrant、检索 Trace、统一运行中心、可重复
+质量评测和一个受控的只读订单工具放在同一工程内。全新安装可在没有付费模型
+Key 和 Qdrant 的路径下运行可信知识问答与 Demo 订单查询。
 
 [快速开始](#快速开始) · [为什么做这个项目](#为什么做这个项目) · [特性](#特性) · [架构](ARCHITECTURE.md) · [评测与调试](#评测与调试) · [路线图](ROADMAP.md)
 
@@ -102,9 +102,9 @@ SQLite + 内存向量索引作为零基础设施路径，同时明确列出正�
 - **企业方向按版本验证**——结构化入库、OCR、Qdrant 和受限 Agentic
   Retrieval 分开交付，不进行一次性框架重写。
 
-| 截至 v0.3.4 已实现 | 下一步 |
+| 截至 v0.3.5 已实现 | 下一步 |
 | --- | --- |
-| 首次价值引导、统一运行状态与低风险恢复、可选 Qdrant、可恢复索引、Quality Lab、检索 Trace 和 OCR 复核 | 先验证下一个企业工作流，再考虑业务工具、多租户或 Agentic Retrieval |
+| 已验证的只读订单查询、首次价值引导、统一运行中心、可选 Qdrant、Quality Lab、检索 Trace 和 OCR 复核 | 先补人工协作，再进入持久身份和受控写操作 |
 
 完整版本边界和非目标见 [ROADMAP.md](ROADMAP.md)。
 
@@ -115,7 +115,7 @@ flowchart LR
   G --> A["可信回答"]
   G --> H["结构化转人工"]
   P["受限 Agentic Retrieval（规划）"] -.-> R
-  T["受控业务工具（规划）"] -.-> G
+  T["只读订单工具"] --> G
 ```
 
 ---
@@ -123,6 +123,7 @@ flowchart LR
 ## 特性
 
 - **用户聊天体验** - 支持安全 Markdown 渲染、上下文对话、紧凑文档来源、FAQ 参考、满意度反馈和历史会话。
+- **只读订单查询** - 在当前聊天中验证一个 Demo 订单，返回确定性的订单状态和最新物流事件；历史仅保存安全摘要，后台仅展示脱敏审计，不支持退款、取消或改址。
 - **可信回答策略** - 在模型生成前确定 FAQ 直答、基于证据生成或拒答，并持久化决策和来源证据。
 - **管理后台** - FAQ 管理、会话列表、数据看板和运行时模型配置。
 - **首次价值引导** - 全新数据库首次登录后显式加载样例，在无 Key 路径完成中英文文档问答和来源检查；升级实例不会被强制打断。
@@ -189,6 +190,8 @@ JSON 与 SSE 写接口还支持可选的 `Idempotency-Key` 请求头：同一键
 已保存响应，不重复执行写操作；同键异载荷或仍在处理的并发请求返回 `409`。内置前端为每次
 写操作生成幂等键，并在 React 加载状态渲染前通过同步锁阻止快速重复触发。multipart
 导入/上传不进入通用响应重放；文档上传继续使用 SHA-256 内容去重。
+订单查询也不进入响应重放：必需的幂等键只进入脱敏执行审计，同键重复请求以
+`409` 安全失败，不持久化或重放一次性订单结果。
 
 `FaqMatch` 保留已有的 `similarity` 字段，避免破坏旧响应；同时新增可选调试字段：
 
@@ -226,6 +229,11 @@ EMBED_PROVIDER=other npm run dev
 推荐问题是“退货申请需要在几天内提交？”及其英文对应问题。确定性本地路径
 会从演示 Markdown 文档回答并显示来源。之后可随时从后台导航重新进入
 “首次使用”或“运行中心”。
+
+开发环境可直接询问 `RW-DEMO-1002` 的订单状态，再在消息下方验证卡输入
+`135790`。浏览器会收到绑定当前会话、浏览器标识和单个订单的 10 分钟严格
+HttpOnly 授权。生产环境默认禁用 Demo Adapter，只有显式设置
+`ORDER_TOOL_PROVIDER=demo` 才启用；演示数据完全虚构，不是订单系统集成。
 
 ---
 
@@ -306,9 +314,13 @@ RESOLVE_WEAVE_DATA_VOLUME=<原物理卷名称> docker compose up --build
 | `OCR_BACKGROUND_ENABLED` / `OCR_POLL_INTERVAL_MS` | SQLite 持久化队列轮询，默认 `true` / `1000` 毫秒 |
 | `OCR_SHADOW_SERVICE_URL` / `OCR_SHADOW_SERVICE_TOKEN` / `OCR_SHADOW_ENGINE_VERSION` | 可选、仅用于对照的 DeepSeek-OCR-2 兼容 Worker；不会替换 Paddle 复核内容 |
 | `RATE_LIMIT_CHAT` / `RATE_LIMIT_ADMIN` / `RATE_LIMIT_LOGIN` / `RATE_LIMIT_FAQ_SEARCH` | 支持 IPv6 子网归一的 API 限流配置 |
+| `RATE_LIMIT_ORDER_VERIFY_IP` | 每 IP 每分钟订单验证次数，默认 `5` |
 | `FAQ_SEARCH_MAX_CONCURRENCY` | 公共语义 FAQ 检索的最大并发数，默认 `4` |
 | `SESSION_INACTIVITY_MINUTES` | 活跃会话无消息后自动关闭的分钟数，默认 `30` |
 | `CONVERSATION_EXPORT_MAX_MESSAGES` | 一次同步筛选 CSV 可导出的完整消息行上限，默认 `5000` |
+| `ORDER_TOOL_PROVIDER` | `demo` 或 `disabled`；开发/测试默认 `demo`，生产默认 `disabled` |
+| `ORDER_TOOL_TIMEOUT_MS` | 单次订单适配器调用总超时，默认 `3000` 毫秒 |
+| `ORDER_TOOL_GRANT_TTL_SECONDS` | 绑定会话、浏览器标识和单个订单的授权有效期，默认 `600` 秒 |
 
 环境变量是模型配置的唯一生效来源。管理后台只可修改服务商和模型名；API
 Base URL 与凭据属于部署配置，在 UI/API 中只读。SQLite 中历史
@@ -330,9 +342,10 @@ EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
 EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
+npm run eval:tools
 ```
 
-评测包含 FAQ 的 Top1/Top3/无匹配指标、覆盖 TXT/Markdown/PDF/DOCX 的 12 条文档用例、覆盖截图/扫描 PDF/表格/旋转噪声/低质量门禁的 6 条 OCR 契约用例，以及确定性分流用例。文档评测会对比 `semantic-v1` 与仅结构切片基线，并要求 Top3 100%、MRR 不下降。
+评测包含 FAQ、文档、OCR、确定性转人工分流，以及固定工具安全套件。工具评测覆盖中英文路由、授权绑定、四种 Demo 状态、超时、非法结果拒绝与零泄漏门禁。
 
 需要独立验证真实 Qdrant 时运行：
 
@@ -380,6 +393,7 @@ EMBED_PROVIDER=other npm run eval:mixed
 EMBED_PROVIDER=other npm run eval:quality
 EMBED_PROVIDER=other npm run eval:ocr
 npm run eval:triage
+npm run eval:tools
 PLAYWRIGHT_CHANNEL=chromium npm run test:e2e
 EMBED_PROVIDER=other npm run build
 ```
@@ -395,7 +409,7 @@ Playwright E2E、生产构建，以及使用 `qdrant/qdrant:v1.18.2` 的独立�
 client/        React + Vite 前端
 server/        Express API、服务层、AI 适配器、SQLite 仓储
 ocr-worker/    可选 FastAPI PaddleOCR PP-StructureV3 CPU Worker
-eval/          FAQ、文档、质量和 OCR 评测用例
+eval/          FAQ、文档、质量、OCR 和工具评测用例
 tests/e2e/     Playwright 端到端测试
 ARCHITECTURE.md 运行拓扑、信任边界和扩容触发条件
 data/          本地 SQLite 数据库文件
@@ -427,7 +441,9 @@ data/          本地 SQLite 数据库文件
 - LLM 意图识别失败时会回退到关键词规则。
 - 幂等响应仅在单个部署范围内保留 24 小时；multipart 上传依赖各自工作流的重复检查，
   不使用通用响应重放。
-- v0.2.9 的转人工分流只读，不包含人工认领、分配、备注、解决动作、实时接管或业务工具。
+- 转人工仍不包含人工认领、分配、备注、解决动作或实时接管。
+- 唯一业务工具是可替换的 Demo Adapter，只查询单个已验证订单的状态；它不是
+  客户登录，不保留可复用订单历史，也不能退款、取消、改址、通知或轮询。
 - 可选 LLM 提取共享 2 秒总预算，只能改进摘要、带引用事实和缺失信息候选；优先级、风险、队列和下一步始终由确定性规则控制。
 - 这是一个 pre-1.0 MVP 基座，不是完整生产客服平台。正式生产前还应补充
   更严格的身份/RBAC、备份与灾难恢复、多副本协调和基础设施监控。
@@ -436,6 +452,6 @@ data/          本地 SQLite 数据库文件
 
 ## Roadmap
 
-产品方向见 [ROADMAP.md](ROADMAP.md)。v0.3.4 交付首次价值引导和统一低风险
-运行中心，不包含 Agentic Retrieval、业务工具、多租户或通用任务编排。后续
+产品方向见 [ROADMAP.md](ROADMAP.md)。v0.3.5 交付一个受控只读订单查询，
+不包含持久客户身份、写操作、多租户或通用 Agent/工具编排。后续
 版本继续以真实证据为门槛，而不是固定日期承诺。

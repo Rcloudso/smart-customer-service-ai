@@ -344,6 +344,7 @@ export type EscalationReasonCode =
   | 'frustration'
   | 'low_confidence_or_coverage_gap'
   | 'model_requested_escalation'
+  | 'unsafe_tool_result'
   | 'legacy_unstructured';
 export type EscalationRiskFlag =
   | 'account_security'
@@ -353,6 +354,7 @@ export type EscalationRiskFlag =
   | 'business_action_required'
   | 'knowledge_conflict'
   | 'complaint'
+  | 'unsafe_tool_result'
   | 'low_confidence';
 export type EscalationExtractionMode =
   | 'deterministic'

@@ -65,6 +65,13 @@ const STATUS_MAP: Record<string, { labelKey: string; theme: 'success' | 'warning
   escalated: { labelKey: 'status.escalated', theme: 'warning' },
 };
 
+const TOOL_STATUS_THEME: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
+  running: 'warning',
+  succeeded: 'success',
+  failed: 'danger',
+  interrupted: 'default',
+};
+
 /**
  * Conversations management page with filtering, detail view, and export.
  */
@@ -362,6 +369,36 @@ export function ConversationsPage(): React.ReactElement {
                 </div>
               )}
             </div>
+
+            {detail.toolExecutions && detail.toolExecutions.length > 0 && (
+              <section
+                className="app-conversation-tool-executions"
+                data-testid="conversation-tool-executions"
+              >
+                <h3>{t('conversations.toolExecutions')}</h3>
+                {detail.toolExecutions.map((execution) => (
+                  <div key={execution.id} className="app-conversation-tool-execution">
+                    <div className="app-conversation-tool-execution__header">
+                      <span>{execution.toolName}@{execution.toolVersion}</span>
+                      <Tag
+                        size="small"
+                        variant="light"
+                        theme={TOOL_STATUS_THEME[execution.status] ?? 'default'}
+                      >
+                        {t(`chat.orderTool.status.${execution.status}`)}
+                      </Tag>
+                    </div>
+                    <dl>
+                      <div><dt>{t('conversations.toolOrder')}</dt><dd>{execution.maskedOrderReference}</dd></div>
+                      <div><dt>{t('conversations.toolAdapter')}</dt><dd>{execution.adapterName}@{execution.adapterVersion}</dd></div>
+                      <div><dt>{t('conversations.toolDuration')}</dt><dd>{execution.durationMs === null ? '—' : `${Math.round(execution.durationMs)} ms`}</dd></div>
+                      <div><dt>{t('conversations.toolError')}</dt><dd>{execution.safeErrorCode ?? '—'}</dd></div>
+                      <div><dt>{t('conversations.toolStarted')}</dt><dd>{new Date(execution.createdAt).toLocaleString(dateLocale)}</dd></div>
+                    </dl>
+                  </div>
+                ))}
+              </section>
+            )}
 
             {/* Messages */}
             {detail.messages.map((msg, idx) => (
