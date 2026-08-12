@@ -410,6 +410,57 @@ export function initSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_idempotency_records_updated
       ON idempotency_records(updated_at);
 
+    CREATE TABLE IF NOT EXISTS order_access_grants (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      user_ident_hash TEXT NOT NULL,
+      order_reference_ciphertext TEXT NOT NULL,
+      order_reference_iv TEXT NOT NULL,
+      order_reference_tag TEXT NOT NULL,
+      order_reference_fingerprint TEXT NOT NULL,
+      masked_order_reference TEXT NOT NULL,
+      tool_name TEXT NOT NULL CHECK(tool_name = 'order_status_lookup'),
+      tool_version TEXT NOT NULL CHECK(tool_version = '1'),
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_order_access_grants_session
+      ON order_access_grants(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_order_access_grants_expiry
+      ON order_access_grants(expires_at);
+
+    CREATE TABLE IF NOT EXISTS tool_executions (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      user_message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+      assistant_message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
+      idempotency_key TEXT,
+      tool_name TEXT NOT NULL CHECK(tool_name = 'order_status_lookup'),
+      tool_version TEXT NOT NULL CHECK(tool_version = '1'),
+      adapter_name TEXT NOT NULL,
+      adapter_version TEXT NOT NULL,
+      masked_order_reference TEXT NOT NULL,
+      order_reference_fingerprint TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed', 'interrupted')),
+      safe_error_code TEXT,
+      duration_ms REAL CHECK(duration_ms IS NULL OR duration_ms >= 0),
+      result_summary TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tool_executions_session_created
+      ON tool_executions(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_tool_executions_status_created
+      ON tool_executions(status, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_executions_one_running_per_session
+      ON tool_executions(session_id) WHERE status = 'running';
+
     CREATE TABLE IF NOT EXISTS quality_datasets (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -732,6 +783,17 @@ export function initSchema(database: Database.Database): void {
   `);
   ensureColumn(database, 'sample_pack_installations', 'attempt_id', 'TEXT');
   const now = new Date().toISOString();
+  database.prepare(
+    'DELETE FROM order_access_grants WHERE expires_at <= ?',
+  ).run(now);
+  database.prepare(`
+    UPDATE tool_executions
+    SET status = 'interrupted',
+        safe_error_code = 'startup_interrupted',
+        updated_at = ?,
+        completed_at = ?
+    WHERE status = 'running'
+  `).run(now, now);
   database.prepare(`
     UPDATE sample_pack_installations
     SET status = 'failed', failure_code = 'sample_pack_interrupted', updated_at = ?

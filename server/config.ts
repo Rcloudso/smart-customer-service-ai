@@ -8,6 +8,40 @@ export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 export const OPENAI_API_BASE = 'https://api.openai.com/v1';
 export const VECTOR_STORE_PROVIDERS = ['memory', 'qdrant'] as const;
 export type VectorStoreProvider = (typeof VECTOR_STORE_PROVIDERS)[number];
+export const ORDER_TOOL_PROVIDERS = ['disabled', 'demo'] as const;
+export type OrderToolProvider = (typeof ORDER_TOOL_PROVIDERS)[number];
+
+interface OrderToolEnvironmentSource {
+  ORDER_TOOL_PROVIDER?: string;
+  ORDER_TOOL_TIMEOUT_MS?: string | number;
+  ORDER_TOOL_GRANT_TTL_SECONDS?: string | number;
+}
+
+export interface ResolvedOrderToolEnvironment {
+  provider: OrderToolProvider;
+  timeoutMs: number;
+  grantTtlMs: number;
+}
+
+export function resolveOrderToolEnvironment(
+  source: OrderToolEnvironmentSource,
+  nodeEnv: 'development' | 'production' | 'test',
+): ResolvedOrderToolEnvironment {
+  const defaultProvider = nodeEnv === 'production' ? 'disabled' : 'demo';
+  const provider = source.ORDER_TOOL_PROVIDER ?? defaultProvider;
+  if (!(ORDER_TOOL_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new Error('ORDER_TOOL_PROVIDER must be disabled or demo');
+  }
+  const timeoutMs = z.coerce.number().int().min(500).max(10_000)
+    .parse(source.ORDER_TOOL_TIMEOUT_MS ?? 3_000);
+  const grantTtlSeconds = z.coerce.number().int().min(60).max(3_600)
+    .parse(source.ORDER_TOOL_GRANT_TTL_SECONDS ?? 600);
+  return {
+    provider: provider as OrderToolProvider,
+    timeoutMs,
+    grantTtlMs: grantTtlSeconds * 1_000,
+  };
+}
 
 export function resolveModelApiBase(provider: ModelProvider, customApiBase: string): string {
   const apiBase = provider === 'openai' ? OPENAI_API_BASE : customApiBase.trim();
@@ -197,6 +231,10 @@ const envSchema = z.object({
   RATE_LIMIT_ADMIN: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
   RATE_LIMIT_FAQ_SEARCH: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_ORDER_VERIFY_IP: z.coerce.number().int().positive().default(5),
+  ORDER_TOOL_PROVIDER: z.enum(ORDER_TOOL_PROVIDERS).optional(),
+  ORDER_TOOL_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(3_000),
+  ORDER_TOOL_GRANT_TTL_SECONDS: z.coerce.number().int().min(60).max(3_600).default(600),
   FAQ_SEARCH_MAX_CONCURRENCY: z.coerce.number().int().positive().max(100).default(4),
   SESSION_INACTIVITY_MINUTES: z.coerce.number().int().positive().max(1440).default(30),
   CONVERSATION_EXPORT_MAX_MESSAGES: z.coerce.number().int().positive().max(5000).default(5000),
@@ -212,6 +250,7 @@ if (!parsed.success) {
 const env = parsed.data;
 const modelEnvironment = resolveModelEnvironment(env);
 const vectorStoreEnvironment = resolveVectorStoreEnvironment(env);
+const orderToolEnvironment = resolveOrderToolEnvironment(env, env.NODE_ENV);
 
 if (env.NODE_ENV === 'production' && env.ADMIN_PASSWORD === 'admin123') {
   console.error('❌ ADMIN_PASSWORD must be changed from the default "admin123" in production.');
@@ -279,7 +318,9 @@ export const config = {
     admin: env.RATE_LIMIT_ADMIN,
     login: env.RATE_LIMIT_LOGIN,
     faqSearch: env.RATE_LIMIT_FAQ_SEARCH,
+    orderVerifyIp: env.RATE_LIMIT_ORDER_VERIFY_IP,
   },
+  orderTool: orderToolEnvironment,
   faqSearch: {
     maxConcurrency: env.FAQ_SEARCH_MAX_CONCURRENCY,
   },
