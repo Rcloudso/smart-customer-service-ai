@@ -1,0 +1,5 @@
+ticket_type,model,temporary_rule,status
+DOA,NXG-4060F Twin,"photo plus boot video required",draft
+RMA,NXG-3070 RF,"12-month refurbished warranty",active
+compatibility,NXG-5080 AURORA OC,"check 1000W PSU and 12V-2x6 cable",active
+note,ALL,"THIS CSV FORMAT IS INTENTIONALLY UNSUPPORTED IN v0.2.6",test-only
